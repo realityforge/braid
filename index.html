@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="description" content="Braid : Simple tool to help track git vendor branches in a git repository.">
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Braid</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/realityforge/braid">View on GitHub</a>
+
+          <h1 id="project_title">Braid</h1>
+          <h2 id="project_tagline">Simple tool to help track git vendor branches in a git repository.</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/realityforge/braid/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/realityforge/braid/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h1>
+<a id="braid" class="anchor" href="#braid" aria-hidden="true"><span class="octicon octicon-link"></span></a>Braid</h1>
+
+<p><a href="http://travis-ci.org/realityforge/braid"><img src="https://secure.travis-ci.org/realityforge/braid.png?branch=master" alt="Build Status"></a></p>
+
+<p>Braid is a simple tool to help track git vendor branches in a git repository.</p>
+
+<p>The project homepage is <a href="http://github.com/realityforge/braid/wikis/home">here</a>.</p>
+
+<h2>
+<a id="braid-on-vendoring" class="anchor" href="#braid-on-vendoring" aria-hidden="true"><span class="octicon octicon-link"></span></a>Braid on Vendoring</h2>
+
+<p>Vendoring allows you take the source code of an external library and ensure it is version
+controlled along with the main project. This is in contrast to including a reference to a
+packaged version of an external library that is available in a binary artifact repository
+such as Maven Central, RubyGems or NPM.</p>
+
+<p>Vendoring is useful when you need to patch or customize the external libraries or the
+external library is expected to co-evolve with the main project. The developer can make
+changes to the main project and patch the library in a single commit.</p>
+
+<p>The problem arises when the external library makes changes that you want to integrate into
+your local vendored version or the developer makes changes to the local version that they
+want integrated into the external library.</p>
+
+<p>A typical "implementation" of vendoring is to simply download or checkout the source for the
+external library, remove the .git or .svn directories and commit it to the main source tree.
+However this approach makes it very difficult to update the library. When you want to update
+the library do you re-apply your local changes onto a new copy of the vendored library or do
+you re-apply the changes from the external library to local version. In both cases this
+involves manual generation and application of patch files to manually checked out source trees.</p>
+
+<p>This is where braid comes into play. Braid makes it easy to vendor in remote git repositories
+and use an automated mechanism for updating the external library and generating patches to upgrade
+the external library.</p>
+
+<h2>
+<a id="requirements" class="anchor" href="#requirements" aria-hidden="true"><span class="octicon octicon-link"></span></a>Requirements</h2>
+
+<ul>
+<li>git 1.6+</li>
+<li>main &gt;= 4.2.0</li>
+<li>open4 &gt;= 1.0.1 (unless using jruby)</li>
+</ul>
+
+<h2>
+<a id="installing-using-rubygems---official-releases" class="anchor" href="#installing-using-rubygems---official-releases" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installing using rubygems - official releases</h2>
+
+<pre><code>gem install realityforge-braid
+</code></pre>
+
+<h2>
+<a id="installing-from-source" class="anchor" href="#installing-from-source" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installing from source</h2>
+
+<pre><code>git clone git://github.com/realityforge/braid.git
+cd braid
+bundle install
+rake install # possibly requiring sudo
+</code></pre>
+
+<h2>
+<a id="quick-usage---ruby-project" class="anchor" href="#quick-usage---ruby-project" aria-hidden="true"><span class="octicon octicon-link"></span></a>Quick usage - ruby project</h2>
+
+<p>Let's assume we're writing something like gitnub that needs grit in lib/grit. Initialize the repo (nothing braid related here):</p>
+
+<pre><code>git init gritty
+cd gritty
+touch README
+git add README
+git commit -m "initial commit"
+</code></pre>
+
+<p>Now let's vendor grit:</p>
+
+<pre><code>braid add git://github.com/mojombo/grit.git lib/grit
+</code></pre>
+
+<p>And you're done! Braid vendored grit into lib/grit. Feel free to inspect the changes with git log or git show.</p>
+
+<p>If further down the line, you want to bring new changes from grit in your repository, just update the mirror:</p>
+
+<pre><code>braid update lib/grit
+</code></pre>
+
+<h2>
+<a id="quick-usage---rails-project" class="anchor" href="#quick-usage---rails-project" aria-hidden="true"><span class="octicon octicon-link"></span></a>Quick usage - rails project</h2>
+
+<p>Let's assume you want to start a new rails app called shiny. Initialize the repo (nothing braid related here):</p>
+
+<pre><code>git init shiny
+cd shiny
+touch README
+git add README
+git commit -m "initial commit"
+</code></pre>
+
+<p>Vendor rails (this might take a while because the rails repo is huge!):</p>
+
+<pre><code>braid add git://github.com/rails/rails.git vendor/rails
+</code></pre>
+
+<p>Create your new rails app (nothing braid related here):</p>
+
+<pre><code>ruby vendor/rails/railties/bin/rails .
+git add .
+git commit -m "rails ."
+</code></pre>
+
+<p>Add any plugins you might need:</p>
+
+<pre><code>braid add git://github.com/thoughtbot/shoulda.git -p
+braid add git://github.com/thoughtbot/factory_girl.git -p
+braid add git://github.com/mbleigh/subdomain-fu.git -p
+</code></pre>
+
+<p>And you're done! Braid vendored rails and your plugins. Feel free to inspect the changes with git log or git show.</p>
+
+<p>If further down the line, you want to bring new changes from rails in your repository, just update the mirror:</p>
+
+<pre><code>braid update vendor/rails
+</code></pre>
+
+<p>Or, if you want all mirrors updated:</p>
+
+<pre><code>braid update
+</code></pre>
+
+<h2>
+<a id="more-usage" class="anchor" href="#more-usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>More usage</h2>
+
+<p>Use the built in help system to find out about all commands and options:</p>
+
+<pre><code>braid help
+braid help add # or braid add --help
+</code></pre>
+
+<p>You may also want to read <a href="http://github.com/realityforge/braid/wikis/usage-and-examples">Usage and examples</a>.</p>
+
+<h2>
+<a id="troubleshooting" class="anchor" href="#troubleshooting" aria-hidden="true"><span class="octicon octicon-link"></span></a>Troubleshooting</h2>
+
+<p>Check <a href="http://github.com/realityforge/braid/wikis/troubleshooting">Troubleshooting</a> if you're having issues.</p>
+
+<h1>
+<a id="credit" class="anchor" href="#credit" aria-hidden="true"><span class="octicon octicon-link"></span></a>Credit</h1>
+
+<p>This tool is a downstream evolution of a identically named tool initially developed by Cristi Balan (evilchelu)
+and Norbert Crombach (norbert). All credit goes to the original for the initial code and idea. Further maintenance
+and bugs are courtesy of Peter Donald.</p>
+
+<h2>
+<a id="contributors-alphabetically" class="anchor" href="#contributors-alphabetically" aria-hidden="true"><span class="octicon octicon-link"></span></a>Contributors (alphabetically)</h2>
+
+<ul>
+<li>Alan Harper</li>
+<li>Christoph Sturm</li>
+<li>Dennis Muhlestein</li>
+<li>Ferdinand Svehla</li>
+<li>Michael Klishin</li>
+<li>Roman Heinrich</li>
+<li>Travis Tilley</li>
+<li>Tyler Rick</li>
+</ul>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Braid maintained by <a href="https://github.com/realityforge">realityforge</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
