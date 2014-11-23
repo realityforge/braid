@@ -38,7 +38,7 @@
 
 <p>Braid is a simple tool to help track git vendor branches in a git repository.</p>
 
-<p>The project homepage is <a href="http://github.com/realityforge/braid/wikis/home">here</a>.</p>
+<p>The project homepage is <a href="http://realityforge.github.io/braid">here</a>.</p>
 
 <h2>
 <a id="braid-on-vendoring" class="anchor" href="#braid-on-vendoring" aria-hidden="true"><span class="octicon octicon-link"></span></a>Braid on Vendoring</h2>
@@ -67,14 +67,17 @@ involves manual generation and application of patch files to manually checked ou
 and use an automated mechanism for updating the external library and generating patches to upgrade
 the external library.</p>
 
-<h2>
-<a id="requirements" class="anchor" href="#requirements" aria-hidden="true"><span class="octicon octicon-link"></span></a>Requirements</h2>
+<p>Braid creates a file <code>.braids</code> in the root of your repository that contains references to
+external libraries or mirrors. There are two types of mirrors in braid: squashed and full.
+Mirrors are <em>squashed by default</em>, which is what you'll generally want because they're faster
+and don't pollute your history with commits from the mirrors.</p>
 
-<ul>
-<li>git 1.6+</li>
-<li>main &gt;= 4.2.0</li>
-<li>open4 &gt;= 1.0.1 (unless using jruby)</li>
-</ul>
+<p>Full mirrors are useful when you want to view imported history in your own project. You usually
+want this if the mirror is also a repository you have access to, for example, when using shared
+code across projects.</p>
+
+<p>Please note that you <em>cannot change</em> between mirror types after the initial add. You'll have to
+remove the mirror and add it again.</p>
 
 <h2>
 <a id="installing-using-rubygems---official-releases" class="anchor" href="#installing-using-rubygems---official-releases" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installing using rubygems - official releases</h2>
@@ -94,10 +97,10 @@ rake install # possibly requiring sudo
 <h2>
 <a id="quick-usage---ruby-project" class="anchor" href="#quick-usage---ruby-project" aria-hidden="true"><span class="octicon octicon-link"></span></a>Quick usage - ruby project</h2>
 
-<p>Let's assume we're writing something like gitnub that needs grit in lib/grit. Initialize the repo (nothing braid related here):</p>
+<p>Let's assume we're writing the project <code>myproject</code> that needs grit in lib/grit. Initialize the repo (nothing braid related here):</p>
 
-<pre><code>git init gritty
-cd gritty
+<pre><code>git init myproject
+cd myproject
 touch README
 git add README
 git commit -m "initial commit"
@@ -115,44 +118,6 @@ git commit -m "initial commit"
 <pre><code>braid update lib/grit
 </code></pre>
 
-<h2>
-<a id="quick-usage---rails-project" class="anchor" href="#quick-usage---rails-project" aria-hidden="true"><span class="octicon octicon-link"></span></a>Quick usage - rails project</h2>
-
-<p>Let's assume you want to start a new rails app called shiny. Initialize the repo (nothing braid related here):</p>
-
-<pre><code>git init shiny
-cd shiny
-touch README
-git add README
-git commit -m "initial commit"
-</code></pre>
-
-<p>Vendor rails (this might take a while because the rails repo is huge!):</p>
-
-<pre><code>braid add git://github.com/rails/rails.git vendor/rails
-</code></pre>
-
-<p>Create your new rails app (nothing braid related here):</p>
-
-<pre><code>ruby vendor/rails/railties/bin/rails .
-git add .
-git commit -m "rails ."
-</code></pre>
-
-<p>Add any plugins you might need:</p>
-
-<pre><code>braid add git://github.com/thoughtbot/shoulda.git -p
-braid add git://github.com/thoughtbot/factory_girl.git -p
-braid add git://github.com/mbleigh/subdomain-fu.git -p
-</code></pre>
-
-<p>And you're done! Braid vendored rails and your plugins. Feel free to inspect the changes with git log or git show.</p>
-
-<p>If further down the line, you want to bring new changes from rails in your repository, just update the mirror:</p>
-
-<pre><code>braid update vendor/rails
-</code></pre>
-
 <p>Or, if you want all mirrors updated:</p>
 
 <pre><code>braid update
@@ -167,12 +132,60 @@ braid add git://github.com/mbleigh/subdomain-fu.git -p
 braid help add # or braid add --help
 </code></pre>
 
-<p>You may also want to read <a href="http://github.com/realityforge/braid/wikis/usage-and-examples">Usage and examples</a>.</p>
+<h3>
+<a id="examples" class="anchor" href="#examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Examples</h3>
 
-<h2>
-<a id="troubleshooting" class="anchor" href="#troubleshooting" aria-hidden="true"><span class="octicon octicon-link"></span></a>Troubleshooting</h2>
+<h4>
+<a id="adding-a-mirror" class="anchor" href="#adding-a-mirror" aria-hidden="true"><span class="octicon octicon-link"></span></a>Adding a mirror</h4>
 
-<p>Check <a href="http://github.com/realityforge/braid/wikis/troubleshooting">Troubleshooting</a> if you're having issues.</p>
+<pre><code>braid add git://github.com/rails/rails.git vendor/rails
+</code></pre>
+
+<h4>
+<a id="adding-mirrors-with-revisions" class="anchor" href="#adding-mirrors-with-revisions" aria-hidden="true"><span class="octicon octicon-link"></span></a>Adding mirrors with revisions</h4>
+
+<pre><code>braid add --revision bf1b1e0 git://github.com/rails/rails.git vendor/rails
+</code></pre>
+
+<h4>
+<a id="adding-mirrors-with-full-history" class="anchor" href="#adding-mirrors-with-full-history" aria-hidden="true"><span class="octicon octicon-link"></span></a>Adding mirrors with full history</h4>
+
+<pre><code>braid add --full git://github.com/mislav/will_paginate.git vendor/plugins/will_paginate
+</code></pre>
+
+<h4>
+<a id="updating-mirrors" class="anchor" href="#updating-mirrors" aria-hidden="true"><span class="octicon octicon-link"></span></a>Updating mirrors</h4>
+
+<pre><code># Update a specific mirror
+braid update vendor/plugins/cache_fu
+# Update all mirrors
+braid update
+</code></pre>
+
+<h4>
+<a id="updating-mirrors-with-conflicts" class="anchor" href="#updating-mirrors-with-conflicts" aria-hidden="true"><span class="octicon octicon-link"></span></a>Updating mirrors with conflicts</h4>
+
+<p>If a braid update creates a conflict, braid will stop execution and leave the partially committed
+files in your working copy, just like a normal git merge conflict would.</p>
+
+<p>You will then have to resolve all conflicts and manually run <code>git commit</code>. The commit message is
+already prepared.</p>
+
+<p>If you want to cancel the braid update and the merge, you'll have to reset your working copy and
+index with <code>git reset --hard</code>.</p>
+
+<h4>
+<a id="locking-and-unlocking-mirrors" class="anchor" href="#locking-and-unlocking-mirrors" aria-hidden="true"><span class="octicon octicon-link"></span></a>Locking and unlocking mirrors</h4>
+
+<pre><code>braid update --revision 6c1c16b vendor/rails
+braid update --head vendor/rails
+</code></pre>
+
+<h4>
+<a id="showing-local-changes-made-to-mirrors" class="anchor" href="#showing-local-changes-made-to-mirrors" aria-hidden="true"><span class="octicon octicon-link"></span></a>Showing local changes made to mirrors</h4>
+
+<pre><code>braid diff vendor/rails
+</code></pre>
 
 <h1>
 <a id="credit" class="anchor" href="#credit" aria-hidden="true"><span class="octicon octicon-link"></span></a>Credit</h1>
@@ -187,9 +200,12 @@ and bugs are courtesy of Peter Donald.</p>
 <ul>
 <li>Alan Harper</li>
 <li>Christoph Sturm</li>
+<li>Cristi Balan (Original Author)</li>
 <li>Dennis Muhlestein</li>
 <li>Ferdinand Svehla</li>
 <li>Michael Klishin</li>
+<li>Norbert Crombach (Original Author)</li>
+<li>Peter Donald (Current Maintainer)</li>
 <li>Roman Heinrich</li>
 <li>Travis Tilley</li>
 <li>Tyler Rick</li>
