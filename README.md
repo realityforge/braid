@@ -1,7 +1,11 @@
 # Braid
 
+[![Build Status](https://secure.travis-ci.org/realityforge/braid.png?branch=master)](http://travis-ci.org/realityforge/braid)
+
 Braid is a simple tool to help track vendor branches in a
 [Git](http://git-scm.com/) repository.
+
+The project homepage is [here](http://realityforge.github.io/braid).
 
 ## Motivation
 
@@ -135,6 +139,12 @@ submit an issue or pull request on GitHub.
 While preparing to release Braid v1.0 the support for subversion repositories was removed as
 there was no active maintainers and inadequate test coverage. If there is anyone motivated to
 re-add and maintain the Subversion support, please contact the authors.
+
+# Credit
+
+This tool is a downstream evolution of a identically named tool initially developed by Cristi Balan (evilchelu)
+and Norbert Crombach (norbert). All credit goes to the original for the initial code and idea. Further maintenance
+and bugs are courtesy of Peter Donald.
 
 # Authors
 
