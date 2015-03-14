@@ -3,14 +3,14 @@ $:.push File.expand_path("../lib", __FILE__)
 require 'braid/version'
 
 Gem::Specification.new do |s|
-  s.name               = %q{braid}
+  s.name               = %q{realityforge-braid}
   s.version            = Braid::VERSION
   s.platform           = Gem::Platform::RUBY
 
   s.authors            = ['Cristi Balan', 'Norbert Crombach', 'Peter Donald']
   s.email              = %q{evil@che.lu norbert.crombach@primetheory.org peter@realityforge.org}
 
-  s.homepage           = %q{https://github.com/cristibalan/braid}
+  s.homepage           = %q{https://github.com/realityforge/braid}
   s.summary            = %q{A simple tool for tracking vendor branches in git.}
   s.description        = %q{A simple tool for tracking vendor branches in git.}
 
