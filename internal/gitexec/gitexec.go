@@ -288,6 +288,14 @@ func (g Git) Diff(ctx context.Context, args ...string) (string, error) {
 	return result.Stdout, nil
 }
 
+func (g Git) LsFiles(ctx context.Context, path string) (string, error) {
+	result, err := g.RunOK(ctx, "ls-files", "--", path)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
 	result, err := r.Run(ctx, args...)
 	if err != nil {

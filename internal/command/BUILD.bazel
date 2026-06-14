@@ -8,6 +8,7 @@ go_library(
         "diff.go",
         "preflight.go",
         "setup.go",
+        "status.go",
     ],
     importpath = "braid/internal/command",
     visibility = ["//visibility:public"],
@@ -27,6 +28,7 @@ go_test(
         "diff_test.go",
         "preflight_test.go",
         "setup_test.go",
+        "status_test.go",
     ],
     embed = [":command"],
     deps = [

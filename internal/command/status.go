@@ -1,0 +1,139 @@
+package command
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+
+	"braid/internal/cli"
+	"braid/internal/config"
+	"braid/internal/gitexec"
+	"braid/internal/mirror"
+)
+
+type StatusHandler struct {
+	Options Options
+}
+
+func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
+	ctx := context.Background()
+	if err := Preflight(ctx, cli.CommandStatus, inv, h.Options, stderr); err != nil {
+		return err
+	}
+
+	git := h.statusGit(inv, stderr)
+	cfg, err := config.Load(configRoot(h.Options))
+	if err != nil {
+		return err
+	}
+	if err := validateConfigPaths(cfg); err != nil {
+		return err
+	}
+	cache, err := runtimeCache(inv.Global)
+	if err != nil {
+		return err
+	}
+
+	if inv.Status.LocalPath != "" {
+		m, err := cfg.GetRequired(inv.Status.LocalPath)
+		if err != nil {
+			return err
+		}
+		return h.statusOne(ctx, git, cache, m, inv.Status, stdout, stderr)
+	}
+
+	for _, localPath := range cfg.Paths() {
+		if err := h.statusOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Status, stdout, stderr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h StatusHandler) statusGit(inv cli.Invocation, trace io.Writer) StatusGit {
+	if git, ok := h.Options.Git.(StatusGit); ok {
+		return git
+	}
+	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+}
+
+func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, options cli.StatusOptions, stdout, trace io.Writer) (err error) {
+	if cache.Enabled {
+		if err := fetchCache(ctx, cache, m.URL, options.Verbose, trace); err != nil {
+			return err
+		}
+	}
+	if err := setupOne(ctx, git, m, true, cache); err != nil {
+		return err
+	}
+	defer func() {
+		removeErr := git.RemoteRemove(ctx, m.Remote())
+		if err == nil {
+			err = removeErr
+		}
+	}()
+
+	if err := fetchMirror(ctx, git, m); err != nil {
+		return err
+	}
+	baseRevision, err := git.RevParse(ctx, m.Revision+"^{commit}")
+	if err != nil {
+		return err
+	}
+	newRevision, err := resolveAddRevision(ctx, git, m, "")
+	if err != nil {
+		return err
+	}
+
+	states := []string{}
+	if newRevision != baseRevision {
+		states = append(states, "Remote Modified")
+	}
+
+	files, err := git.LsFiles(ctx, m.Path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(files) == "" {
+		states = append(states, "Removed Locally")
+	} else {
+		modified, err := locallyModified(ctx, git, m)
+		if err != nil {
+			return err
+		}
+		if modified {
+			states = append(states, "Locally Modified")
+		}
+	}
+
+	fmt.Fprintf(stdout, "%s (%s) [%s]", m.Path, baseRevision, trackingLabel(m))
+	for _, state := range states {
+		fmt.Fprintf(stdout, " (%s)", state)
+	}
+	fmt.Fprintln(stdout)
+	return nil
+}
+
+func trackingLabel(m mirror.Mirror) string {
+	switch {
+	case m.Locked():
+		return "REVISION LOCKED"
+	case m.Tag != "":
+		return "TAG=" + m.Tag
+	default:
+		return "BRANCH=" + m.Branch
+	}
+}
+
+func locallyModified(ctx context.Context, git StatusGit, m mirror.Mirror) (bool, error) {
+	args, err := buildDiffArgs(ctx, git, m, nil)
+	if err != nil {
+		return false, err
+	}
+	out, err := git.Diff(ctx, args...)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
