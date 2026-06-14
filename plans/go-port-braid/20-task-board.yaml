@@ -1,0 +1,401 @@
+meta:
+  project: go-port-braid
+  status: review
+  last_updated: 2026-06-14
+  required_full_gates:
+    - bazel test //...
+    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: T01
+
+tasks:
+  - id: T01
+    title: Planning artifacts and decision resolution
+    status: in_progress
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Requirements, implementation plan, task board, compatibility matrix, and test strategy exist.
+      - Open Questions Register contains stable Q-* IDs.
+      - Each Q-* is resolved one at a time with the user.
+      - User explicitly reviews and accepts the final plan.
+    files_touched:
+      - plans/go-port-braid/**
+    evidence:
+      - command: sed -n '1,260p' /Users/peter/.codex/skills/structured-delivery-workflow/SKILL.md
+        result: pass
+      - command: sed -n '1,220p' /Users/peter/.codex/skills/grill-me/SKILL.md
+        result: pass
+      - command: find /Users/peter/Code/braid2 -maxdepth 3 -type d -name plans -print
+        result: pass
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T02
+    title: Bazel and Go scaffold
+    status: pending
+    priority: high
+    depends_on: [T01]
+    acceptance_criteria:
+      - Bzlmod root exists and pins rules_go and Go SDK.
+      - //cmd/braid:braid builds.
+      - braid version runs under bazel.
+      - bazel test //... passes.
+    files_touched:
+      - MODULE.bazel
+      - MODULE.bazel.lock
+      - .bazelrc
+      - BUILD.bazel
+      - cmd/braid/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T03
+    title: CLI parser and command dispatch
+    status: pending
+    priority: high
+    depends_on: [T02]
+    acceptance_criteria:
+      - All planned commands parse expected arguments and flags.
+      - Global --no-cache and --cache-dir flags parse only before the command.
+      - Invalid usage returns deterministic non-zero errors.
+      - Help text is clear, idiomatic Go CLI text and not constrained by Ruby wording.
+      - Parser tests cover unknown commands, extra args, and diff passthrough after --.
+    files_touched:
+      - internal/cli/**
+      - cmd/braid/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T04
+    title: Git subprocess runner and wrappers
+    status: pending
+    priority: high
+    depends_on: [T02]
+    acceptance_criteria:
+      - Git runner uses argv arrays and never invokes a shell.
+      - Environment overrides are scoped per command.
+      - Verbose output is deterministic.
+      - Unit tests cover stdout/stderr/status mapping and command construction.
+    files_touched:
+      - internal/gitexec/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T05
+    title: Modern config and mirror model
+    status: pending
+    priority: high
+    depends_on: [T03, T04]
+    acceptance_criteria:
+      - Valid modern .braids.json loads and validates.
+      - Config writes stable pretty JSON with expected field ordering.
+      - Legacy .braids/YAML reports unsupported diagnostics.
+      - Mirror branch/tag/revision/path behavior is covered by unit tests.
+    files_touched:
+      - internal/config/**
+      - internal/mirror/**
+      - testdata/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T06
+    title: Path validation and repository preflight
+    status: pending
+    priority: high
+    depends_on: [T04, T05]
+    acceptance_criteria:
+      - Tool refuses to run outside a Git worktree root.
+      - Future subdirectory execution support is documented outside v1 scope.
+      - Unsafe mirror paths are rejected before Git mutations.
+      - Tests cover absolute paths, empty paths, dot paths, parent traversal, .git paths, spaces, and platform separators.
+    files_touched:
+      - internal/pathcheck/**
+      - internal/command/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T07
+    title: Fixture and integration test harness
+    status: pending
+    priority: high
+    depends_on: [T02, T04, T05]
+    acceptance_criteria:
+      - Tests can create hermetic Git repositories with configured user identity.
+      - Fixtures are Go-owned or explicitly referenced by plan decision.
+      - Harness supports native OS differences without shell-dependent quoting.
+      - At least one migration-only Ruby oracle characterization flow runs.
+      - Final required gates do not depend on Ruby.
+    files_touched:
+      - internal/testutil/**
+      - testdata/fixtures/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T08
+    title: setup command and remote lifecycle
+    status: pending
+    priority: high
+    depends_on: [T03, T04, T05, T07]
+    acceptance_criteria:
+      - setup creates, reuses, replaces, and removes remotes according to policy.
+      - Cache is enabled by default and follows Q-05 and Q-10.
+      - Integration tests cover one mirror and all mirrors.
+    files_touched:
+      - internal/command/**
+      - internal/mirror/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T09
+    title: add command
+    status: pending
+    priority: high
+    depends_on: [T06, T07, T08]
+    acceptance_criteria:
+      - add works for branch, default branch, tag, revision, subdirectory, path with spaces, and single-file mirror.
+      - Config and Git side effects match approved behavior policy.
+      - Failure paths leave the repo clean or reset to original HEAD.
+    files_touched:
+      - internal/command/**
+      - internal/mirror/**
+      - testdata/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T10
+    title: diff command
+    status: pending
+    priority: high
+    depends_on: [T07, T08, T09]
+    acceptance_criteria:
+      - diff works for all mirrors and one mirror.
+      - -- passthrough works without shell interpolation.
+      - Single-file mirror diff prefixes match approved parity policy.
+      - Tests cover staged, unstaged, reverse, path-limited, and missing-base-revision fetch cases.
+    files_touched:
+      - internal/command/**
+      - internal/mirror/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T11
+    title: status command
+    status: pending
+    priority: medium
+    depends_on: [T07, T08, T09, T10]
+    acceptance_criteria:
+      - status identifies clean, remote modified, locally modified, and removed locally states.
+      - Tests cover branch, tag, revision-locked, subdirectory, and paths with spaces.
+    files_touched:
+      - internal/command/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T12
+    title: update command
+    status: pending
+    priority: high
+    depends_on: [T07, T08, T09, T10]
+    acceptance_criteria:
+      - update works for branch, tag, revision, subdirectory, path with spaces, and single-file mirror.
+      - Conflict behavior leaves resolvable files and merge message.
+      - Already-up-to-date paths do not create unnecessary commits.
+      - Tests cover switching tracking strategy.
+    files_touched:
+      - internal/command/**
+      - internal/mirror/**
+      - internal/gitexec/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T13
+    title: remove command
+    status: pending
+    priority: medium
+    depends_on: [T07, T08, T09]
+    acceptance_criteria:
+      - remove deletes mirrored content and config.
+      - --keep preserves remote according to policy.
+      - Tests cover directory, subdirectory, path with spaces, and single-file mirror.
+    files_touched:
+      - internal/command/**
+      - internal/config/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T14
+    title: push command
+    status: pending
+    priority: high
+    depends_on: [T07, T08, T09, T10, T12]
+    acceptance_criteria:
+      - push works for branch, explicit branch, subdirectory, path with spaces, single-file mirror, and tag-with-explicit-branch.
+      - push rejects tag without branch.
+      - push stops when mirror is not up to date or has no local changes.
+      - Tests cover filter/sparse-checkout behavior if Git minimum requires it.
+    files_touched:
+      - internal/command/**
+      - internal/gitexec/**
+      - internal/mirror/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T15
+    title: Removed-command and unsupported legacy-config diagnostics
+    status: pending
+    priority: medium
+    depends_on: [T03, T05]
+    acceptance_criteria:
+      - upgrade-config is treated as an unknown command.
+      - Tests cover unknown-command behavior.
+      - Tests cover unsupported legacy config through normal config loading paths.
+    files_touched:
+      - internal/cli/**
+      - internal/config/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T16
+    title: Cross-platform tests and release builds
+    status: pending
+    priority: high
+    depends_on: [T09, T10, T11, T12, T13, T14, T15]
+    acceptance_criteria:
+      - Bazel builds all approved release targets.
+      - Raw binary and checksum artifact process is documented.
+      - Manual signing/notarization path is documented.
+      - Native smoke tests are documented for supported OSes.
+      - Windows/macOS/Linux path and process issues are covered by tests.
+    files_touched:
+      - .bazelrc
+      - plans/go-port-braid/**
+      - testdata/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T17
+    title: Documentation and migration notes
+    status: pending
+    priority: medium
+    depends_on: [T15, T16]
+    acceptance_criteria:
+      - README documents install/build/test/release commands.
+      - Migration notes document modern config support and intentional divergences.
+      - Release notes document raw binaries, checksums, and manual signing/notarization path.
+      - Contributor notes describe test strategy and Git assumptions.
+    files_touched:
+      - README.md
+      - docs/**
+      - plans/go-port-braid/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T18
+    title: Final gates and closeout
+    status: pending
+    priority: high
+    depends_on: [T17]
+    acceptance_criteria:
+      - Required full gates pass.
+      - No pending tasks remain for accepted scope.
+      - No completed task has pending commit metadata.
+      - Final compatibility matrix and test strategy match implemented behavior.
+    files_touched:
+      - plans/go-port-braid/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+history:
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Created initial draft planning structure; awaiting Q-01 decision.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-01 as target set A and updated gates/release matrix.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-02 as current-package-manager Git policy and added Q-09 for exact version floor.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-09 as Git 2.43.0 minimum and updated compatibility notes.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-03 by removing upgrade-config from the implemented command surface.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-04 as behavior-only output parity with new idiomatic help/messages.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-05 as cache-on-by-default with env defaults preserved; added Q-10 for CLI flag names.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-10 as global pre-command --no-cache and --cache-dir flags.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-06 as migration-only Ruby oracle tests with Go/Bazel-only final gates.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-07 as raw binaries/checksums plus documented manual signing path.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Resolved Q-08 as root-only v1 with subdirectory execution as a future enhancement.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: All open questions resolved; plan submitted for user review and explicit approval.
