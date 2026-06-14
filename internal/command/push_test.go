@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,32 @@ func TestPushCommandPathVariants(t *testing.T) {
 			assertFile(t, upstream, test.remoteFile, "changed\n")
 		})
 	}
+}
+
+func TestPushCommandWorksWithDefaultWorkDir(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(repo)
+
+	var stdout, stderr bytes.Buffer
+	if code := NewApp().Run([]string{"add", upstream, "vendor/basic"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("braid add exit = %d, stderr = %q", code, stderr.String())
+	}
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "default workdir\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	t.Setenv("GIT_EDITOR", writeEditor(t, "Push from default workdir"))
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := NewApp().Run([]string{"push", "vendor/basic"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("braid push exit = %d, stderr = %q", code, stderr.String())
+	}
+	assertFile(t, upstream, "README.md", "default workdir\n")
 }
 
 func TestPushCommandTagRequiresExplicitBranchAndSupportsNoCache(t *testing.T) {
@@ -230,6 +257,26 @@ func TestPushCommandSparseCheckoutAvoidsRequiredFilter(t *testing.T) {
 	got := testutil.Git(t, upstream, "show", "filtered-output:data.dat").Stdout
 	if got != "changed\n" {
 		t.Fatalf("filtered-output:data.dat = %q", got)
+	}
+}
+
+func TestAlternateObjectPathUsesAbsoluteSlashPath(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+
+	got, err := alternateObjectPath(filepath.Join(".git", "objects"), ".")
+	if err != nil {
+		t.Fatalf("alternateObjectPath returned error: %v", err)
+	}
+	want := filepath.ToSlash(filepath.Join(repo, ".git", "objects"))
+	if got != want {
+		t.Fatalf("alternate path = %q, want %q", got, want)
+	}
+}
+
+func TestAlternateObjectPathRejectsEmptyPath(t *testing.T) {
+	if _, err := alternateObjectPath("", "."); err == nil {
+		t.Fatal("alternateObjectPath succeeded with empty objects path")
 	}
 }
 

@@ -181,12 +181,24 @@ func writeAlternates(ctx context.Context, source PushGit, tempDir, sourceWorkDir
 	if err != nil {
 		return err
 	}
-	if !filepath.IsAbs(objectsPath) {
-		objectsPath = filepath.Join(sourceWorkDir, objectsPath)
-	}
-	if objectsPath == "" {
-		return errors.New("could not resolve git objects path")
+	objectsPath, err = alternateObjectPath(objectsPath, sourceWorkDir)
+	if err != nil {
+		return err
 	}
 	alternates := filepath.Join(tempDir, ".git", "objects", "info", "alternates")
 	return os.WriteFile(alternates, []byte(objectsPath+"\n"), 0o644)
+}
+
+func alternateObjectPath(objectsPath, sourceWorkDir string) (string, error) {
+	if objectsPath == "" {
+		return "", errors.New("could not resolve git objects path")
+	}
+	if !filepath.IsAbs(objectsPath) {
+		objectsPath = filepath.Join(sourceWorkDir, objectsPath)
+	}
+	absolutePath, err := filepath.Abs(objectsPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(absolutePath), nil
 }
