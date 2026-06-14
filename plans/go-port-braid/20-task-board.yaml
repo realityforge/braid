@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T14
+current_focus: T16
 
 tasks:
   - id: T01
@@ -579,12 +579,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
+      hash: 08aeec8
       message: "feat(push): publish local mirror changes upstream"
 
   - id: T15
     title: Removed-command and unsupported legacy-config diagnostics
-    status: in_progress
+    status: completed
     priority: medium
     depends_on: [T03, T05]
     acceptance_criteria:
@@ -593,15 +593,32 @@ tasks:
       - Tests cover unsupported legacy config through normal config loading paths.
     files_touched:
       - internal/cli/**
+      - internal/command/**
       - internal/config/**
-    evidence: []
+    evidence:
+      - command: bazel run @rules_go//go -- fmt internal/command/preflight_test.go
+        result: pass
+      - command: bazel test //internal/cli:cli_test //internal/config:config_test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
-      message: pending
+      message: "test(compat): verify removed legacy config paths"
 
   - id: T16
     title: Cross-platform tests and release builds
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T09, T10, T11, T12, T13, T14, T15]
     acceptance_criteria:
@@ -780,5 +797,9 @@ history:
     note: remove command completed for content/config deletion, remote cleanup, --keep, commit metadata, directory, subdirectory, path-with-spaces, and single-file coverage; full corrected gates pass.
   - timestamp: 2026-06-14T06:07:10Z
     task: T14
-    commit: pending
+    commit: 08aeec8
     note: push command completed for branch, explicit branch, tag with explicit branch/no-cache, path variants, up-to-date and no-change stops, identity/signing config, editor cancellation, and sparse-checkout required-filter coverage; full corrected gates pass.
+  - timestamp: 2026-06-14T06:11:08Z
+    task: T15
+    commit: pending
+    note: removed upgrade-config behavior and unsupported legacy .braids diagnostics are covered by parser, config loader, and command preflight tests; full corrected gates pass.

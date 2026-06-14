@@ -118,6 +118,23 @@ func TestLegacyConfigRejectedEvenWhenCommandDoesNotRequireConfig(t *testing.T) {
 	}
 }
 
+func TestLegacyConfigRejectedForConfigRequiredCommand(t *testing.T) {
+	root := configRootWithModernConfig(t)
+	if err := os.WriteFile(filepath.Join(root, ".braids"), []byte("legacy"), 0o644); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true}, ConfigRoot: root})
+	var stdout, stderr bytes.Buffer
+	code := app.Run([]string{"status"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "legacy .braids config is unsupported") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestCleanWorktreeRequirements(t *testing.T) {
 	root := configRootWithModernConfig(t)
 	git := &fakeGit{inside: true, status: " M file\n"}
