@@ -1,6 +1,6 @@
 # Test Strategy
 
-Status: accepted
+Status: completed
 Last updated: 2026-06-14
 
 ## Test Philosophy
@@ -151,7 +151,7 @@ This can become a full gate after the Bazel/Go scaffold proves stable.
 
 ## Required Full Gates
 
-Draft full gate:
+Required full gate:
 
 ```bash
 bazel test //...

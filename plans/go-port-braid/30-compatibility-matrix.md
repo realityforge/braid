@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Status: accepted
+Status: completed
 Last updated: 2026-06-14
 
 ## Compatibility Policy
@@ -9,7 +9,7 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 
 ## Runtime Dependencies
 
-| Dependency | Ruby Braid | Go Port Draft |
+| Dependency | Ruby Braid | Go Port |
 |---|---|---|
 | Ruby runtime | Required | Not required |
 | Go runtime | Not applicable | Not required on target |
@@ -20,7 +20,7 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 
 ## Command Compatibility
 
-| Command | Draft compatibility target | Notes |
+| Command | Compatibility target | Notes |
 |---|---|---|
 | `add` | High | Preserve branch/tag/revision/path/single-file behavior. |
 | `update` | High | Preserve merge/conflict semantics; Git minimum may simplify internals. |
@@ -34,7 +34,7 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 
 ## Config Compatibility
 
-| Scenario | Draft behavior |
+| Scenario | Behavior |
 |---|---|
 | Valid config version 1 with mirrors | Load, validate, operate, write stable JSON. |
 | Future config version | Fail with clear "too old to understand" style diagnostic. |

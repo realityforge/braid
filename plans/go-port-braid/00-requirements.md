@@ -1,6 +1,6 @@
 # Go Port Requirements
 
-Status: accepted
+Status: completed
 Last updated: 2026-06-14
 
 ## Mission

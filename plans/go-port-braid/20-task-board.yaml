@@ -1,6 +1,6 @@
 meta:
   project: go-port-braid
-  status: accepted
+  status: completed
   last_updated: 2026-06-14
   required_full_gates:
     - bazel test //...
@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T18
+current_focus: none
 
 tasks:
   - id: T01
@@ -700,12 +700,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
+      hash: f632c7a
       message: "docs: add Go port usage and migration notes"
 
   - id: T18
     title: Final gates and closeout
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T17]
     acceptance_criteria:
@@ -716,10 +716,26 @@ tasks:
       - Final compatibility matrix and test strategy match implemented behavior.
     files_touched:
       - plans/go-port-braid/**
-    evidence: []
+    evidence:
+      - command: '! rg -n "Status: accepted|Go Port Draft|Draft full gate|Native smoke-test commands will be finalized" plans/go-port-braid'
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
+      - command: native release smoke evidence
+        result: not_applicable - no release is being cut in this implementation task; docs/release.md defines the required native smoke matrix for a release cut.
     commit:
       hash: pending
-      message: pending
+      message: "chore(plan): close Go port implementation"
 
 history:
   - timestamp: 2026-06-14
@@ -856,5 +872,9 @@ history:
     note: release build documentation now covers raw binary and checksum artifacts, manual macOS signing/notarization, fixed native runner labels, and Linux/macOS/Windows native smoke commands; path/process tests and full corrected gates pass.
   - timestamp: 2026-06-14T06:20:14Z
     task: T17
-    commit: pending
+    commit: f632c7a
     note: README, migration notes, contributor notes, and first Go port release notes now document install/build/test/release commands, modern config support, intentional divergences, raw binary/checksum/manual signing release policy, test strategy, and Git assumptions; full corrected gates pass.
+  - timestamp: 2026-06-14T06:23:46Z
+    task: T18
+    commit: pending
+    note: final plan labels, compatibility matrix, and test strategy were aligned with the implemented port; native release smoke is not applicable because no release is being cut; final corrected gates pass.

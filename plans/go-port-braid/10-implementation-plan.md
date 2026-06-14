@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Status: accepted
+Status: completed
 Last updated: 2026-06-14
 
 The user approved this reviewed plan for implementation on 2026-06-14 by requesting the Go+Bazel port proceed from the reviewed plan.
@@ -50,7 +50,7 @@ testdata/
 plans/go-port-braid/
 ```
 
-## Draft Toolchain Baseline
+## Toolchain Baseline
 
 - Bazel dependency mode: Bzlmod.
 - Go rule set: `rules_go` 0.61.1, current in Bazel Central Registry when checked on 2026-06-14.

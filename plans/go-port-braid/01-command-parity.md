@@ -1,6 +1,6 @@
 # Command Parity Deep Dive
 
-Status: accepted
+Status: completed
 Last updated: 2026-06-14
 
 ## Feature
