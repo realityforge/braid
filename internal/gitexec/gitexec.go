@@ -331,6 +331,7 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 	tempGit.Runner.Env["GIT_INDEX_FILE"] = filepath.Join(dir, "index")
 
 	if mainContent != "" && itemPath != "" {
+		// Use a temporary index to compose synthetic trees without disturbing the caller's index.
 		if err := tempGit.ReadTreeIndexMerge(ctx, mainContent); err != nil {
 			return "", err
 		}
@@ -360,6 +361,7 @@ func (g Git) MergeTrees(ctx context.Context, env map[string]string, baseTreeish,
 		mergeGit.Runner.Env[key] = value
 	}
 
+	// merge-recursive gives Braid a three-way tree merge without checking out either synthetic tree.
 	result, runErr := mergeGit.Run(ctx, "merge-recursive", baseTreeish, "--", localTreeish, remoteTreeish)
 	if runErr != nil {
 		return result.Stdout, runErr

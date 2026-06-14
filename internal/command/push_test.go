@@ -131,6 +131,25 @@ func TestPushCommandTagRequiresExplicitBranchAndSupportsNoCache(t *testing.T) {
 	assertFile(t, upstream, "README.md", "tag pushed\n")
 }
 
+func TestPushCommandRevisionRequiresExplicitBranch(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	revision := testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/revision", "--revision", revision})
+	testutil.WriteFile(t, repo, "vendor/revision/README.md", "revision pushed\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	t.Setenv("GIT_EDITOR", writeEditor(t, "Push revision branch"))
+
+	stderr := runCommandError(t, repo, []string{"push", "vendor/revision"})
+	assertContains(t, stderr, "specify --branch")
+
+	runCommandOK(t, repo, []string{"push", "vendor/revision", "--branch", "revision-output"})
+	testutil.Git(t, upstream, "checkout", "revision-output")
+	assertFile(t, upstream, "README.md", "revision pushed\n")
+}
+
 func TestPushCommandStopsWhenNotUpToDateOrNoLocalChanges(t *testing.T) {
 	t.Run("not up to date", func(t *testing.T) {
 		upstream := testutil.InitRepo(t)

@@ -61,6 +61,80 @@ func TestDiffCommandAllMirrors(t *testing.T) {
 	assertContains(t, out, "two changed")
 }
 
+func TestDiffCommandMirrorVariants(t *testing.T) {
+	tests := []struct {
+		name      string
+		prepare   func(t *testing.T, upstream string) string
+		addArgs   func(upstream, revision string) []string
+		localPath string
+		localFile string
+		wantPath  string
+	}{
+		{
+			name: "tag",
+			prepare: func(t *testing.T, upstream string) string {
+				testutil.WriteFile(t, upstream, "README.md", "tag base\n")
+				revision := testutil.CommitAll(t, upstream, "tag base")
+				testutil.Git(t, upstream, "tag", "v1")
+				return revision
+			},
+			addArgs:   func(upstream, _ string) []string { return []string{"add", upstream, "vendor/tagged", "--tag", "v1"} },
+			localPath: "vendor/tagged",
+			localFile: "vendor/tagged/README.md",
+			wantPath:  "README.md",
+		},
+		{
+			name: "revision",
+			prepare: func(t *testing.T, upstream string) string {
+				testutil.WriteFile(t, upstream, "README.md", "revision base\n")
+				return testutil.CommitAll(t, upstream, "revision base")
+			},
+			addArgs: func(upstream, revision string) []string {
+				return []string{"add", upstream, "vendor/revision", "--revision", revision}
+			},
+			localPath: "vendor/revision",
+			localFile: "vendor/revision/README.md",
+			wantPath:  "README.md",
+		},
+		{
+			name: "subdirectory",
+			prepare: func(t *testing.T, upstream string) string {
+				testutil.WriteFile(t, upstream, "lib/component.txt", "subdir base\n")
+				return testutil.CommitAll(t, upstream, "subdir base")
+			},
+			addArgs:   func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			localPath: "vendor/lib",
+			localFile: "vendor/lib/component.txt",
+			wantPath:  "component.txt",
+		},
+		{
+			name: "path with spaces",
+			prepare: func(t *testing.T, upstream string) string {
+				testutil.WriteFile(t, upstream, "README.md", "spaces base\n")
+				return testutil.CommitAll(t, upstream, "spaces base")
+			},
+			addArgs:   func(upstream, _ string) []string { return []string{"add", upstream, "vendor/path with spaces"} },
+			localPath: "vendor/path with spaces",
+			localFile: "vendor/path with spaces/README.md",
+			wantPath:  "README.md",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			revision := test.prepare(t, upstream)
+			repo := initDownstream(t)
+			runCommandOK(t, repo, test.addArgs(upstream, revision))
+			testutil.WriteFile(t, repo, test.localFile, test.name+" changed\n")
+
+			out := runCommandOK(t, repo, []string{"diff", test.localPath})
+			assertContains(t, out, "diff --git a/"+test.wantPath+" b/"+test.wantPath)
+			assertContains(t, out, test.name+" changed")
+		})
+	}
+}
+
 func TestDiffCommandSingleFilePrefixes(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "LICENSE.txt", "license\n")

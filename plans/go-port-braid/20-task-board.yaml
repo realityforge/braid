@@ -392,7 +392,7 @@ tasks:
       - diff works for all mirrors and one mirror.
       - -- passthrough works without shell interpolation.
       - Single-file mirror diff prefixes match approved parity policy.
-      - Tests cover staged, unstaged, reverse, path-limited, and missing-base-revision fetch cases.
+      - Tests cover branch, tag, revision, subdirectory, path-with-spaces, single-file, staged, unstaged, reverse, path-limited, and missing-base-revision fetch cases.
     files_touched:
       - internal/command/**
       - internal/gitexec/**
@@ -416,6 +416,8 @@ tasks:
         result: pass
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
+      - command: bazel test //internal/command:command_test
+        result: pass; implementation-review coverage added for diff tag, revision, subdirectory, and path-with-spaces variants.
     commit:
       hash: b88878f
       message: "feat(diff): compare mirrors against recorded revisions"
@@ -544,9 +546,9 @@ tasks:
     priority: high
     depends_on: [T07, T08, T09, T10, T12]
     acceptance_criteria:
-      - push works for branch, explicit branch, subdirectory, path with spaces, single-file mirror, and tag-with-explicit-branch.
+      - push works for branch, explicit branch, revision-with-explicit-branch, subdirectory, path with spaces, single-file mirror, and tag-with-explicit-branch.
       - push tag-with-explicit-branch works when cache is disabled.
-      - push rejects tag without branch.
+      - push rejects tag or revision mirrors without branch.
       - push stops when mirror is not up to date or has no local changes.
       - push preserves user.name, user.email, and commit.gpgsign behavior in the temp repo.
       - push cancellation/failure does not push and cleans up temporary resources where practical.
@@ -578,6 +580,8 @@ tasks:
         result: pass
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
+      - command: bazel test //internal/command:command_test
+        result: pass; implementation-review coverage added for revision-locked push rejection and explicit-branch push.
     commit:
       hash: 08aeec8
       message: "feat(push): publish local mirror changes upstream"
@@ -880,3 +884,7 @@ history:
     task: T18
     commit: 27c293f
     note: final plan labels, compatibility matrix, and test strategy were aligned with the implemented port; native release smoke is not applicable because no release is being cut; final corrected gates pass.
+  - timestamp: 2026-06-14
+    task: T18
+    commit: not_required
+    note: Iterative plan implementation review round 1 fixed command parity evidence gaps and added inline comments for non-obvious Git temp-index/temp-repo flows; targeted command/gitexec tests and full corrected gates pass.

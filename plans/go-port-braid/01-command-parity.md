@@ -120,12 +120,12 @@ Intentional divergences:
 
 ## Acceptance Criteria
 
-- [ ] Each command has focused CLI parser tests.
-- [ ] Each command has at least one real-Git integration test.
-- [ ] High-risk commands `add`, `update`, `diff`, and `push` have behavior/golden tests across branch, tag, revision, subdirectory, path-with-space, and single-file cases.
-- [ ] Error behavior is tested for invalid flags/arguments and unsafe paths.
-- [ ] Tests assert no command uses shell execution for Git.
-- [ ] User-approved divergences are documented in `30-compatibility-matrix.md`.
+- [x] Each command has focused CLI parser tests.
+- [x] Each command has at least one real-Git integration test.
+- [x] High-risk commands `add`, `update`, `diff`, and `push` have behavior/golden tests across branch, tag, revision, subdirectory, path-with-space, and single-file cases.
+- [x] Error behavior is tested for invalid flags/arguments and unsafe paths.
+- [x] Tests assert no command uses shell execution for Git.
+- [x] User-approved divergences are documented in `30-compatibility-matrix.md`.
 
 ## Open Questions
 

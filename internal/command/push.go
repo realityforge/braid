@@ -53,7 +53,7 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		branch = m.Branch
 	}
 	if branch == "" {
-		return fmt.Errorf("mirror is based off a tag; specify --branch to push %s", m.Path)
+		return fmt.Errorf("mirror has no tracked branch; specify --branch to push %s", m.Path)
 	}
 
 	cache, err := runtimeCache(inv.Global)
@@ -124,9 +124,11 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 	if err := tempGit.Init(ctx); err != nil {
 		return err
 	}
+	// Push is assembled in an isolated repository so the user's worktree and index stay untouched.
 	if err := copyLocalGitConfig(ctx, source, tempGit); err != nil {
 		return err
 	}
+	// Alternates let the temporary repository reuse already-fetched objects without copying packs.
 	if err := writeAlternates(ctx, source, tempDir, workDir(h.Options.WorkDir)); err != nil {
 		return err
 	}
@@ -140,6 +142,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 	if err := tempGit.ConfigSet(ctx, "--local", "core.sparsecheckout", "true"); err != nil {
 		return err
 	}
+	// An empty sparse-checkout avoids checking out files outside the mirror and running their filters.
 	if err := os.WriteFile(filepath.Join(tempDir, ".git", "info", "sparse-checkout"), nil, 0o644); err != nil {
 		return err
 	}
