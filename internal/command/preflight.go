@@ -28,6 +28,21 @@ type RemoteGit interface {
 	RemoteRemove(context.Context, string) error
 }
 
+type AddGit interface {
+	RemoteGit
+	Head(context.Context) (string, error)
+	RevParse(context.Context, string) (string, error)
+	LsRemote(context.Context, ...string) (string, error)
+	Fetch(context.Context, ...string) error
+	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
+	ReadTreePrefix(context.Context, string, string, bool) error
+	UpdateIndexCacheInfo(context.Context, string, string, string) error
+	CheckoutIndex(context.Context, string) error
+	Add(context.Context, string) error
+	CommitMessage(context.Context, string) (bool, error)
+	ResetHard(context.Context, string) error
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -56,7 +71,7 @@ func NewApp() cli.App {
 func NewAppWithOptions(options Options) cli.App {
 	app := cli.New()
 	app.Handler = map[cli.Command]cli.Handler{
-		cli.CommandAdd:    Handler{Command: cli.CommandAdd, Options: options},
+		cli.CommandAdd:    AddHandler{Options: options},
 		cli.CommandUpdate: Handler{Command: cli.CommandUpdate, Options: options},
 		cli.CommandRemove: Handler{Command: cli.CommandRemove, Options: options},
 		cli.CommandDiff:   Handler{Command: cli.CommandDiff, Options: options},

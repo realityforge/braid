@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "command",
     srcs = [
+        "add.go",
         "cache.go",
         "preflight.go",
         "setup.go",
@@ -21,6 +22,7 @@ go_library(
 go_test(
     name = "command_test",
     srcs = [
+        "add_test.go",
         "preflight_test.go",
         "setup_test.go",
     ],

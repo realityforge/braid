@@ -61,6 +61,12 @@ type Git struct {
 	Runner Runner
 }
 
+type TreeItem struct {
+	Mode string
+	Type string
+	Hash string
+}
+
 func New(workDir string, verbose bool, trace io.Writer) Git {
 	return Git{
 		Runner: Runner{
@@ -130,6 +136,10 @@ func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
 	return g.Output(ctx, "rev-parse", rev)
 }
 
+func (g Git) Head(ctx context.Context) (string, error) {
+	return g.RevParse(ctx, "HEAD")
+}
+
 func (g Git) StatusPorcelain(ctx context.Context) (string, error) {
 	result, err := g.RunOK(ctx, "status", "--porcelain")
 	if err != nil {
@@ -157,6 +167,89 @@ func (g Git) RemoteAdd(ctx context.Context, remote, url string) error {
 
 func (g Git) RemoteRemove(ctx context.Context, remote string) error {
 	_, err := g.RunOK(ctx, "remote", "rm", remote)
+	return err
+}
+
+func (g Git) Fetch(ctx context.Context, args ...string) error {
+	gitArgs := append([]string{"fetch"}, args...)
+	_, err := g.RunOK(ctx, gitArgs...)
+	return err
+}
+
+func (g Git) CloneMirror(ctx context.Context, url, dir string) error {
+	_, err := g.RunOK(ctx, "clone", "--mirror", url, dir)
+	return err
+}
+
+func (g Git) LsRemote(ctx context.Context, args ...string) (string, error) {
+	gitArgs := append([]string{"ls-remote"}, args...)
+	result, err := g.RunOK(ctx, gitArgs...)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
+func (g Git) LsTreeItem(ctx context.Context, treeish, path string) (TreeItem, error) {
+	out, err := g.Output(ctx, "ls-tree", treeish, path)
+	if err != nil {
+		return TreeItem{}, err
+	}
+	meta, _, ok := strings.Cut(out, "\t")
+	if !ok {
+		return TreeItem{}, fmt.Errorf("no tree item exists at %q in %s", path, treeish)
+	}
+	fields := strings.Fields(meta)
+	if len(fields) != 3 {
+		return TreeItem{}, fmt.Errorf("could not parse tree item %q", out)
+	}
+	item := TreeItem{Mode: fields[0], Type: fields[1], Hash: fields[2]}
+	if item.Type != "tree" && item.Type != "blob" {
+		return TreeItem{}, fmt.Errorf("tree item %q is %s, not tree or blob", path, item.Type)
+	}
+	return item, nil
+}
+
+func (g Git) ReadTreePrefix(ctx context.Context, prefix, treeish string, updateWorktree bool) error {
+	mode := "-i"
+	if updateWorktree {
+		mode = "-u"
+	}
+	_, err := g.RunOK(ctx, "read-tree", "--prefix="+prefix, mode, treeish)
+	return err
+}
+
+func (g Git) UpdateIndexCacheInfo(ctx context.Context, mode, hash, path string) error {
+	_, err := g.RunOK(ctx, "update-index", "--add", "--cacheinfo", mode+","+hash+","+path)
+	return err
+}
+
+func (g Git) CheckoutIndex(ctx context.Context, path string) error {
+	_, err := g.RunOK(ctx, "checkout-index", "--", path)
+	return err
+}
+
+func (g Git) Add(ctx context.Context, path string) error {
+	_, err := g.RunOK(ctx, "add", "--", path)
+	return err
+}
+
+func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
+	result, err := g.Run(ctx, "commit", "--no-verify", "-m", message)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode == 0 {
+		return true, nil
+	}
+	if strings.Contains(result.Stdout, "nothing") && strings.Contains(result.Stdout, "to commit") {
+		return false, nil
+	}
+	return false, &ExitError{Result: result}
+}
+
+func (g Git) ResetHard(ctx context.Context, target string) error {
+	_, err := g.RunOK(ctx, "reset", "--hard", target)
 	return err
 }
 
