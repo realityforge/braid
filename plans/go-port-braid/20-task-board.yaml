@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T07
+current_focus: T08
 
 tasks:
   - id: T01
@@ -263,12 +263,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 7b5d0a8
+      message: "feat(command): enforce preflight validation"
 
   - id: T07
     title: Fixture and integration test harness
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T02, T04, T05]
     acceptance_criteria:
@@ -280,14 +280,35 @@ tasks:
     files_touched:
       - internal/testutil/**
       - testdata/fixtures/**
-    evidence: []
+      - plans/go-port-braid/**
+    evidence:
+      - command: ruby --version
+        result: "pass; ruby 2.6.10p210 available for migration-only oracle tests"
+      - command: bazel test //internal/testutil:testutil_test
+        result: pass
+      - command: bazel test //internal/testutil:ruby_oracle_test
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/testutil/git.go internal/testutil/git_test.go internal/testutil/ruby_oracle_test.go
+        result: pass
+      - command: bazel test //...
+        result: "pass; 8 normal tests, manual Ruby oracle target excluded"
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T08
     title: setup command and remote lifecycle
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T03, T04, T05, T06, T07]
     acceptance_criteria:
@@ -586,5 +607,9 @@ history:
     note: Modern config and mirror model completed; focused tests and full corrected gates pass.
   - timestamp: 2026-06-14T05:10:14Z
     task: T06
-    commit: pending
+    commit: 7b5d0a8
     note: Path validation and repository preflight completed; focused tests and full corrected gates pass.
+  - timestamp: 2026-06-14T05:16:10Z
+    task: T07
+    commit: pending
+    note: Real-Git test harness, Go-owned fixtures, and manual Ruby oracle target completed; full corrected gates pass without Ruby oracle dependency.
