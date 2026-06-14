@@ -160,14 +160,23 @@ $bin = Resolve-Path ".\dist\braid-windows-amd64.exe"
 & $bin version
 
 $tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-$upstream = Join-Path $tmp.FullName "upstream"
+$upstream = Join-Path $tmp.FullName "upstream repo"
 $downstream = Join-Path $tmp.FullName "downstream"
+$mirror = "vendor/smoke path"
+$editor = Join-Path $tmp.FullName "editor.ps1"
+Set-Content -Path $editor -Value 'Set-Content -NoNewline -Path $args[0] -Value "Release smoke push"'
+$env:GIT_EDITOR = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$editor`""
 
 git init --initial-branch=main $upstream
 git -C $upstream config user.name "Braid Release Smoke"
 git -C $upstream config user.email "braid-release@example.invalid"
+git -C $upstream config commit.gpgsign false
+git -C $upstream config receive.denyCurrentBranch updateInstead
 Set-Content -NoNewline -Path (Join-Path $upstream "README.md") -Value "release smoke`n"
+New-Item -ItemType Directory -Path (Join-Path $upstream "folder with spaces")
+Set-Content -NoNewline -Path (Join-Path $upstream "folder with spaces\file.txt") -Value "spaces`n"
 git -C $upstream add README.md
+git -C $upstream add "folder with spaces/file.txt"
 git -C $upstream commit -m "seed upstream"
 
 git init --initial-branch=main $downstream
@@ -176,11 +185,28 @@ git -C $downstream config user.email "braid-release@example.invalid"
 git -C $downstream config commit.gpgsign false
 Push-Location $downstream
 try {
-  & $bin add $upstream vendor/smoke
-  if (-not (Test-Path "vendor\smoke\README.md")) {
-    throw "missing mirrored README"
+  & $bin add $upstream $mirror
+  if (-not (Test-Path "vendor\smoke path\folder with spaces\file.txt")) {
+    throw "missing mirrored file with spaces"
   }
-  & $bin status vendor/smoke
+  & $bin status "vendor\smoke path"
+  & $bin --no-cache status "vendor\smoke path"
+  & $bin diff "vendor\smoke path"
+
+  Set-Content -NoNewline -Path "vendor\smoke path\README.md" -Value "release smoke local`n"
+  git add "vendor/smoke path/README.md"
+  git commit -m "change mirrored content"
+  & $bin push "vendor\smoke path" --branch main
+  $pushed = Get-Content -Raw -Path (Join-Path $upstream "README.md")
+  if ($pushed -ne "release smoke local`n") {
+    throw "push did not update upstream"
+  }
+
+  & $bin update "vendor\smoke path"
+  & $bin remove "vendor\smoke path"
+  if (Test-Path "vendor\smoke path") {
+    throw "mirror path still exists after remove"
+  }
 } finally {
   Pop-Location
 }

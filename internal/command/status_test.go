@@ -65,6 +65,17 @@ func TestStatusCommandStates(t *testing.T) {
 	})
 }
 
+func TestStatusCommandNormalizesNativeLocalPathSelector(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	out := runCommandOK(t, repo, []string{"status", `vendor\basic`})
+	assertContains(t, out, "vendor/basic (")
+}
+
 func TestStatusCommandMirrorModes(t *testing.T) {
 	t.Run("tag", func(t *testing.T) {
 		upstream := testutil.InitRepo(t)

@@ -221,8 +221,9 @@ func (h UpdateHandler) writeMergeMessage(ctx context.Context, git UpdateGit, sub
 	if err != nil {
 		return err
 	}
-	if !filepath.IsAbs(mergeMsgPath) {
-		mergeMsgPath = filepath.Join(workDir(h.Options.WorkDir), mergeMsgPath)
+	mergeMsgPath, err = gitRepoOSPath(mergeMsgPath, workDir(h.Options.WorkDir))
+	if err != nil {
+		return err
 	}
 	return os.WriteFile(mergeMsgPath, []byte(subject+"\n"), 0o644)
 }

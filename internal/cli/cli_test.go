@@ -136,6 +136,55 @@ func TestParseUsageErrors(t *testing.T) {
 	}
 }
 
+func TestParseNormalizesLocalPathArguments(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "add explicit local path", args: []string{"add", "url", `vendor\repo`}, want: "vendor/repo"},
+		{name: "update selector", args: []string{"update", `vendor\repo`}, want: "vendor/repo"},
+		{name: "remove selector", args: []string{"remove", `vendor\repo`}, want: "vendor/repo"},
+		{name: "diff selector", args: []string{"diff", `vendor\repo`}, want: "vendor/repo"},
+		{name: "push selector", args: []string{"push", `vendor\repo`}, want: "vendor/repo"},
+		{name: "setup selector", args: []string{"setup", `vendor\repo`}, want: "vendor/repo"},
+		{name: "status selector", args: []string{"status", `vendor\repo`}, want: "vendor/repo"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := Parse(test.args)
+			if err != nil {
+				t.Fatalf("Parse returned error: %v", err)
+			}
+			if gotLocalPath(got) != test.want {
+				t.Fatalf("local path = %q, want %q", gotLocalPath(got), test.want)
+			}
+		})
+	}
+}
+
+func gotLocalPath(inv Invocation) string {
+	switch inv.Command {
+	case CommandAdd:
+		return inv.Add.LocalPath
+	case CommandUpdate:
+		return inv.Update.LocalPath
+	case CommandRemove:
+		return inv.Remove.LocalPath
+	case CommandDiff:
+		return inv.Diff.LocalPath
+	case CommandPush:
+		return inv.Push.LocalPath
+	case CommandSetup:
+		return inv.Setup.LocalPath
+	case CommandStatus:
+		return inv.Status.LocalPath
+	default:
+		return ""
+	}
+}
+
 func TestHelpParsing(t *testing.T) {
 	tests := []struct {
 		args        []string

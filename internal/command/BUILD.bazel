@@ -6,6 +6,7 @@ go_library(
         "add.go",
         "cache.go",
         "diff.go",
+        "path.go",
         "preflight.go",
         "push.go",
         "remove.go",
@@ -28,7 +29,9 @@ go_test(
     name = "command_test",
     srcs = [
         "add_test.go",
+        "cache_test.go",
         "diff_test.go",
+        "path_test.go",
         "preflight_test.go",
         "push_test.go",
         "remove_test.go",

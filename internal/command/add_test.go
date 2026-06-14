@@ -32,6 +32,21 @@ func TestAddCommandDefaultBranchCommitsAndRemovesRemote(t *testing.T) {
 	assertClean(t, repo)
 }
 
+func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "native path\n")
+	revision := testutil.CommitAll(t, upstream, "upstream")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, `vendor\native`})
+
+	assertFile(t, repo, "vendor/native/README.md", "native path\n")
+	m := loadMirror(t, repo, "vendor/native")
+	if m.Path != "vendor/native" || m.Revision != revision {
+		t.Fatalf("mirror = %#v, want normalized path at %s", m, revision)
+	}
+}
+
 func TestAddCommandMirrorVariants(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -229,6 +244,7 @@ func initDownstream(t *testing.T) string {
 func runCommandOK(t *testing.T, repo string, args []string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run(args, &stdout, &stderr)
@@ -241,6 +257,7 @@ func runCommandOK(t *testing.T, repo string, args []string) string {
 func runCommandError(t *testing.T, repo string, args []string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run(args, &stdout, &stderr)

@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -190,13 +189,7 @@ func writeAlternates(ctx context.Context, source PushGit, tempDir, sourceWorkDir
 }
 
 func alternateObjectPath(objectsPath, sourceWorkDir string) (string, error) {
-	if objectsPath == "" {
-		return "", errors.New("could not resolve git objects path")
-	}
-	if !filepath.IsAbs(objectsPath) {
-		objectsPath = filepath.Join(sourceWorkDir, objectsPath)
-	}
-	absolutePath, err := filepath.Abs(objectsPath)
+	absolutePath, err := gitRepoOSPath(objectsPath, sourceWorkDir)
 	if err != nil {
 		return "", err
 	}

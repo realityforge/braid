@@ -62,6 +62,22 @@ Commands:
 - `remove`: remove mirrored content and config.
 - `version`: print the Braid version.
 
+Mirror paths stored in `.braids.json` always use `/` separators. CLI mirror
+path arguments may use `/` or `\`; Braid normalizes them before config lookup.
+The `--path` option is an upstream Git path and should use Git's `/`
+separator. When adding from a local Windows repository path such as
+`C:\src\upstream.git`, Braid keeps that original upstream value for Git and
+derives the default mirror path from the repository basename.
+
+The local cache is enabled by default. Without overrides, Braid stores it under
+the OS user cache directory with a `braid` child directory. Use
+`BRAID_LOCAL_CACHE_DIR` or `--cache-dir` to choose a location, and use
+`BRAID_USE_LOCAL_CACHE=false` or `--no-cache` to disable it.
+
+Braid validates configured mirror paths for cross-platform safety. It does not
+preflight every file inside the selected upstream tree; if an upstream filename
+cannot be materialized on the current OS, Git reports the checkout failure.
+
 ## Build And Test
 
 ```bash

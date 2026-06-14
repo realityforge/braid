@@ -142,7 +142,7 @@ Native release smoke matrix:
 
 | Input | Behavior |
 |---|---|
-| No env vars and no flags | Cache enabled at default `~/.braid/cache`. |
+| No env vars and no flags | Cache enabled under the OS user cache directory, in a `braid` child directory. If the OS cache directory is unavailable, fall back to `~/.braid/cache` when a home directory is available. |
 | `BRAID_USE_LOCAL_CACHE` unset, `true`, or `1` | Cache enabled. |
 | `BRAID_USE_LOCAL_CACHE` any other value | Cache disabled unless `--cache-dir` is supplied and `--no-cache` is not supplied. |
 | `BRAID_LOCAL_CACHE_DIR` set | Use the expanded value as the default cache directory. |
@@ -151,6 +151,7 @@ Native release smoke matrix:
 | Both `--no-cache` and `--cache-dir` | Invalid usage. |
 | Empty cache directory value | Invalid usage. |
 | Relative cache directory value | Resolve relative to the current process working directory and store the absolute path in runtime state. |
+| Cache URL key | Use a deterministic filesystem-safe hash directory name for each upstream URL. |
 | Tag and annotated-tag mirrors with cache disabled | Must still resolve tags using ordinary Git remotes; cache disabled must not make supported mirror modes fail. |
 
 ## Path Validation Contract
@@ -169,6 +170,10 @@ Local mirror paths and upstream `--path` values are validated separately. Local 
 | Case-fold collision with an existing mirror path | reject | not applicable | Avoid ambiguous mirrors on case-insensitive filesystems. |
 
 Remote names generated from mirror paths must be collision-checked before mutation. If two mirror paths normalize to the same remote name, the command must fail with a clear diagnostic.
+
+CLI local mirror path arguments are normalized from `\` to `/` before they are
+validated or used for config lookup. Persisted `.braids.json` paths remain
+slash-separated and must still pass the portable path validation contract above.
 
 ## Commit And Push Metadata Contract
 

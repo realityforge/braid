@@ -21,6 +21,8 @@ func TestResolveCacheContract(t *testing.T) {
 	}
 	cwd := filepath.Join(string(filepath.Separator), "work")
 	home := filepath.Join(string(filepath.Separator), "home")
+	userCache := filepath.Join(string(filepath.Separator), "user-cache")
+	withUserCacheDir(t, userCache, nil)
 
 	tests := []struct {
 		name    string
@@ -29,9 +31,9 @@ func TestResolveCacheContract(t *testing.T) {
 		want    CacheConfig
 		wantErr string
 	}{
-		{name: "default enabled", env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: true, Dir: filepath.Join(home, ".braid", "cache")}},
-		{name: "env true", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "true"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(home, ".braid", "cache")}},
-		{name: "env one", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "1"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(home, ".braid", "cache")}},
+		{name: "default enabled", env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
+		{name: "env true", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "true"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
+		{name: "env one", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "1"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
 		{name: "env disabled", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "false"}, want: CacheConfig{Enabled: false}},
 		{name: "env cache dir", env: map[string]string{"HOME": home, "BRAID_LOCAL_CACHE_DIR": "~/custom"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(home, "custom")}},
 		{name: "flag no cache", global: cli.GlobalOptions{NoCache: true}, env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: false}},
@@ -85,6 +87,7 @@ func TestSetupCommandCreatesAllRemotes(t *testing.T) {
 		t.Fatalf("Write config: %v", err)
 	}
 
+	withUserCacheDir(t, filepath.Join(t.TempDir(), "user-cache"), nil)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repo)
 
@@ -102,6 +105,8 @@ func TestSetupCommandCreatesAllRemotes(t *testing.T) {
 
 func TestSetupCommandCreatesAndReusesRemotes(t *testing.T) {
 	repo := setupRepoWithConfig(t)
+	cacheRoot := filepath.Join(t.TempDir(), "user-cache")
+	withUserCacheDir(t, cacheRoot, nil)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repo)
 
@@ -113,7 +118,7 @@ func TestSetupCommandCreatesAndReusesRemotes(t *testing.T) {
 
 	remote := "main_braid_vendor_repo"
 	firstURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
-	if !strings.Contains(firstURL, filepath.Join(".braid", "cache")) {
+	if !strings.HasPrefix(firstURL, filepath.Join(cacheRoot, "braid")) {
 		t.Fatalf("remote URL = %q, want default cache path", firstURL)
 	}
 

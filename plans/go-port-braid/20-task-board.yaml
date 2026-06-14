@@ -743,6 +743,130 @@ tasks:
       hash: 27c293f
       message: "chore(plan): close Go port implementation"
 
+  - id: WPH-02
+    title: Normalize Git-returned paths before OS file APIs
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Git paths used with OS write APIs are normalized to absolute native paths.
+      - Push alternates continue to write absolute slash-normalized paths for Git.
+      - Tests cover slash, backslash, absolute, and empty Git path handling.
+    files_touched:
+      - internal/command/path.go
+      - internal/command/path_test.go
+      - internal/command/update.go
+      - internal/command/push.go
+      - internal/command/BUILD.bazel
+    evidence:
+      - command: bazel test //internal/cli:cli_test //internal/mirror:mirror_test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: WPH-03
+    title: Normalize CLI local mirror path inputs
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Local mirror selector arguments accept backslashes and normalize to slash paths before lookup.
+      - Persisted config paths remain slash-separated and strict.
+      - Parser tests cover every command with a local mirror path argument.
+    files_touched:
+      - internal/cli/cli.go
+      - internal/cli/cli_test.go
+      - internal/command/add_test.go
+      - internal/command/status_test.go
+    evidence:
+      - command: bazel test //internal/cli:cli_test //internal/mirror:mirror_test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: WPH-04
+    title: Derive portable mirror paths from native local repository inputs
+    status: completed
+    priority: high
+    depends_on: [WPH-03]
+    acceptance_criteria:
+      - Native Windows local repository strings derive a portable default mirror path.
+      - Original upstream values are preserved for Git remote configuration.
+      - Tests cover drive paths, slash paths, trailing separators, UNC paths, and .git suffixes.
+    files_touched:
+      - internal/mirror/mirror.go
+      - internal/mirror/mirror_test.go
+    evidence:
+      - command: bazel test //internal/cli:cli_test //internal/mirror:mirror_test //internal/command:command_test
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: WPH-05
+    title: Harden cache root and key behavior
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Default cache root uses the OS user cache directory when available.
+      - Explicit CLI and environment overrides keep precedence.
+      - Cache URL keys cannot contain Windows-invalid filename characters.
+    files_touched:
+      - internal/command/cache.go
+      - internal/command/cache_test.go
+      - internal/command/setup_test.go
+      - internal/command/BUILD.bazel
+      - plans/go-port-braid/00-requirements.md
+    evidence:
+      - command: bazel test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel run @rules_go//go -- vet ./...
+        result: pass
+      - command: bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+        result: pass; 0 issues
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: WPH-06
+    title: Document Windows upstream tree compatibility boundary
+    status: completed
+    priority: medium
+    depends_on: []
+    acceptance_criteria:
+      - README documents that Git reports checkout failures for upstream filenames that cannot be materialized on the current OS.
+      - Windows release smoke documents native local repository paths, mirror paths with spaces, backslash selectors, cache on/off, and normal upstream paths with spaces.
+      - The implementation issue register and Windows hardening plan show PI-04 through PI-07 resolved.
+    files_touched:
+      - README.md
+      - docs/release.md
+      - plans/go-port-braid/50-implementation-issues.md
+      - plans/go-port-braid/60-windows-path-hardening-plan.md
+      - plans/go-port-braid/20-task-board.yaml
+    evidence:
+      - command: bazel run @rules_go//go -- fmt ./...
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
+    commit:
+      hash: not_required
+      message: not_required
+
 history:
   - timestamp: 2026-06-14
     task: T01
@@ -888,3 +1012,23 @@ history:
     task: T18
     commit: not_required
     note: Iterative plan implementation review round 1 fixed command parity evidence gaps and added inline comments for non-obvious Git temp-index/temp-repo flows; targeted command/gitexec tests and full corrected gates pass.
+  - timestamp: 2026-06-14
+    task: WPH-02
+    commit: not_required
+    note: Git-returned paths are normalized before OS writes; update MERGE_MSG and push alternates now share the command-layer path helper; focused and full gates pass.
+  - timestamp: 2026-06-14
+    task: WPH-03
+    commit: not_required
+    note: CLI local mirror path arguments now normalize backslashes before validation or config lookup; parser and command integration coverage pass.
+  - timestamp: 2026-06-14
+    task: WPH-04
+    commit: not_required
+    note: Native Windows local repository strings derive portable default mirror paths while preserving the original upstream string for Git; mirror tests and Windows cross-build pass.
+  - timestamp: 2026-06-14
+    task: WPH-05
+    commit: not_required
+    note: Cache defaults now use the OS user cache directory when available and SHA-256 URL keys; cache precedence and Windows-invalid filename coverage pass.
+  - timestamp: 2026-06-14
+    task: WPH-06
+    commit: not_required
+    note: Windows upstream tree compatibility boundary is documented, and the native Windows release smoke script now covers local path, spaces, backslash selectors, cache on/off, push, update, and remove.

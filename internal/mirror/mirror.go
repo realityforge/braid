@@ -35,7 +35,7 @@ func NewFromOptions(url string, options Options) (Mirror, error) {
 	}
 
 	cleanURL := strings.TrimRight(url, "/")
-	localPath := strings.TrimRight(options.LocalPath, "/")
+	localPath := cleanMirrorPath(options.LocalPath)
 	if localPath == "" {
 		localPath = defaultLocalPath(cleanURL, options.RemotePath)
 	}
@@ -95,6 +95,11 @@ func defaultLocalPath(url, remotePath string) string {
 	if remotePath != "" {
 		return path.Base(strings.TrimRight(remotePath, "/"))
 	}
-	name := path.Base(url)
+	trimmed := strings.TrimRight(url, `/\`)
+	name := path.Base(strings.ReplaceAll(trimmed, `\`, "/"))
 	return strings.TrimSuffix(name, ".git")
+}
+
+func cleanMirrorPath(value string) string {
+	return strings.TrimRight(strings.ReplaceAll(value, `\`, "/"), "/")
 }

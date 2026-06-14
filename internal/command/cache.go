@@ -1,6 +1,8 @@
 package command
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +17,8 @@ type CacheConfig struct {
 }
 
 type EnvLookup func(string) (string, bool)
+
+var userCacheDir = os.UserCacheDir
 
 func ResolveCache(global cli.GlobalOptions, lookup EnvLookup, cwd string) (CacheConfig, error) {
 	if global.NoCache && global.CacheDirSet {
@@ -42,7 +46,9 @@ func ResolveCache(global cli.GlobalOptions, lookup EnvLookup, cwd string) (Cache
 	var dir string
 	if value, ok := lookup("BRAID_LOCAL_CACHE_DIR"); ok {
 		dir = value
-	} else if home, ok := lookup("HOME"); ok {
+	} else if cacheRoot, err := userCacheDir(); err == nil && cacheRoot != "" {
+		dir = filepath.Join(cacheRoot, "braid")
+	} else if home, ok := homeDir(lookup); ok {
 		dir = filepath.Join(home, ".braid", "cache")
 	} else {
 		dir = filepath.Join(".braid", "cache")
@@ -55,8 +61,8 @@ func ResolveCache(global cli.GlobalOptions, lookup EnvLookup, cwd string) (Cache
 }
 
 func CachePath(cacheDir, url string) string {
-	replacer := strings.NewReplacer("/", "_", ":", "_", "@", "_")
-	return filepath.Join(cacheDir, replacer.Replace(url))
+	sum := sha256.Sum256([]byte(url))
+	return filepath.Join(cacheDir, hex.EncodeToString(sum[:]))
 }
 
 func runtimeCache(global cli.GlobalOptions) (CacheConfig, error) {
@@ -78,15 +84,25 @@ func absolutePath(value, cwd string) (string, error) {
 }
 
 func expandHome(value string, lookup EnvLookup) string {
-	if value == "~" {
-		if home, ok := lookup("HOME"); ok {
-			return home
-		}
+	home, ok := homeDir(lookup)
+	if !ok {
+		return value
 	}
-	if strings.HasPrefix(value, "~/") {
-		if home, ok := lookup("HOME"); ok {
-			return filepath.Join(home, value[2:])
-		}
+	if value == "~" {
+		return home
+	}
+	if strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
+		return filepath.Join(home, filepath.FromSlash(strings.ReplaceAll(value[2:], `\`, "/")))
 	}
 	return value
+}
+
+func homeDir(lookup EnvLookup) (string, bool) {
+	if home, ok := lookup("HOME"); ok && home != "" {
+		return home, true
+	}
+	if home, ok := lookup("USERPROFILE"); ok && home != "" {
+		return home, true
+	}
+	return "", false
 }

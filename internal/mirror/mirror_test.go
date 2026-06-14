@@ -11,6 +11,11 @@ func TestNewFromOptionsDefaultsPath(t *testing.T) {
 	}{
 		{name: "url basename", url: "http://example.test/path.git", want: "path"},
 		{name: "trailing slash", url: "http://example.test/path.git/", want: "path"},
+		{name: "windows local path", url: `C:\Users\peter\repo.git`, want: "repo"},
+		{name: "windows local path trailing separator", url: `C:\Users\peter\repo.git\`, want: "repo"},
+		{name: "windows local path without suffix", url: `C:\Users\peter\repo`, want: "repo"},
+		{name: "windows slash local path", url: "C:/Users/peter/repo.git", want: "repo"},
+		{name: "unc local path", url: `\\server\share\repo.git`, want: "repo"},
 		{name: "remote path basename", url: "http://example.test/repo.git", remotePath: "lib/component", want: "component"},
 	}
 
@@ -28,7 +33,7 @@ func TestNewFromOptionsDefaultsPath(t *testing.T) {
 }
 
 func TestNewFromOptionsStripsSpecifiedPath(t *testing.T) {
-	got, err := NewFromOptions("http://example.test/path.git", Options{LocalPath: "vendor/tools/mytool/"})
+	got, err := NewFromOptions("http://example.test/path.git", Options{LocalPath: `vendor\tools\mytool\`})
 	if err != nil {
 		t.Fatalf("NewFromOptions returned error: %v", err)
 	}

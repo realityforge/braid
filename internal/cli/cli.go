@@ -304,7 +304,7 @@ func parseAdd(args []string, options *AddOptions) error {
 	}
 	options.URL = positionals[0]
 	if len(positionals) == 2 {
-		options.LocalPath = positionals[1]
+		options.LocalPath = normalizeLocalPathArg(positionals[1])
 	}
 	return nil
 }
@@ -327,7 +327,7 @@ func parseUpdate(args []string, options *UpdateOptions) error {
 		return err
 	}
 	if len(positionals) == 1 {
-		options.LocalPath = positionals[0]
+		options.LocalPath = normalizeLocalPathArg(positionals[0])
 	} else if options.Branch != "" || options.Tag != "" || options.Revision != "" {
 		return usageError("update without local_path cannot use --branch, --tag, or --revision")
 	}
@@ -354,7 +354,7 @@ func parseRemove(args []string, options *RemoveOptions) error {
 	if err := requireArgRange("remove", positionals, 1, 1); err != nil {
 		return err
 	}
-	options.LocalPath = positionals[0]
+	options.LocalPath = normalizeLocalPathArg(positionals[0])
 	return nil
 }
 
@@ -374,7 +374,7 @@ func parseDiff(args []string, options *DiffOptions) error {
 		return err
 	}
 	if len(positionals) == 1 {
-		options.LocalPath = positionals[0]
+		options.LocalPath = normalizeLocalPathArg(positionals[0])
 	}
 	return nil
 }
@@ -394,7 +394,7 @@ func parsePush(args []string, options *PushOptions) error {
 	if err := requireArgRange("push", positionals, 1, 1); err != nil {
 		return err
 	}
-	options.LocalPath = positionals[0]
+	options.LocalPath = normalizeLocalPathArg(positionals[0])
 	return nil
 }
 
@@ -413,7 +413,7 @@ func parseSetup(args []string, options *SetupOptions) error {
 		return err
 	}
 	if len(positionals) == 1 {
-		options.LocalPath = positionals[0]
+		options.LocalPath = normalizeLocalPathArg(positionals[0])
 	}
 	return nil
 }
@@ -432,9 +432,13 @@ func parseStatus(args []string, options *StatusOptions) error {
 		return err
 	}
 	if len(positionals) == 1 {
-		options.LocalPath = positionals[0]
+		options.LocalPath = normalizeLocalPathArg(positionals[0])
 	}
 	return nil
+}
+
+func normalizeLocalPathArg(value string) string {
+	return strings.ReplaceAll(value, `\`, "/")
 }
 
 type flagSpec struct {
