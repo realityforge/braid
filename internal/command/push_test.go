@@ -60,6 +60,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 		{
 			name: "subdirectory",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "base\n")
 			},
 			addArgs:    func(upstream string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
@@ -70,6 +71,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 		{
 			name: "path with spaces",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lay outs/layout.txt", "base\n")
 			},
 			addArgs: func(upstream string) []string {
@@ -82,6 +84,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 		{
 			name: "single file",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "base\n")
 			},
 			addArgs: func(upstream string) []string {

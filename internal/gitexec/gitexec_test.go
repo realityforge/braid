@@ -3,6 +3,7 @@ package gitexec
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,7 +43,7 @@ func TestRunnerRunOKMapsNonZeroToExitError(t *testing.T) {
 		t.Fatalf("ExitCode = %d, want 9", result.ExitCode)
 	}
 	var exitErr *ExitError
-	if !errorAs(err, &exitErr) {
+	if !errors.As(err, &exitErr) {
 		t.Fatalf("error = %T %v, want *ExitError", err, err)
 	}
 	if !strings.Contains(err.Error(), "helper stderr") {
@@ -289,18 +290,4 @@ func helperRevParse(args []string) {
 	default:
 		helperFprintf(os.Stdout, "%s-resolved\n", args[0])
 	}
-}
-
-func errorAs(err error, target interface{}) bool {
-	switch ptr := target.(type) {
-	case **ExitError:
-		if err == nil {
-			return false
-		}
-		if exitErr, ok := err.(*ExitError); ok {
-			*ptr = exitErr
-			return true
-		}
-	}
-	return false
 }

@@ -46,6 +46,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 		{
 			name: "explicit branch",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "main\n")
 				testutil.CommitAll(t, upstream, "main")
 				testutil.Git(t, upstream, "checkout", "-b", "feature")
@@ -62,6 +63,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 		{
 			name: "revision locked",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "locked\n")
 				return testutil.CommitAll(t, upstream, "locked")
 			},
@@ -75,6 +77,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 		{
 			name: "upstream subdirectory",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "component\n")
 				testutil.WriteFile(t, upstream, "ignored.txt", "ignored\n")
 				return testutil.CommitAll(t, upstream, "subdir")
@@ -87,6 +90,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 		{
 			name: "path with spaces",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "spaces\n")
 				return testutil.CommitAll(t, upstream, "spaces")
 			},
@@ -98,6 +102,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 		{
 			name: "single file",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "license\n")
 				testutil.WriteFile(t, upstream, "ignored.txt", "ignored\n")
 				return testutil.CommitAll(t, upstream, "single file")
@@ -151,6 +156,7 @@ func TestAddCommandNoCacheTags(t *testing.T) {
 			name: "lightweight",
 			tag:  "v1-light",
 			make: func(t *testing.T, upstream, tag string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "lightweight\n")
 				revision := testutil.CommitAll(t, upstream, "lightweight")
 				testutil.Git(t, upstream, "tag", tag)
@@ -161,6 +167,7 @@ func TestAddCommandNoCacheTags(t *testing.T) {
 			name: "annotated",
 			tag:  "v1-annotated",
 			make: func(t *testing.T, upstream, tag string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "annotated\n")
 				revision := testutil.CommitAll(t, upstream, "annotated")
 				testutil.Git(t, upstream, "tag", "-a", tag, "-m", "annotated tag")

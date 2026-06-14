@@ -14,51 +14,51 @@ const (
 	DefaultEmail = "braid-test@example.invalid"
 )
 
-func InitRepo(t testing.TB) string {
-	t.Helper()
-	dir := t.TempDir()
-	Git(t, dir, "init", "--initial-branch=main")
-	Git(t, dir, "config", "--local", "user.name", DefaultName)
-	Git(t, dir, "config", "--local", "user.email", DefaultEmail)
-	Git(t, dir, "config", "--local", "commit.gpgsign", "false")
+func InitRepo(tb testing.TB) string {
+	tb.Helper()
+	dir := tb.TempDir()
+	Git(tb, dir, "init", "--initial-branch=main")
+	Git(tb, dir, "config", "--local", "user.name", DefaultName)
+	Git(tb, dir, "config", "--local", "user.email", DefaultEmail)
+	Git(tb, dir, "config", "--local", "commit.gpgsign", "false")
 	return dir
 }
 
-func Git(t testing.TB, dir string, args ...string) gitexec.Result {
-	t.Helper()
+func Git(tb testing.TB, dir string, args ...string) gitexec.Result {
+	tb.Helper()
 	result, err := gitexec.Runner{WorkDir: dir}.RunOK(context.Background(), args...)
 	if err != nil {
-		t.Fatalf("git %v failed in %s: %v\nstdout:\n%s\nstderr:\n%s", args, dir, err, result.Stdout, result.Stderr)
+		tb.Fatalf("git %v failed in %s: %v\nstdout:\n%s\nstderr:\n%s", args, dir, err, result.Stdout, result.Stderr)
 	}
 	return result
 }
 
-func WriteFile(t testing.TB, root, relativePath, content string) {
-	t.Helper()
+func WriteFile(tb testing.TB, root, relativePath, content string) {
+	tb.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create parent for %s: %v", relativePath, err)
+		tb.Fatalf("create parent for %s: %v", relativePath, err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", relativePath, err)
+		tb.Fatalf("write %s: %v", relativePath, err)
 	}
 }
 
-func CommitAll(t testing.TB, repo, message string) string {
-	t.Helper()
-	Git(t, repo, "add", ".")
-	Git(t, repo, "commit", "-m", message)
-	return CurrentRevision(t, repo)
+func CommitAll(tb testing.TB, repo, message string) string {
+	tb.Helper()
+	Git(tb, repo, "add", ".")
+	Git(tb, repo, "commit", "-m", message)
+	return CurrentRevision(tb, repo)
 }
 
-func CurrentRevision(t testing.TB, repo string) string {
-	t.Helper()
-	result := Git(t, repo, "rev-parse", "HEAD")
+func CurrentRevision(tb testing.TB, repo string) string {
+	tb.Helper()
+	result := Git(tb, repo, "rev-parse", "HEAD")
 	return trimTrailingNewline(result.Stdout)
 }
 
-func CopyDir(t testing.TB, src, dst string) {
-	t.Helper()
+func CopyDir(tb testing.TB, src, dst string) {
+	tb.Helper()
 	if err := filepath.WalkDir(src, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -83,7 +83,7 @@ func CopyDir(t testing.TB, src, dst string) {
 		}
 		return os.WriteFile(target, data, 0o644)
 	}); err != nil {
-		t.Fatalf("copy fixture %s to %s: %v", src, dst, err)
+		tb.Fatalf("copy fixture %s to %s: %v", src, dst, err)
 	}
 }
 

@@ -73,6 +73,7 @@ func TestDiffCommandMirrorVariants(t *testing.T) {
 		{
 			name: "tag",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "tag base\n")
 				revision := testutil.CommitAll(t, upstream, "tag base")
 				testutil.Git(t, upstream, "tag", "v1")
@@ -86,6 +87,7 @@ func TestDiffCommandMirrorVariants(t *testing.T) {
 		{
 			name: "revision",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "revision base\n")
 				return testutil.CommitAll(t, upstream, "revision base")
 			},
@@ -99,6 +101,7 @@ func TestDiffCommandMirrorVariants(t *testing.T) {
 		{
 			name: "subdirectory",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "subdir base\n")
 				return testutil.CommitAll(t, upstream, "subdir base")
 			},
@@ -110,6 +113,7 @@ func TestDiffCommandMirrorVariants(t *testing.T) {
 		{
 			name: "path with spaces",
 			prepare: func(t *testing.T, upstream string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "spaces base\n")
 				return testutil.CommitAll(t, upstream, "spaces base")
 			},

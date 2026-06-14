@@ -39,7 +39,7 @@ func ResolveCache(global cli.GlobalOptions, lookup EnvLookup, cwd string) (Cache
 		return CacheConfig{Enabled: false}, nil
 	}
 
-	dir := ""
+	var dir string
 	if value, ok := lookup("BRAID_LOCAL_CACHE_DIR"); ok {
 		dir = value
 	} else if home, ok := lookup("HOME"); ok {

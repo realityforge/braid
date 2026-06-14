@@ -55,6 +55,7 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 		{
 			name: "subdirectory",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "component\n")
 			},
 			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
@@ -63,6 +64,7 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 		{
 			name: "path with spaces",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "spaces\n")
 			},
 			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/path with spaces"} },
@@ -71,6 +73,7 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 		{
 			name: "single file",
 			prepare: func(t *testing.T, upstream string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "license\n")
 			},
 			addArgs: func(upstream string) []string {

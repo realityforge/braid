@@ -80,7 +80,7 @@ func (h RemoveHandler) remove(ctx context.Context, git RemoveGit, options cli.Re
 
 func resetRemoveOnError(ctx context.Context, git RemoveGit, head string, cause error) error {
 	if resetErr := git.ResetHard(ctx, head); resetErr != nil {
-		return fmt.Errorf("%w; failed to reset to %s: %v", cause, shortRevision(head), resetErr)
+		return fmt.Errorf("%w; failed to reset to %s: %w", cause, shortRevision(head), resetErr)
 	}
 	return cause
 }

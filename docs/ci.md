@@ -34,10 +34,25 @@ git diff --exit-code
 
 ## Lint Policy
 
-The lint configuration is intentionally small. It uses golangci-lint v2 config
-syntax, keeps the standard linter set, and explicitly enables `staticcheck`.
-Add more linters only when the signal is strong enough to keep the tool quiet
-and useful for routine contribution.
+The lint configuration uses golangci-lint v2 config syntax, keeps the standard
+linter set, and enables a small group of high-signal correctness and test
+hygiene checks:
+
+- `staticcheck` for broader static analysis.
+- `bodyclose`, `durationcheck`, `errchkjson`, `errorlint`, `makezero`,
+  `nilerr`, `nilnil`, `unconvert`, and `wastedassign` for common correctness
+  mistakes.
+- `thelper` and `usetesting` for idiomatic test helpers and temporary test
+  resources.
+- `misspell` for cheap documentation and comment hygiene.
+
+Avoid enabling every golangci-lint rule by default. Style-heavy checks should
+only be added when they catch real defects without making routine contribution
+noisy.
+
+Security-specific linters such as `gosec` should be added only with reviewed,
+narrow exclusions for intentional Git execution, repository-readable config
+files, and test fixtures. Do not add broad suppressions just to make CI green.
 
 ## Bazel Gate
 

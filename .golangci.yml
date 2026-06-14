@@ -6,4 +6,16 @@ run:
 linters:
   default: standard
   enable:
+    - bodyclose
+    - durationcheck
+    - errchkjson
+    - errorlint
+    - makezero
+    - misspell
+    - nilerr
+    - nilnil
     - staticcheck
+    - thelper
+    - unconvert
+    - usetesting
+    - wastedassign

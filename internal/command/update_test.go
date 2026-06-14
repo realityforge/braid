@@ -52,6 +52,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 			name:      "revision",
 			localPath: "vendor/revision",
 			prepare: func(t *testing.T, upstream string) (string, string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "base\n")
 				base := testutil.CommitAll(t, upstream, "base")
 				testutil.WriteFile(t, upstream, "README.md", "revision\n")
@@ -69,6 +70,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 			name:      "subdirectory",
 			localPath: "vendor/lib",
 			prepare: func(t *testing.T, upstream string) (string, string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "base\n")
 				base := testutil.CommitAll(t, upstream, "base")
 				testutil.WriteFile(t, upstream, "lib/component.txt", "subdir\n")
@@ -84,6 +86,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 			name:      "path with spaces",
 			localPath: "vendor/path with spaces",
 			prepare: func(t *testing.T, upstream string) (string, string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "base\n")
 				base := testutil.CommitAll(t, upstream, "base")
 				testutil.WriteFile(t, upstream, "README.md", "spaces\n")
@@ -99,6 +102,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 			name:      "single file",
 			localPath: "licenses/THIRD_PARTY.txt",
 			prepare: func(t *testing.T, upstream string) (string, string) {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "base\n")
 				base := testutil.CommitAll(t, upstream, "base")
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "single\n")
@@ -141,6 +145,7 @@ func TestUpdateCommandNoCacheTags(t *testing.T) {
 			name: "lightweight",
 			tag:  "v1-light",
 			move: func(t *testing.T, upstream, tag string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "lightweight updated\n")
 				revision := testutil.CommitAll(t, upstream, "lightweight updated")
 				testutil.Git(t, upstream, "tag", "-f", tag)
@@ -151,6 +156,7 @@ func TestUpdateCommandNoCacheTags(t *testing.T) {
 			name: "annotated",
 			tag:  "v1-annotated",
 			move: func(t *testing.T, upstream, tag string) string {
+				t.Helper()
 				testutil.WriteFile(t, upstream, "README.md", "annotated updated\n")
 				revision := testutil.CommitAll(t, upstream, "annotated updated")
 				testutil.Git(t, upstream, "tag", "-f", "-a", tag, "-m", "updated tag")

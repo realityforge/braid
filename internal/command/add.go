@@ -144,7 +144,7 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 
 func resetOnError(ctx context.Context, git AddGit, head string, cause error) error {
 	if resetErr := git.ResetHard(ctx, head); resetErr != nil {
-		return fmt.Errorf("%w; failed to reset to %s: %v", cause, shortRevision(head), resetErr)
+		return fmt.Errorf("%w; failed to reset to %s: %w", cause, shortRevision(head), resetErr)
 	}
 	return cause
 }
