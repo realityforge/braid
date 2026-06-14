@@ -1,0 +1,5 @@
+.DS_Store
+
+# Ignore hierarchy that has been downloaded for references
+/vendor
+
