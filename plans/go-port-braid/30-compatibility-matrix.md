@@ -68,6 +68,9 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 
 ## Native Release Smoke Evidence
 
+Concrete runner labels, artifact names, and smoke commands are documented in
+`docs/release.md`.
+
 | Release target | Required before release cut |
 |---|---|
 | `linux_amd64` | `braid version`; fixture-backed `braid add` in a temp repo. |

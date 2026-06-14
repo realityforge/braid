@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T16
+current_focus: T17
 
 tasks:
   - id: T01
@@ -613,12 +613,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
+      hash: 9a46dfa
       message: "test(compat): verify removed legacy config paths"
 
   - id: T16
     title: Cross-platform tests and release builds
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T09, T10, T11, T12, T13, T14, T15]
     acceptance_criteria:
@@ -630,16 +630,33 @@ tasks:
       - Windows/macOS/Linux path and process issues are covered by tests.
     files_touched:
       - .bazelrc
+      - docs/**
       - plans/go-port-braid/**
       - testdata/**
-    evidence: []
+    evidence:
+      - command: rg -n "shasum|codesign|notarytool|Native Smoke Matrix|ubuntu-24.04-arm|macos-15-intel|windows-2025" docs/release.md
+        result: pass
+      - command: bazel test //internal/pathcheck:pathcheck_test //internal/gitexec:gitexec_test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
-      message: pending
+      message: "docs(release): define Go port release gates"
 
   - id: T17
     title: Documentation and migration notes
-    status: pending
+    status: in_progress
     priority: medium
     depends_on: [T15, T16]
     acceptance_criteria:
@@ -801,5 +818,9 @@ history:
     note: push command completed for branch, explicit branch, tag with explicit branch/no-cache, path variants, up-to-date and no-change stops, identity/signing config, editor cancellation, and sparse-checkout required-filter coverage; full corrected gates pass.
   - timestamp: 2026-06-14T06:11:08Z
     task: T15
-    commit: pending
+    commit: 9a46dfa
     note: removed upgrade-config behavior and unsupported legacy .braids diagnostics are covered by parser, config loader, and command preflight tests; full corrected gates pass.
+  - timestamp: 2026-06-14T06:15:51Z
+    task: T16
+    commit: pending
+    note: release build documentation now covers raw binary and checksum artifacts, manual macOS signing/notarization, fixed native runner labels, and Linux/macOS/Windows native smoke commands; path/process tests and full corrected gates pass.

@@ -173,7 +173,8 @@ bazel build <all approved release platforms>
 <native Windows smoke test>
 ```
 
-Native smoke-test commands will be finalized after CI environment decisions.
+Concrete artifact names, fixed native runner labels, checksum commands, and
+Linux/macOS/Windows smoke commands are documented in `docs/release.md`.
 
 ## Test Data Hygiene
 
