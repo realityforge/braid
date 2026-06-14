@@ -1,16 +1,47 @@
 # Braid
 
-Braid mirrors selected files or directories from upstream Git repositories into
-a downstream repository. This port is implemented in Go and built with Bazel.
+Braid is a simple tool to help track vendor branches in a [Git](http://git-scm.com/)
+repository. Braid mirrors selected files or directories from upstream Git repositories
+into a downstream repository.
 
-## Requirements
+This is a port of the [Ruby Braid](https://github.com/cristibalan/braid) implemented in
+Go and built with Bazel.
 
-- Bazel or Bazelisk with Bzlmod enabled.
-- Git 2.43.0 or newer at runtime.
-- Repository commands must run from the downstream Git worktree root.
+## Motivation
 
-The Go port supports the modern `.braids.json` config format. Legacy `.braids`
-YAML/PStore config is intentionally unsupported.
+Vendoring allows you take the source code of an external library and ensure it's
+version controlled along with the main project. This is in contrast to including
+a reference to a packaged version of an external library that is available in a
+binary artifact repository such as Maven Central, RubyGems or NPM.
+
+Vendoring is useful when you need to patch or customize the external libraries
+or the external library is expected to co-evolve with the main project. The
+developer can make changes to the main project and patch the library in a single
+commit.
+
+The problem arises when the external library makes changes that you want to
+integrate into your local vendored version or the developer makes changes to the
+local version that they want integrated into the external library.
+
+A typical "implementation" of vendoring is to simply download or checkout the
+source for the external library, remove the `.git` or `.svn` directories and
+commit it to the main source tree. However this approach makes it very difficult
+to update the library. When you want to update the library do you re-apply your
+local changes onto a new copy of the vendored library or do you re-apply the
+changes from the external library to local version? Both cases involve manual
+generation and application of patch files to source trees.
+
+This is where Braid comes into play. Braid makes it easy to vendor in remote git
+repositories and use an automated mechanism for updating the external library
+and generating patches to upgrade the external library.
+
+Braid creates a file `.braids.json` in the root of your repository that contains
+references to external libraries or mirrors. The configuration allows you to control
+aspects of the mirroring process such as;
+
+* whether the mirror is locked to a particular version of the external library.
+* whether the mirror is tracking a tag or a branch.
+* whether the mirror includes the entire external library or just a subdirectory.
 
 ## Install
 
@@ -79,6 +110,8 @@ preflight every file inside the selected upstream tree; if an upstream filename
 cannot be materialized on the current OS, Git reports the checkout failure.
 
 ## Build And Test
+
+The build infrastructure relies on Bazel or Bazelisk with Bzlmod enabled.
 
 ```bash
 bazel test //...
