@@ -733,8 +733,10 @@ tasks:
         result: pass
       - command: native release smoke evidence
         result: not_applicable - no release is being cut in this implementation task; docs/release.md defines the required native smoke matrix for a release cut.
+      - command: '! rg -n "^(    status: (pending|in_progress)|      hash: pending|      message: pending|    commit: pending)" plans/go-port-braid/20-task-board.yaml'
+        result: pass
     commit:
-      hash: pending
+      hash: 27c293f
       message: "chore(plan): close Go port implementation"
 
 history:
@@ -876,5 +878,5 @@ history:
     note: README, migration notes, contributor notes, and first Go port release notes now document install/build/test/release commands, modern config support, intentional divergences, raw binary/checksum/manual signing release policy, test strategy, and Git assumptions; full corrected gates pass.
   - timestamp: 2026-06-14T06:23:46Z
     task: T18
-    commit: pending
+    commit: 27c293f
     note: final plan labels, compatibility matrix, and test strategy were aligned with the implemented port; native release smoke is not applicable because no release is being cut; final corrected gates pass.
