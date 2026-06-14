@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T05
+current_focus: T06
 
 tasks:
   - id: T01
@@ -170,12 +170,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: eabff89
+      message: "feat(git): add safe subprocess runner"
 
   - id: T05
     title: Modern config and mirror model
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T03, T04]
     acceptance_criteria:
@@ -187,14 +187,35 @@ tasks:
       - internal/config/**
       - internal/mirror/**
       - testdata/**
-    evidence: []
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel test //internal/mirror:mirror_test
+        result: pass
+      - command: bazel test //internal/config:config_test
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/mirror/mirror.go internal/mirror/mirror_test.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/config/config.go internal/config/config_test.go
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T06
     title: Path validation and repository preflight
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T04, T05]
     acceptance_criteria:
@@ -525,5 +546,9 @@ history:
     note: CLI parser and dispatch completed; targeted parser tests and full corrected gates pass.
   - timestamp: 2026-06-14T04:59:34Z
     task: T04
-    commit: pending
+    commit: eabff89
     note: Git subprocess runner and wrapper tests completed; full corrected gates pass.
+  - timestamp: 2026-06-14T05:04:56Z
+    task: T05
+    commit: pending
+    note: Modern config and mirror model completed; focused tests and full corrected gates pass.

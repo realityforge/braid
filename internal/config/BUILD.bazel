@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "config",
+    srcs = ["config.go"],
+    importpath = "braid/internal/config",
+    visibility = ["//visibility:public"],
+    deps = ["//internal/mirror"],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":config"],
+    deps = ["//internal/mirror"],
+)
