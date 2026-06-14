@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T10
+current_focus: T11
 
 tasks:
   - id: T01
@@ -380,12 +380,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 0ed55d5
+      message: "feat(add): import mirrors into the worktree"
 
   - id: T10
     title: diff command
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T07, T08, T09]
     acceptance_criteria:
@@ -395,15 +395,34 @@ tasks:
       - Tests cover staged, unstaged, reverse, path-limited, and missing-base-revision fetch cases.
     files_touched:
       - internal/command/**
-      - internal/mirror/**
-    evidence: []
+      - internal/gitexec/**
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel run @rules_go//go -- fmt internal/gitexec/gitexec.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/command/diff.go internal/command/diff_test.go internal/command/preflight.go
+        result: pass
+      - command: bazel test //internal/command:command_test
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T11
     title: status command
-    status: pending
+    status: in_progress
     priority: medium
     depends_on: [T07, T08, T09, T10]
     acceptance_criteria:
@@ -658,5 +677,9 @@ history:
     note: setup command completed with cache defaults, cache override handling, remote reuse/force replacement, and one/all mirror integration coverage; full corrected gates pass.
   - timestamp: 2026-06-14T05:33:07Z
     task: T09
-    commit: pending
+    commit: 0ed55d5
     note: add command completed for branch, default branch, tag, revision, subdirectory, path-with-spaces, single-file, no-cache tag, commit metadata, and rollback coverage; full corrected gates pass.
+  - timestamp: 2026-06-14T05:38:54Z
+    task: T10
+    commit: pending
+    note: diff command completed for one/all mirrors, argv passthrough, single-file prefixes, staged/unstaged/reverse/path-limited diffs, and missing-base fetch; full corrected gates pass.

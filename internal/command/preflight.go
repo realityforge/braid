@@ -43,6 +43,12 @@ type AddGit interface {
 	ResetHard(context.Context, string) error
 }
 
+type DiffGit interface {
+	AddGit
+	MakeTreeWithItem(context.Context, string, gitexec.TreeItem) (string, error)
+	Diff(context.Context, ...string) (string, error)
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -74,7 +80,7 @@ func NewAppWithOptions(options Options) cli.App {
 		cli.CommandAdd:    AddHandler{Options: options},
 		cli.CommandUpdate: Handler{Command: cli.CommandUpdate, Options: options},
 		cli.CommandRemove: Handler{Command: cli.CommandRemove, Options: options},
-		cli.CommandDiff:   Handler{Command: cli.CommandDiff, Options: options},
+		cli.CommandDiff:   DiffHandler{Options: options},
 		cli.CommandPush:   Handler{Command: cli.CommandPush, Options: options},
 		cli.CommandSetup:  SetupHandler{Options: options},
 		cli.CommandStatus: Handler{Command: cli.CommandStatus, Options: options},

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -253,6 +254,40 @@ func (g Git) ResetHard(ctx context.Context, target string) error {
 	return err
 }
 
+func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeItem) (string, error) {
+	dir, err := os.MkdirTemp("", "braid-index")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+
+	tempGit := g
+	tempGit.Runner.Env = copyEnv(g.Runner.Env)
+	tempGit.Runner.Env["GIT_INDEX_FILE"] = filepath.Join(dir, "index")
+
+	if item.Type == "blob" {
+		if err := tempGit.UpdateIndexCacheInfo(ctx, item.Mode, item.Hash, itemPath); err != nil {
+			return "", err
+		}
+	} else if item.Type == "tree" {
+		if err := tempGit.ReadTreePrefix(ctx, itemPath, item.Hash, false); err != nil {
+			return "", err
+		}
+	} else {
+		return "", fmt.Errorf("tree item type %q is not supported", item.Type)
+	}
+	return tempGit.Output(ctx, "write-tree")
+}
+
+func (g Git) Diff(ctx context.Context, args ...string) (string, error) {
+	gitArgs := append([]string{"diff"}, args...)
+	result, err := g.RunOK(ctx, gitArgs...)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
 	result, err := r.Run(ctx, args...)
 	if err != nil {
@@ -338,6 +373,14 @@ func upsertEnv(env []string, key, value string) []string {
 		}
 	}
 	return append(env, prefix+value)
+}
+
+func copyEnv(env map[string]string) map[string]string {
+	copied := make(map[string]string, len(env)+1)
+	for key, value := range env {
+		copied[key] = value
+	}
+	return copied
 }
 
 func exitCode(err error) int {
