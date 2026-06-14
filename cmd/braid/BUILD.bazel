@@ -4,6 +4,7 @@ go_library(
     name = "braid_lib",
     srcs = ["main.go"],
     importpath = "braid/cmd/braid",
+    deps = ["//internal/cli"],
     visibility = ["//visibility:private"],
 )
 

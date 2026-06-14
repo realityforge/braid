@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T03
+current_focus: T04
 
 tasks:
   - id: T01
@@ -85,12 +85,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: e8fe6aa
+      message: "feat(build): scaffold Bazel Go braid binary"
 
   - id: T03
     title: CLI parser and command dispatch
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T02]
     acceptance_criteria:
@@ -103,14 +103,43 @@ tasks:
     files_touched:
       - internal/cli/**
       - cmd/braid/**
-    evidence: []
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel test //internal/cli:cli_test
+        result: "fail; missing io import in cli_test.go"
+      - command: bazel test //internal/cli:cli_test
+        result: pass
+      - command: bazel test //cmd/braid:braid_test
+        result: pass
+      - command: bazel run //cmd/braid:braid -- version
+        result: "pass; output: braid 0.0.0-dev"
+      - command: bazel run //cmd/braid:braid -- update --head
+        result: "pass; exited 2 with unknown flag for update: --head"
+      - command: bazel run //cmd/braid:braid -- diff vendor/repo -- '--stat' 'semi;colon'
+        result: "pass; parsed command then returned not implemented without shell interpretation"
+      - command: bazel run @rules_go//go -- fmt cmd/braid/main.go cmd/braid/main_test.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/cli/cli.go internal/cli/cli_test.go
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T04
     title: Git subprocess runner and wrappers
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T02]
     acceptance_criteria:
@@ -465,9 +494,13 @@ history:
     note: User approved the reviewed plan for implementation; marked the plan accepted and opened T02.
   - timestamp: 2026-06-14
     task: T02
-    commit: pending
+    commit: e8fe6aa
     note: Corrected required full-gate platform labels to Bzlmod-visible @rules_go after @io_bazel_rules_go failed to resolve and @rules_go linux_amd64 build passed.
   - timestamp: 2026-06-14T04:48:07Z
     task: T02
-    commit: pending
+    commit: e8fe6aa
     note: Bazel/rules_go scaffold completed; version binary runs and full corrected gates pass.
+  - timestamp: 2026-06-14T04:54:30Z
+    task: T03
+    commit: pending
+    note: CLI parser and dispatch completed; targeted parser tests and full corrected gates pass.
