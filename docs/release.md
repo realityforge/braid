@@ -55,6 +55,14 @@ shasum -a 256 dist/braid-* > dist/SHA256SUMS
 Do not generate checksums until after any signing step that changes artifact
 bytes. The first release ships raw binaries plus `SHA256SUMS`.
 
+## First Go Port Release Notes
+
+- Artifacts are raw binaries named by OS and architecture.
+- `SHA256SUMS` is generated for the exact files uploaded to the release.
+- macOS signing and notarization are manual for the first release.
+- Release automation is not complete until native smoke evidence is collected
+  on the runner matrix below.
+
 ## Manual macOS Signing And Notarization
 
 Signing is manual for the first release. Automated release jobs are incomplete

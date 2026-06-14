@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T17
+current_focus: T18
 
 tasks:
   - id: T01
@@ -651,12 +651,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
+      hash: e1e7dc9
       message: "docs(release): define Go port release gates"
 
   - id: T17
     title: Documentation and migration notes
-    status: in_progress
+    status: completed
     priority: medium
     depends_on: [T15, T16]
     acceptance_criteria:
@@ -668,14 +668,44 @@ tasks:
       - README.md
       - docs/**
       - plans/go-port-braid/**
-    evidence: []
+    evidence:
+      - command: bazel run //cmd/braid:braid -- help
+        result: pass
+      - command: bazel run //cmd/braid:braid -- add --help
+        result: pass
+      - command: bazel run //cmd/braid:braid -- update --help
+        result: pass
+      - command: bazel run //cmd/braid:braid -- push --help
+        result: pass
+      - command: rg -n "Install|Build And Test|Release target builds|docs/release.md" README.md
+        result: pass
+      - command: rg -n "upgrade-config|Legacy \\.braids|update --head|worktree root|BRAID_USE_LOCAL_CACHE" docs/migration.md
+        result: pass
+      - command: rg -n "Git Assumptions|Test Strategy|2\\.43\\.0|argument|Bazel-first" docs/contributing.md
+        result: pass
+      - command: rg -n "First Go Port Release Notes|SHA256SUMS|notarytool|codesign" docs/release.md
+        result: pass
+      - command: git diff --check
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
-      message: pending
+      message: "docs: add Go port usage and migration notes"
 
   - id: T18
     title: Final gates and closeout
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T17]
     acceptance_criteria:
@@ -822,5 +852,9 @@ history:
     note: removed upgrade-config behavior and unsupported legacy .braids diagnostics are covered by parser, config loader, and command preflight tests; full corrected gates pass.
   - timestamp: 2026-06-14T06:15:51Z
     task: T16
-    commit: pending
+    commit: e1e7dc9
     note: release build documentation now covers raw binary and checksum artifacts, manual macOS signing/notarization, fixed native runner labels, and Linux/macOS/Windows native smoke commands; path/process tests and full corrected gates pass.
+  - timestamp: 2026-06-14T06:20:14Z
+    task: T17
+    commit: pending
+    note: README, migration notes, contributor notes, and first Go port release notes now document install/build/test/release commands, modern config support, intentional divergences, raw binary/checksum/manual signing release policy, test strategy, and Git assumptions; full corrected gates pass.
