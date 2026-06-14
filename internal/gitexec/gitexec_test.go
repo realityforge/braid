@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -203,33 +204,51 @@ func TestHelperProcess(t *testing.T) {
 
 	switch args[0] {
 	case "mock-output":
-		fmt.Fprintln(os.Stdout, "helper stdout")
-		fmt.Fprintln(os.Stderr, "helper stderr")
+		helperFprintln(os.Stdout, "helper stdout")
+		helperFprintln(os.Stderr, "helper stderr")
 		os.Exit(helperExitCode())
 	case "argv":
 		for _, arg := range args {
-			fmt.Fprintln(os.Stdout, arg)
+			helperFprintln(os.Stdout, arg)
 		}
 	case "env":
 		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "env requires key")
+			helperFprintln(os.Stderr, "env requires key")
 			os.Exit(2)
 		}
-		fmt.Fprintln(os.Stdout, os.Getenv(args[1]))
+		helperFprintln(os.Stdout, os.Getenv(args[1]))
 	case "status":
 	case "--version":
 		version := os.Getenv("GITEXEC_HELPER_VERSION")
 		if version == "" {
 			version = "git version 2.51.0\n"
 		}
-		fmt.Fprint(os.Stdout, version)
+		helperFprint(os.Stdout, version)
 	case "rev-parse":
 		helperRevParse(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown helper command %s\n", args[0])
+		helperFprintf(os.Stderr, "unknown helper command %s\n", args[0])
 		os.Exit(127)
 	}
 	os.Exit(0)
+}
+
+func helperFprint(w io.Writer, a ...any) {
+	if _, err := fmt.Fprint(w, a...); err != nil {
+		os.Exit(2)
+	}
+}
+
+func helperFprintf(w io.Writer, format string, a ...any) {
+	if _, err := fmt.Fprintf(w, format, a...); err != nil {
+		os.Exit(2)
+	}
+}
+
+func helperFprintln(w io.Writer, a ...any) {
+	if _, err := fmt.Fprintln(w, a...); err != nil {
+		os.Exit(2)
+	}
 }
 
 func helperGitArgs(args []string) []string {
@@ -253,22 +272,22 @@ func helperExitCode() int {
 
 func helperRevParse(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "missing rev-parse arg")
+		helperFprintln(os.Stderr, "missing rev-parse arg")
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "--is-inside-work-tree":
-		fmt.Fprintln(os.Stdout, "true")
+		helperFprintln(os.Stdout, "true")
 	case "--show-prefix":
-		fmt.Fprintln(os.Stdout, "sub/")
+		helperFprintln(os.Stdout, "sub/")
 	case "--git-path":
 		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "--git-path requires path")
+			helperFprintln(os.Stderr, "--git-path requires path")
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stdout, ".git/%s\n", args[1])
+		helperFprintf(os.Stdout, ".git/%s\n", args[1])
 	default:
-		fmt.Fprintf(os.Stdout, "%s-resolved\n", args[0])
+		helperFprintf(os.Stdout, "%s-resolved\n", args[0])
 	}
 }
 

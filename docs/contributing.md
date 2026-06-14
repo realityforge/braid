@@ -10,6 +10,18 @@ bazel test //...
 bazel build //cmd/braid:braid
 ```
 
+Run the fast Go quality checks before opening a pull request:
+
+```bash
+bazel run @rules_go//go -- fmt ./...
+bazel test //...
+bazel run @rules_go//go -- vet ./...
+bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+```
+
+CI checks formatting by running `bazel run @rules_go//go -- fmt ./...` and then
+`git diff --exit-code`, so formatting changes must be committed.
+
 Use the rules_go toolchain for formatting:
 
 ```bash
@@ -29,6 +41,8 @@ bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 
 Release packaging and native smoke tests are documented in
 [`docs/release.md`](release.md).
+
+GitHub Actions CI is documented in [`docs/ci.md`](ci.md).
 
 ## Git Assumptions
 

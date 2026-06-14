@@ -44,7 +44,9 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	for _, localPath := range cfg.Paths() {
-		fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing %s\n=======================================================\n", localPath)
+		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing %s\n=======================================================\n", localPath); err != nil {
+			return err
+		}
 		if err := h.diffOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Diff, stdout, stderr); err != nil {
 			return err
 		}

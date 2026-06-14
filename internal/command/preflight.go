@@ -141,14 +141,14 @@ func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, opt
 			return err
 		}
 		if !inside {
-			return errors.New("Braid must run inside a git working tree")
+			return errors.New("braid must run inside a git working tree")
 		}
 		prefix, err := git.RelativeWorkingDir(ctx)
 		if err != nil {
 			return err
 		}
 		if prefix != "" {
-			return errors.New("Braid v1 must run from the git working tree root")
+			return errors.New("braid v1 must run from the git working tree root")
 		}
 	}
 

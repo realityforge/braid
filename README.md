@@ -69,6 +69,15 @@ bazel test //...
 bazel build //cmd/braid:braid
 ```
 
+Fast Go quality checks used by CI run through the Bazel-pinned Go SDK:
+
+```bash
+bazel run @rules_go//go -- fmt ./...
+bazel test //...
+bazel run @rules_go//go -- vet ./...
+bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+```
+
 Release target builds:
 
 ```bash
@@ -89,5 +98,7 @@ signing/notarization path, and native smoke matrix are documented in
   divergences from Ruby Braid.
 - [`docs/contributing.md`](docs/contributing.md): contributor workflow, test
   strategy, and Git assumptions.
+- [`docs/ci.md`](docs/ci.md): GitHub Actions workflow and local Go quality
+  checks.
 - [`docs/future-subdirectory-execution.md`](docs/future-subdirectory-execution.md):
   why v1 requires root-only execution.

@@ -89,7 +89,9 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return err
 	}
 	if upstreamRevision != baseRevision {
-		fmt.Fprintln(stdout, "Braid: Mirror is not up to date. Stopping.")
+		if _, err := fmt.Fprintln(stdout, "Braid: Mirror is not up to date. Stopping."); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -102,7 +104,9 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return err
 	}
 	if strings.TrimSpace(diff) == "" {
-		fmt.Fprintln(stdout, "Braid: No local changes found. Stopping.")
+		if _, err := fmt.Fprintln(stdout, "Braid: No local changes found. Stopping."); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -118,7 +122,9 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	tempGit := gitexec.New(tempDir, verbose, trace)
 	if err := tempGit.Init(ctx); err != nil {

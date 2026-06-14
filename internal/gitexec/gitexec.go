@@ -324,7 +324,9 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
 
 	tempGit := g
 	tempGit.Runner.Env = copyEnv(g.Runner.Env)
@@ -340,15 +342,16 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 		}
 	}
 
-	if item.Type == "blob" {
+	switch item.Type {
+	case "blob":
 		if err := tempGit.UpdateIndexCacheInfo(ctx, item.Mode, item.Hash, itemPath); err != nil {
 			return "", err
 		}
-	} else if item.Type == "tree" {
+	case "tree":
 		if err := tempGit.ReadTreePrefix(ctx, itemPath, item.Hash, false); err != nil {
 			return "", err
 		}
-	} else {
+	default:
 		return "", fmt.Errorf("tree item type %q is not supported", item.Type)
 	}
 	return tempGit.Output(ctx, "write-tree")
@@ -417,7 +420,9 @@ func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 		if trace == nil {
 			trace = io.Discard
 		}
-		fmt.Fprintf(trace, "Braid: Executing %s in %s\n", FormatArgv(append([]string{DefaultGitExecutable}, args...)), displayDir(r.WorkDir))
+		if _, err := fmt.Fprintf(trace, "Braid: Executing %s in %s\n", FormatArgv(append([]string{DefaultGitExecutable}, args...)), displayDir(r.WorkDir)); err != nil {
+			return result, err
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, executable, commandArgs...)

@@ -124,21 +124,29 @@ func New() App {
 func (a App) Run(args []string, stdout, stderr io.Writer) int {
 	inv, err := Parse(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "braid: %v\n\n%s", err, Usage())
+		if _, writeErr := fmt.Fprintf(stderr, "braid: %v\n\n%s", err, Usage()); writeErr != nil {
+			return 2
+		}
 		return 2
 	}
 
 	if inv.Help {
 		if inv.Command == "" {
-			fmt.Fprint(stdout, Usage())
+			if _, err := fmt.Fprint(stdout, Usage()); err != nil {
+				return writeRunError(stderr, err)
+			}
 		} else {
-			fmt.Fprint(stdout, CommandUsage(inv.Command))
+			if _, err := fmt.Fprint(stdout, CommandUsage(inv.Command)); err != nil {
+				return writeRunError(stderr, err)
+			}
 		}
 		return 0
 	}
 
 	if inv.Command == CommandVersion {
-		fmt.Fprintf(stdout, "braid %s\n", a.version())
+		if _, err := fmt.Fprintf(stdout, "braid %s\n", a.version()); err != nil {
+			return writeRunError(stderr, err)
+		}
 		return 0
 	}
 
@@ -147,10 +155,14 @@ func (a App) Run(args []string, stdout, stderr io.Writer) int {
 		handler = notImplemented(inv.Command)
 	}
 	if err := handler.Run(inv, stdout, stderr); err != nil {
-		fmt.Fprintf(stderr, "braid: %v\n", err)
-		return 1
+		return writeRunError(stderr, err)
 	}
 	return 0
+}
+
+func writeRunError(stderr io.Writer, err error) int {
+	_, _ = fmt.Fprintf(stderr, "braid: %v\n", err)
+	return 1
 }
 
 func (a App) version() string {

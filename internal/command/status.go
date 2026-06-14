@@ -107,12 +107,16 @@ func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache Cache
 		}
 	}
 
-	fmt.Fprintf(stdout, "%s (%s) [%s]", m.Path, baseRevision, trackingLabel(m))
-	for _, state := range states {
-		fmt.Fprintf(stdout, " (%s)", state)
+	if _, err := fmt.Fprintf(stdout, "%s (%s) [%s]", m.Path, baseRevision, trackingLabel(m)); err != nil {
+		return err
 	}
-	fmt.Fprintln(stdout)
-	return nil
+	for _, state := range states {
+		if _, err := fmt.Fprintf(stdout, " (%s)", state); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintln(stdout)
+	return err
 }
 
 func trackingLabel(m mirror.Mirror) string {
