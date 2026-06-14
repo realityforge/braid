@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gitexec",
+    srcs = ["gitexec.go"],
+    importpath = "braid/internal/gitexec",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "gitexec_test",
+    srcs = ["gitexec_test.go"],
+    embed = [":gitexec"],
+)

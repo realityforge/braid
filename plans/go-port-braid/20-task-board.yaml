@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T04
+current_focus: T05
 
 tasks:
   - id: T01
@@ -134,12 +134,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: de63816
+      message: "feat(cli): add command parser and dispatch"
 
   - id: T04
     title: Git subprocess runner and wrappers
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T02]
     acceptance_criteria:
@@ -149,14 +149,33 @@ tasks:
       - Unit tests cover stdout/stderr/status mapping and command construction.
     files_touched:
       - internal/gitexec/**
-    evidence: []
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel test //internal/gitexec:gitexec_test
+        result: "fail; unused io import in gitexec_test.go"
+      - command: bazel test //internal/gitexec:gitexec_test
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/gitexec/gitexec.go internal/gitexec/gitexec_test.go
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T05
     title: Modern config and mirror model
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T03, T04]
     acceptance_criteria:
@@ -502,5 +521,9 @@ history:
     note: Bazel/rules_go scaffold completed; version binary runs and full corrected gates pass.
   - timestamp: 2026-06-14T04:54:30Z
     task: T03
-    commit: pending
+    commit: de63816
     note: CLI parser and dispatch completed; targeted parser tests and full corrected gates pass.
+  - timestamp: 2026-06-14T04:59:34Z
+    task: T04
+    commit: pending
+    note: Git subprocess runner and wrapper tests completed; full corrected gates pass.
