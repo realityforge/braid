@@ -1,9 +1,9 @@
 # Implementation Plan
 
-Status: review
+Status: accepted
 Last updated: 2026-06-14
 
-This plan is ready for user review. It is not accepted until the user explicitly approves it.
+The user approved this reviewed plan for implementation on 2026-06-14 by requesting the Go+Bazel port proceed from the reviewed plan.
 
 ## Phase Sequence
 
@@ -162,6 +162,26 @@ bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/bra
 - Q-08: User selected root-only execution for v1 with subdirectory execution as a future enhancement.
 - Q-09: User selected Git 2.43.0 as the exact minimum, anchored to Ubuntu 24.04 LTS package availability.
 - Q-10: User selected global cache flags before the command: `--no-cache` and `--cache-dir <path>`.
+
+## Review Fix Log
+
+- Round 1:
+  - Added native release smoke matrix and made CI runner mapping an explicit T16 output.
+  - Added per-command preflight matrix so `version`/help can run outside Git repositories.
+  - Removed deprecated `update --head` from the Go CLI and required parser tests for rejection.
+  - Added cache contract covering env truthiness, CLI precedence, invalid combinations, and no-cache tag behavior.
+  - Added cross-platform path validation contract and remote-name collision handling.
+  - Added commit, conflict, and push metadata contracts.
+- Round 2:
+  - Added `git commit --no-verify` to automated commit metadata contract.
+  - Expanded T06 closure criteria to require every path validation row and remote-name collision coverage.
+  - Updated divergence register approval states for stricter path validation and no-cache tag resolution.
+- Round 3:
+  - Added update-all contract for branch/tag eligibility, revision-locked skips, and rejected strategy flags without a mirror path.
+  - Added explicit no-cache tag and annotated-tag command coverage to `add`, `update`, and `push` tasks.
+- Round 4:
+  - Made `setup` depend on shared preflight/path validation.
+  - Added update-all deterministic ordering and stop-on-first-failure validation.
 
 ## Completion Criteria
 

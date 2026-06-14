@@ -1,6 +1,6 @@
 # Test Strategy
 
-Status: review
+Status: accepted
 Last updated: 2026-06-14
 
 ## Test Philosophy
@@ -16,9 +16,11 @@ Tests should be readable to maintainers who are new to Go. Prefer table tests, e
 Targets:
 
 - CLI parsing and usage errors.
+- Per-command preflight requirements.
 - Config load/validate/write.
 - Mirror ref/remote naming.
 - Path validation.
+- Cache env/flag precedence.
 - Git command argv construction.
 - Error wrapping and diagnostics.
 
@@ -77,9 +79,12 @@ Targets:
 - Arguments with spaces and shell metacharacters.
 - Unknown commands and flags.
 - Unsupported legacy config.
+- Deprecated `update --head`.
 - Git failures and ambiguous revisions.
 - Running outside a Git worktree or from the wrong directory.
 - Running from a subdirectory of a Git worktree must fail clearly in v1.
+- Invalid cache flag combinations.
+- Path edge cases in the requirements path validation table.
 
 Expectations:
 
@@ -126,9 +131,14 @@ Do not use a raw coverage percentage as the primary quality signal. For this too
 Required behavior coverage:
 
 - Every command has parser, success, and at least one failure test.
+- `version`, help, usage, and parse errors run without Git or a Git worktree.
 - Every command that mutates Git has clean-repo and dirty-repo tests.
 - Every mirror type has add, diff, update, remove, and status coverage where applicable.
+- `update` all-mirror tests cover mixed branch, tag, and revision-locked mirrors, rejected strategy flags without a mirror path, deterministic config path order, and stop/report-on-first-failure behavior.
 - `push` has branch, explicit branch, tag rejection, no-local-change, and not-up-to-date tests.
+- `push` has identity/signing propagation, editor cancellation, and temp cleanup tests.
+- No-cache tests cover tag and annotated-tag flows for `add`, `update`, and tag-with-explicit-branch `push`.
+- `add`, `update`, and `remove` have failing-hook tests proving automated commits use `--no-verify`.
 - Config has modern valid, future version, malformed JSON, unknown fields, missing required fields, and unsupported legacy tests.
 
 Optional coverage report:

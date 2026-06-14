@@ -1,6 +1,6 @@
 # Compatibility Matrix
 
-Status: review
+Status: accepted
 Last updated: 2026-06-14
 
 ## Compatibility Policy
@@ -50,19 +50,31 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 |---|---|---|---|---|
 | D-01 | Legacy config | No YAML/PStore `.braids` support | User explicitly does not need historic infrastructure. | locked |
 | D-02 | Removed mirror types | No SVN/full-history migration | Removed behavior is historic and adds complexity. | locked |
-| D-03 | Path validation | Reject unsafe paths earlier than Ruby | Security and cross-platform predictability. | draft |
+| D-03 | Path validation | Reject unsafe paths earlier than Ruby | Security and cross-platform predictability. | review round 2 resolved |
 | D-04 | Git minimum | Requires Git 2.43.0 or newer | Reduce compatibility branches while supporting Ubuntu 24.04 LTS default Git. | Q-02 and Q-09 resolved |
 | D-05 | Help/output text | New idiomatic output/help design with behavior parity only | Avoid preserving Ruby CLI framework quirks and brittle text tests. | Q-04 resolved |
 | D-06 | Command surface | `upgrade-config` is removed | Historic config migration is out of scope. | Q-03 resolved |
-| D-07 | Cache flags | Cache remains on by default and gains global `--no-cache` and `--cache-dir` overrides | Preserve performance while making runtime cache choice explicit when needed. | Q-05 and Q-10 resolved |
+| D-07 | Cache flags and no-cache tag behavior | Cache remains on by default and gains global `--no-cache` and `--cache-dir` overrides; tag and annotated-tag mirrors must still work when cache is disabled | Preserve performance by default while making runtime cache choice explicit and avoiding feature loss when cache is disabled. | Q-05, Q-10, and review round 2 resolved |
 | D-08 | Release artifacts | First release provides raw binaries and checksums; signing is documented manual process | Avoid blocking the port on account/secret/notarization setup. | Q-07 resolved |
 | D-09 | Worktree location | v1 remains root-only; subdirectory execution is future work | Avoid path normalization risk across every command during the port. | Q-08 resolved |
+| D-10 | Deprecated flags | `update --head` is not implemented | The option is unused/deprecated in Ruby and preserving it only adds parser and error compatibility burden. | Review round 1 |
+| D-11 | Update all mirrors | `braid update` without a path updates branch/tag mirrors, skips revision-locked mirrors, and rejects strategy flags | Avoid accidental bulk retargeting and make all-mirror behavior predictable. | Review round 3 |
 
 ## Future Enhancements
 
 | ID | Enhancement | Trigger |
 |---|---|---|
 | F-01 | Support running commands from subdirectories of the downstream Git worktree. | Consider after the Go port has stable command parity and cross-platform tests. |
+
+## Native Release Smoke Evidence
+
+| Release target | Required before release cut |
+|---|---|
+| `linux_amd64` | `braid version`; fixture-backed `braid add` in a temp repo. |
+| `linux_arm64` | `braid version`; fixture-backed `braid add` in a temp repo. |
+| `darwin_amd64` | `braid version`; fixture-backed `braid add` in a temp repo. |
+| `darwin_arm64` | `braid version`; fixture-backed `braid add` in a temp repo. |
+| `windows_amd64` | `braid version`; fixture-backed `braid add` in a temp repo. |
 
 ## Release Target Matrix
 

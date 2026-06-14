@@ -1,6 +1,6 @@
 # Go Port Requirements
 
-Status: review
+Status: accepted
 Last updated: 2026-06-14
 
 ## Mission
@@ -54,7 +54,7 @@ The Go port should implement these commands with compatible names, required argu
 
 - Global cache flags, placed before the command: `--no-cache` and `--cache-dir <path>`.
 - `braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--verbose|-v]`
-- `braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--head] [--keep] [--verbose|-v]`
+- `braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--verbose|-v]`
 - `braid remove <local_path> [--keep] [--verbose|-v]`
 - `braid diff [local_path] [--keep] [--verbose|-v] [-- <git_diff_arg>...]`
 - `braid push <local_path> [--branch|-b <branch>] [--keep] [--verbose|-v]`
@@ -94,6 +94,15 @@ Additional release gate before an actual release:
 - Run integration tests on native Linux, macOS, and Windows hosts because foreign-platform binaries cannot be executed by a normal local Bazel cross-build.
 - Smoke-test each release binary with `braid version` and at least one fixture-backed `add` flow on its native OS.
 - Produce raw binaries and checksums; document a manual signing/notarization path.
+- CI provider and runner labels are not assumed by this plan. T16 must define the concrete native runner matrix before release automation is treated as complete.
+
+Native release smoke matrix:
+
+| OS | Architectures | Required smoke evidence before release cut |
+|---|---|---|
+| Linux | amd64, arm64 | Built artifact runs `braid version`; fixture-backed `braid add` succeeds in a temp repo. |
+| macOS | amd64, arm64 | Built artifact runs `braid version`; fixture-backed `braid add` succeeds in a temp repo. |
+| Windows | amd64 | Built artifact runs `braid version`; fixture-backed `braid add` succeeds in a temp repo. |
 
 ## Coverage Expectations
 
@@ -111,9 +120,77 @@ Additional release gate before an actual release:
 - No full-history mirror migration.
 - No `upgrade-config` command.
 - Output and help text may diverge from Ruby as long as behavior remains compatible.
+- No `update --head` option; the Go CLI should reject it as an unknown flag.
 - No v1 support for running commands from subdirectories of the downstream Git worktree.
 - Unsafe path validation will be stricter than the Ruby implementation's TODO-covered behavior.
 - Implementation will require Git 2.43.0 or newer.
+
+## Preflight Matrix
+
+| Command surface | Requires `git` on PATH | Requires worktree root | Requires config | Requires clean worktree | May write config/worktree |
+|---|---|---|---|---|---|
+| `version`, help, usage, parse errors | no | no | no | no | no |
+| `setup` | yes | yes | yes | no | no |
+| `status` | yes | yes | yes | no | no |
+| `diff` | yes | yes | yes | no | no |
+| `add` | yes | yes | no | yes | yes |
+| `update` | yes | yes | yes | yes | yes |
+| `remove` | yes | yes | yes | yes | yes |
+| `push` | yes | yes | yes | no | temporary repo and remote only |
+
+## Cache Contract
+
+| Input | Behavior |
+|---|---|
+| No env vars and no flags | Cache enabled at default `~/.braid/cache`. |
+| `BRAID_USE_LOCAL_CACHE` unset, `true`, or `1` | Cache enabled. |
+| `BRAID_USE_LOCAL_CACHE` any other value | Cache disabled unless `--cache-dir` is supplied and `--no-cache` is not supplied. |
+| `BRAID_LOCAL_CACHE_DIR` set | Use the expanded value as the default cache directory. |
+| Global `--cache-dir <path>` | Cache enabled and uses the supplied path. |
+| Global `--no-cache` | Cache disabled. |
+| Both `--no-cache` and `--cache-dir` | Invalid usage. |
+| Empty cache directory value | Invalid usage. |
+| Relative cache directory value | Resolve relative to the current process working directory and store the absolute path in runtime state. |
+| Tag and annotated-tag mirrors with cache disabled | Must still resolve tags using ordinary Git remotes; cache disabled must not make supported mirror modes fail. |
+
+## Path Validation Contract
+
+Local mirror paths and upstream `--path` values are validated separately. Local mirror paths affect the downstream worktree and must be stricter.
+
+| Case | Local mirror path | Upstream `--path` | Rationale |
+|---|---|---|---|
+| Empty, `.`, absolute path, `..` segment | reject | reject | Prevent ambiguous writes and traversal. |
+| Path under `.git` | reject | allow only as upstream content if Git can address it | Never write into downstream Git metadata. |
+| Windows drive absolute or drive-relative path, UNC path | reject | reject | Keep config portable across target OSes. |
+| Backslash path separators | reject | reject | `.braids.json` uses portable slash-separated paths. |
+| Windows reserved basenames such as `CON`, `PRN`, `AUX`, `NUL`, `COM1`, `LPT1` | reject for local path | allow only if Git can address it and output local path is safe | Avoid checkout failures on Windows. |
+| Trailing dot or space in any path element | reject for local path | reject | Avoid Windows/macOS ambiguity. |
+| Colon in any path element | reject for local path | reject | Avoid Windows drive/path ambiguity and ref-name surprises. |
+| Case-fold collision with an existing mirror path | reject | not applicable | Avoid ambiguous mirrors on case-insensitive filesystems. |
+
+Remote names generated from mirror paths must be collision-checked before mutation. If two mirror paths normalize to the same remote name, the command must fail with a clear diagnostic.
+
+## Commit And Push Metadata Contract
+
+| Operation | Contract |
+|---|---|
+| `add` commit | Subject `Braid: Add mirror '<path>' at '<short-revision>'`; author/committer come from normal Git config; commit is created with `git commit --no-verify`. |
+| `update` commit | Subject `Braid: Update mirror '<path>' to '<short-revision>'`; author/committer come from normal Git config; commit is created with `git commit --no-verify`. |
+| `remove` commit | Subject `Braid: Remove mirror '<path>'`; author/committer come from normal Git config; commit is created with `git commit --no-verify`. |
+| update conflict | Write the same update subject to Git's `MERGE_MSG` path and leave index/worktree for manual resolution. |
+| `push` temp repo | Copy local `user.name`, `user.email`, and `commit.gpgsign` into the temp repo when present. |
+| `push` interactive commit | Use `git commit -v`; if the editor/commit fails or creates no commit, do not push and clean up temp resources. |
+| push failure | Do not delete or mutate downstream mirror config; clean up temporary repositories where practical and report the Git failure. |
+
+## Update-All Contract
+
+`braid update` without `local_path` is intentionally constrained:
+
+- Updates every mirror that tracks a branch or tag.
+- Skips revision-locked mirrors.
+- Rejects `--branch`, `--tag`, or `--revision` when `local_path` is omitted.
+- Stops before each mirror if the downstream worktree is dirty.
+- Continues in deterministic config path order unless a mirror update fails; on failure, stop and report the failed mirror.
 
 ## Open Questions Register
 

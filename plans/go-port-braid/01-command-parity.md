@@ -1,6 +1,6 @@
 # Command Parity Deep Dive
 
-Status: review
+Status: accepted
 Last updated: 2026-06-14
 
 ## Feature
@@ -47,11 +47,13 @@ Out of scope:
 ### `update`
 
 - Update one mirror or all eligible mirrors.
+- For all-mirror update, eligible means branch- or tag-tracking mirrors; revision-locked mirrors are skipped.
+- Reject `--branch`, `--tag`, and `--revision` when no `local_path` is supplied.
 - Reject local changes before mutating state.
 - Support switching branch/tag/revision.
 - Preserve conflict behavior: leave files and index for manual resolution and write merge message.
 - Create a merge/update commit when non-conflicting changes exist.
-- Keep `--head` as an accepted compatibility flag only if implementation review confirms it is worth preserving; message text does not need Ruby parity.
+- Do not implement deprecated `--head`; reject it as an unknown flag.
 
 ### `remove`
 
@@ -74,7 +76,7 @@ Out of scope:
 - Reject pushing to a tag without explicit branch.
 - Stop when mirror is not up to date.
 - Use temporary repository/alternate object database strategy or a simpler equivalent if tests prove identical behavior.
-- Preserve interactive `git commit -v` behavior unless a later decision changes it.
+- Preserve interactive `git commit -v` behavior, identity propagation, and no-push-on-cancel/failure behavior.
 
 ### `setup`
 
@@ -112,7 +114,8 @@ Intentional divergences:
 
 - No legacy config readers.
 - Stricter path validation.
-- Possible higher minimum Git version.
+- Git minimum is 2.43.0.
+- Deprecated `update --head` is removed.
 - Help text and ordinary output may use a new idiomatic Go design.
 
 ## Acceptance Criteria

@@ -1,6 +1,6 @@
 meta:
   project: go-port-braid
-  status: review
+  status: accepted
   last_updated: 2026-06-14
   required_full_gates:
     - bazel test //...
@@ -15,12 +15,12 @@ meta:
     - completed
     - cancelled
 
-current_focus: T01
+current_focus: T02
 
 tasks:
   - id: T01
     title: Planning artifacts and decision resolution
-    status: in_progress
+    status: completed
     priority: high
     depends_on: []
     acceptance_criteria:
@@ -37,13 +37,15 @@ tasks:
         result: pass
       - command: find /Users/peter/Code/braid2 -maxdepth 3 -type d -name plans -print
         result: pass
+      - command: user request in current thread to implement the Go+Bazel port from the reviewed plan
+        result: pass; treated as explicit plan approval per the required workflow
     commit:
       hash: pending
       message: pending
 
   - id: T02
     title: Bazel and Go scaffold
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T01]
     acceptance_criteria:
@@ -70,6 +72,7 @@ tasks:
     acceptance_criteria:
       - All planned commands parse expected arguments and flags.
       - Global --no-cache and --cache-dir flags parse only before the command.
+      - update --head is rejected as an unknown flag.
       - Invalid usage returns deterministic non-zero errors.
       - Help text is clear, idiomatic Go CLI text and not constrained by Ruby wording.
       - Parser tests cover unknown commands, extra args, and diff passthrough after --.
@@ -123,10 +126,13 @@ tasks:
     priority: high
     depends_on: [T04, T05]
     acceptance_criteria:
-      - Tool refuses to run outside a Git worktree root.
+      - Repository commands refuse to run outside a Git worktree root.
+      - version/help/usage can run without Git or a Git worktree.
+      - Preflight behavior follows the requirements matrix.
       - Future subdirectory execution support is documented outside v1 scope.
       - Unsafe mirror paths are rejected before Git mutations.
-      - Tests cover absolute paths, empty paths, dot paths, parent traversal, .git paths, spaces, and platform separators.
+      - Tests cover every row of the requirements Path Validation Contract for local mirror paths and upstream --path values.
+      - Tests cover generated remote-name collisions before mutation.
     files_touched:
       - internal/pathcheck/**
       - internal/command/**
@@ -158,10 +164,11 @@ tasks:
     title: setup command and remote lifecycle
     status: pending
     priority: high
-    depends_on: [T03, T04, T05, T07]
+    depends_on: [T03, T04, T05, T06, T07]
     acceptance_criteria:
       - setup creates, reuses, replaces, and removes remotes according to policy.
       - Cache is enabled by default and follows Q-05 and Q-10.
+      - Cache behavior follows the requirements cache contract.
       - Integration tests cover one mirror and all mirrors.
     files_touched:
       - internal/command/**
@@ -178,7 +185,9 @@ tasks:
     depends_on: [T06, T07, T08]
     acceptance_criteria:
       - add works for branch, default branch, tag, revision, subdirectory, path with spaces, and single-file mirror.
+      - add works for tag and annotated-tag mirrors when cache is disabled.
       - Config and Git side effects match approved behavior policy.
+      - Commit subject, identity, and --no-verify behavior follow the metadata contract.
       - Failure paths leave the repo clean or reset to original HEAD.
     files_touched:
       - internal/command/**
@@ -229,7 +238,12 @@ tasks:
     depends_on: [T07, T08, T09, T10]
     acceptance_criteria:
       - update works for branch, tag, revision, subdirectory, path with spaces, and single-file mirror.
+      - update without local_path updates branch/tag mirrors, skips revision-locked mirrors, and rejects branch/tag/revision strategy flags.
+      - update without local_path processes mirrors in deterministic config path order.
+      - update without local_path stops and reports the failed mirror on first mirror failure.
+      - update works for tag and annotated-tag mirrors when cache is disabled.
       - Conflict behavior leaves resolvable files and merge message.
+      - Commit subject, MERGE_MSG, and --no-verify behavior follow the metadata contract.
       - Already-up-to-date paths do not create unnecessary commits.
       - Tests cover switching tracking strategy.
     files_touched:
@@ -249,6 +263,7 @@ tasks:
     acceptance_criteria:
       - remove deletes mirrored content and config.
       - --keep preserves remote according to policy.
+      - Commit subject and --no-verify behavior follow the metadata contract.
       - Tests cover directory, subdirectory, path with spaces, and single-file mirror.
     files_touched:
       - internal/command/**
@@ -265,8 +280,11 @@ tasks:
     depends_on: [T07, T08, T09, T10, T12]
     acceptance_criteria:
       - push works for branch, explicit branch, subdirectory, path with spaces, single-file mirror, and tag-with-explicit-branch.
+      - push tag-with-explicit-branch works when cache is disabled.
       - push rejects tag without branch.
       - push stops when mirror is not up to date or has no local changes.
+      - push preserves user.name, user.email, and commit.gpgsign behavior in the temp repo.
+      - push cancellation/failure does not push and cleans up temporary resources where practical.
       - Tests cover filter/sparse-checkout behavior if Git minimum requires it.
     files_touched:
       - internal/command/**
@@ -303,6 +321,7 @@ tasks:
       - Bazel builds all approved release targets.
       - Raw binary and checksum artifact process is documented.
       - Manual signing/notarization path is documented.
+      - Concrete CI/native runner matrix is documented before release automation is considered complete.
       - Native smoke tests are documented for supported OSes.
       - Windows/macOS/Linux path and process issues are covered by tests.
     files_touched:
@@ -340,6 +359,7 @@ tasks:
     depends_on: [T17]
     acceptance_criteria:
       - Required full gates pass.
+      - Native release smoke evidence is either recorded for a release cut or explicitly marked not_applicable when no release is being cut.
       - No pending tasks remain for accepted scope.
       - No completed task has pending commit metadata.
       - Final compatibility matrix and test strategy match implemented behavior.
@@ -399,3 +419,23 @@ history:
     task: T01
     commit: not_required
     note: All open questions resolved; plan submitted for user review and explicit approval.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Round 1 plan-review fixes added release smoke matrix, preflight/cache/path/metadata contracts, and update --head removal.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Round 2 plan-review fixes added no-verify contract, complete path-contract task coverage, and divergence approval updates.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Round 3 plan-review fixes added update-all semantics and no-cache tag command coverage.
+  - timestamp: 2026-06-14
+    task: T01
+    commit: not_required
+    note: Round 4 plan-review fixes made setup depend on preflight/path validation and added update-all ordering/failure checks.
+  - timestamp: 2026-06-14T04:39:57Z
+    task: T01
+    commit: pending
+    note: User approved the reviewed plan for implementation; marked the plan accepted and opened T02.
