@@ -70,6 +70,11 @@ type RemoveGit interface {
 	ResetHard(context.Context, string) error
 }
 
+type PushGit interface {
+	UpdateGit
+	ConfigGet(context.Context, ...string) (string, bool, error)
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -102,7 +107,7 @@ func NewAppWithOptions(options Options) cli.App {
 		cli.CommandUpdate: UpdateHandler{Options: options},
 		cli.CommandRemove: RemoveHandler{Options: options},
 		cli.CommandDiff:   DiffHandler{Options: options},
-		cli.CommandPush:   Handler{Command: cli.CommandPush, Options: options},
+		cli.CommandPush:   PushHandler{Options: options},
 		cli.CommandSetup:  SetupHandler{Options: options},
 		cli.CommandStatus: StatusHandler{Options: options},
 	}

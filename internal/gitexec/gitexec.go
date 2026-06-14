@@ -133,6 +133,25 @@ func (g Git) RepoFilePath(ctx context.Context, path string) (string, error) {
 	return g.Output(ctx, "rev-parse", "--git-path", path)
 }
 
+func (g Git) ConfigGet(ctx context.Context, args ...string) (string, bool, error) {
+	gitArgs := append([]string{"config"}, args...)
+	result, err := g.RunOK(ctx, gitArgs...)
+	if err != nil {
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1 {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return strings.TrimSpace(result.Stdout), true, nil
+}
+
+func (g Git) ConfigSet(ctx context.Context, args ...string) error {
+	gitArgs := append([]string{"config"}, args...)
+	_, err := g.RunOK(ctx, gitArgs...)
+	return err
+}
+
 func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
 	return g.Output(ctx, "rev-parse", rev)
 }
@@ -266,6 +285,33 @@ func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
 
 func (g Git) ResetHard(ctx context.Context, target string) error {
 	_, err := g.RunOK(ctx, "reset", "--hard", target)
+	return err
+}
+
+func (g Git) Init(ctx context.Context) error {
+	_, err := g.RunOK(ctx, "init")
+	return err
+}
+
+func (g Git) UpdateRef(ctx context.Context, args ...string) error {
+	gitArgs := append([]string{"update-ref"}, args...)
+	_, err := g.RunOK(ctx, gitArgs...)
+	return err
+}
+
+func (g Git) ReadTreeUpdateMerge(ctx context.Context, treeish string) error {
+	_, err := g.RunOK(ctx, "read-tree", "-um", treeish)
+	return err
+}
+
+func (g Git) CommitVerbose(ctx context.Context) error {
+	_, err := g.RunOK(ctx, "commit", "-v")
+	return err
+}
+
+func (g Git) Push(ctx context.Context, args ...string) error {
+	gitArgs := append([]string{"push"}, args...)
+	_, err := g.RunOK(ctx, gitArgs...)
 	return err
 }
 
