@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 
-	"braid/internal/cli"
+	"braid/internal/command"
 )
 
 func main() {
@@ -12,5 +12,5 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	return cli.New().Run(args, stdout, stderr)
+	return command.NewApp().Run(args, stdout, stderr)
 }

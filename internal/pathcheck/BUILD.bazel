@@ -1,0 +1,16 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pathcheck",
+    srcs = ["pathcheck.go"],
+    importpath = "braid/internal/pathcheck",
+    visibility = ["//visibility:public"],
+    deps = ["//internal/mirror"],
+)
+
+go_test(
+    name = "pathcheck_test",
+    srcs = ["pathcheck_test.go"],
+    embed = [":pathcheck"],
+    deps = ["//internal/mirror"],
+)

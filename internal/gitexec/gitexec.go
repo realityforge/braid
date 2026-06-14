@@ -130,6 +130,14 @@ func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
 	return g.Output(ctx, "rev-parse", rev)
 }
 
+func (g Git) StatusPorcelain(ctx context.Context) (string, error) {
+	result, err := g.RunOK(ctx, "status", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
 	result, err := r.Run(ctx, args...)
 	if err != nil {

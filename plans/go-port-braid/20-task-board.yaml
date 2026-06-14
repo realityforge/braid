@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T06
+current_focus: T07
 
 tasks:
   - id: T01
@@ -210,12 +210,12 @@ tasks:
       - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 16ae1b2
+      message: "feat(config): model modern braid metadata"
 
   - id: T06
     title: Path validation and repository preflight
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T04, T05]
     acceptance_criteria:
@@ -227,16 +227,48 @@ tasks:
       - Tests cover every row of the requirements Path Validation Contract for local mirror paths and upstream --path values.
       - Tests cover generated remote-name collisions before mutation.
     files_touched:
+      - cmd/braid/**
+      - docs/**
       - internal/pathcheck/**
       - internal/command/**
-    evidence: []
+      - internal/gitexec/**
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel test //internal/pathcheck:pathcheck_test
+        result: pass
+      - command: bazel test //internal/command:command_test
+        result: pass
+      - command: bazel test //cmd/braid:braid_test
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/pathcheck/pathcheck.go internal/pathcheck/pathcheck_test.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/command/preflight.go internal/command/preflight_test.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt cmd/braid/main.go internal/gitexec/gitexec.go
+        result: "fail; go fmt named files must be in one directory"
+      - command: bazel run @rules_go//go -- fmt cmd/braid/main.go
+        result: pass
+      - command: bazel run @rules_go//go -- fmt internal/gitexec/gitexec.go
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T07
     title: Fixture and integration test harness
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T02, T04, T05]
     acceptance_criteria:
@@ -550,5 +582,9 @@ history:
     note: Git subprocess runner and wrapper tests completed; full corrected gates pass.
   - timestamp: 2026-06-14T05:04:56Z
     task: T05
-    commit: pending
+    commit: 16ae1b2
     note: Modern config and mirror model completed; focused tests and full corrected gates pass.
+  - timestamp: 2026-06-14T05:10:14Z
+    task: T06
+    commit: pending
+    note: Path validation and repository preflight completed; focused tests and full corrected gates pass.
