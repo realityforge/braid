@@ -82,11 +82,11 @@ Q-01 decision: support the mainstream set first.
 
 | OS | Architecture | Bazel platform | Support level |
 |---|---|---|---|
-| Linux | amd64 | `@io_bazel_rules_go//go/toolchain:linux_amd64` | release |
-| Linux | arm64 | `@io_bazel_rules_go//go/toolchain:linux_arm64` | release |
-| macOS | amd64 | `@io_bazel_rules_go//go/toolchain:darwin_amd64` | release |
-| macOS | arm64 | `@io_bazel_rules_go//go/toolchain:darwin_arm64` | release |
-| Windows | amd64 | `@io_bazel_rules_go//go/toolchain:windows_amd64` | release |
+| Linux | amd64 | `@rules_go//go/toolchain:linux_amd64` | release |
+| Linux | arm64 | `@rules_go//go/toolchain:linux_arm64` | release |
+| macOS | amd64 | `@rules_go//go/toolchain:darwin_amd64` | release |
+| macOS | arm64 | `@rules_go//go/toolchain:darwin_arm64` | release |
+| Windows | amd64 | `@rules_go//go/toolchain:windows_amd64` | release |
 
 ## Validation Mapping
 

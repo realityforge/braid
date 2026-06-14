@@ -3,3 +3,5 @@
 # Ignore hierarchy that has been downloaded for references
 /vendor
 
+# Bazel output symlinks
+/bazel-*

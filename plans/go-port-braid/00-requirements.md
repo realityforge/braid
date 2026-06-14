@@ -82,11 +82,11 @@ Required full gate before implementation tasks close:
 
 ```bash
 bazel test //...
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 ```
 
 Additional release gate before an actual release:

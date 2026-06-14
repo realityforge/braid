@@ -122,11 +122,11 @@ Planning default:
 
 ```bash
 bazel test //...
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
-bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 ```
 
 ## Task Sequence
@@ -182,6 +182,8 @@ bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/bra
 - Round 4:
   - Made `setup` depend on shared preflight/path validation.
   - Added update-all deterministic ordering and stop-on-first-failure validation.
+- Implementation correction:
+  - Updated full-gate platform labels from `@io_bazel_rules_go` to the Bzlmod-visible `@rules_go` after verifying `@io_bazel_rules_go` is not visible and `@rules_go` builds.
 
 ## Completion Criteria
 

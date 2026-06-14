@@ -1,0 +1,9 @@
+module(
+    name = "braid",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_go", version = "0.61.1")
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.26.4")

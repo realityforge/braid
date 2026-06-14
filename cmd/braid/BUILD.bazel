@@ -1,0 +1,20 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "braid_lib",
+    srcs = ["main.go"],
+    importpath = "braid/cmd/braid",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "braid",
+    embed = [":braid_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "braid_test",
+    srcs = ["main_test.go"],
+    embed = [":braid_lib"],
+)

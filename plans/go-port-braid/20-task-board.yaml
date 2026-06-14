@@ -4,18 +4,18 @@ meta:
   last_updated: 2026-06-14
   required_full_gates:
     - bazel test //...
-    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
-    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
-    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
-    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
-    - bazel build --platforms=@io_bazel_rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+    - bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+    - bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+    - bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+    - bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+    - bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
   statuses:
     - pending
     - in_progress
     - completed
     - cancelled
 
-current_focus: T02
+current_focus: T03
 
 tasks:
   - id: T01
@@ -40,12 +40,12 @@ tasks:
       - command: user request in current thread to implement the Go+Bazel port from the reviewed plan
         result: pass; treated as explicit plan approval per the required workflow
     commit:
-      hash: pending
-      message: pending
+      hash: b83ba5a
+      message: "chore(plan): accept Go port implementation plan"
 
   - id: T02
     title: Bazel and Go scaffold
-    status: in_progress
+    status: completed
     priority: high
     depends_on: [T01]
     acceptance_criteria:
@@ -54,19 +54,43 @@ tasks:
       - braid version runs under bazel.
       - bazel test //... passes.
     files_touched:
+      - .gitignore
       - MODULE.bazel
       - MODULE.bazel.lock
       - .bazelrc
       - BUILD.bazel
       - cmd/braid/**
-    evidence: []
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel test //cmd/braid:braid_test
+        result: pass
+      - command: bazel run //cmd/braid:braid -- version
+        result: "pass; output: braid 0.0.0-dev"
+      - command: bazel build //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: fail; @io_bazel_rules_go is not visible from the Bzlmod root; recorded as PI-01 and corrected to @rules_go
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel test //...
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
+        result: pass
+      - command: bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
+        result: pass
     commit:
       hash: pending
       message: pending
 
   - id: T03
     title: CLI parser and command dispatch
-    status: pending
+    status: in_progress
     priority: high
     depends_on: [T02]
     acceptance_criteria:
@@ -437,5 +461,13 @@ history:
     note: Round 4 plan-review fixes made setup depend on preflight/path validation and added update-all ordering/failure checks.
   - timestamp: 2026-06-14T04:39:57Z
     task: T01
-    commit: pending
+    commit: b83ba5a
     note: User approved the reviewed plan for implementation; marked the plan accepted and opened T02.
+  - timestamp: 2026-06-14
+    task: T02
+    commit: pending
+    note: Corrected required full-gate platform labels to Bzlmod-visible @rules_go after @io_bazel_rules_go failed to resolve and @rules_go linux_amd64 build passed.
+  - timestamp: 2026-06-14T04:48:07Z
+    task: T02
+    commit: pending
+    note: Bazel/rules_go scaffold completed; version binary runs and full corrected gates pass.
