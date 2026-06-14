@@ -425,6 +425,11 @@ func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 		}
 	}
 
+	// Braid intentionally delegates Git operations to the user's Git executable.
+	// Arguments are passed as argv rather than through a shell, so shell
+	// metacharacters are not interpreted here. The trust boundary is the resolved
+	// executable, the user's Git configuration, and Git's handling of the target
+	// repository.
 	cmd := exec.CommandContext(ctx, executable, commandArgs...)
 	cmd.Dir = r.WorkDir
 	cmd.Env = r.environment()
