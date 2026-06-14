@@ -87,6 +87,7 @@ type Options struct {
 	Git        Git
 	WorkDir    string
 	ConfigRoot string
+	Stdin      io.Reader
 }
 
 type Handler struct {

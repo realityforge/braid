@@ -33,6 +33,31 @@ func TestPushCommandPushesBranchAndPreservesIdentity(t *testing.T) {
 	}
 }
 
+func TestPushCommandEditorReceivesStdin(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "stdin\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	t.Setenv("GIT_EDITOR", writeStdinEditor(t))
+
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{
+		WorkDir:    repo,
+		ConfigRoot: repo,
+		Stdin:      strings.NewReader("Push from stdin\n"),
+	}).Run([]string{"push", "vendor/basic"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("braid push exit = %d, stderr = %q", code, stderr.String())
+	}
+	assertFile(t, upstream, "README.md", "stdin\n")
+	assertCommitSubject(t, upstream, "Push from stdin")
+}
+
 func TestPushCommandPushesExplicitBranch(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -286,6 +311,16 @@ func writeEditor(t *testing.T, message string) string {
 	body := "#!/bin/sh\nprintf '" + message + "\\n' > \"$1\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write editor: %v", err)
+	}
+	return path
+}
+
+func writeStdinEditor(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "editor.sh")
+	body := "#!/bin/sh\nIFS= read -r message || exit 1\nprintf '%s\\n' \"$message\" > \"$1\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatalf("write stdin editor: %v", err)
 	}
 	return path
 }

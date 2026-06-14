@@ -46,7 +46,7 @@ func (h PushHandler) pushGit(inv cli.Invocation, trace io.Writer) PushGit {
 	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
 }
 
-func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, trace io.Writer) (err error) {
+func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, stderr io.Writer) (err error) {
 	branch := inv.Push.Branch
 	if branch == "" {
 		branch = m.Branch
@@ -60,7 +60,7 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, inv.Push.Verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m.URL, inv.Push.Verbose, stderr); err != nil {
 			return err
 		}
 	}
@@ -113,10 +113,10 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 	if err != nil {
 		return err
 	}
-	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, localItem, inv.Push.Verbose, trace)
+	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, localItem, inv.Push.Verbose, h.stdin(), stdout, stderr)
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision string, localItem gitexec.TreeItem, verbose bool, trace io.Writer) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision string, localItem gitexec.TreeItem, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	tempDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -125,7 +125,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 		_ = os.RemoveAll(tempDir)
 	}()
 
-	tempGit := gitexec.New(tempDir, verbose, trace)
+	tempGit := gitexec.New(tempDir, verbose, stderr)
 	if err := tempGit.Init(ctx); err != nil {
 		return err
 	}
@@ -154,10 +154,17 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 	if err := tempGit.ReadTreeUpdateMerge(ctx, newTree); err != nil {
 		return err
 	}
-	if err := tempGit.CommitVerbose(ctx); err != nil {
+	if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
 		return err
 	}
 	return tempGit.Push(ctx, m.URL, "HEAD:refs/heads/"+branch)
+}
+
+func (h PushHandler) stdin() io.Reader {
+	if h.Options.Stdin != nil {
+		return h.Options.Stdin
+	}
+	return os.Stdin
 }
 
 func copyLocalGitConfig(ctx context.Context, source PushGit, target gitexec.Git) error {

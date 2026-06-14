@@ -304,8 +304,8 @@ func (g Git) ReadTreeUpdateMerge(ctx context.Context, treeish string) error {
 	return err
 }
 
-func (g Git) CommitVerbose(ctx context.Context) error {
-	_, err := g.RunOK(ctx, "commit", "-v")
+func (g Git) CommitVerbose(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
+	_, err := g.Runner.RunInteractiveOK(ctx, stdin, stdout, stderr, "commit", "-v")
 	return err
 }
 
@@ -404,6 +404,59 @@ func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
 }
 
 func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
+	cmd, result, err := r.command(ctx, args...)
+	if err != nil {
+		return result, err
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	result.ExitCode = exitCode(err)
+
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		return result, err
+	}
+	return result, nil
+}
+
+func (r Runner) RunInteractiveOK(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, args ...string) (Result, error) {
+	result, err := r.RunInteractive(ctx, stdin, stdout, stderr, args...)
+	if err != nil {
+		return result, err
+	}
+	if result.ExitCode != 0 {
+		return result, &ExitError{Result: result}
+	}
+	return result, nil
+}
+
+func (r Runner) RunInteractive(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, args ...string) (Result, error) {
+	cmd, result, err := r.command(ctx, args...)
+	if err != nil {
+		return result, err
+	}
+
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	err = cmd.Run()
+	result.ExitCode = exitCode(err)
+
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
+		return result, err
+	}
+	return result, nil
+}
+
+func (r Runner) command(ctx context.Context, args ...string) (*exec.Cmd, Result, error) {
 	executable := r.executable()
 	commandArgs := append([]string{}, r.PrefixArgs...)
 	commandArgs = append(commandArgs, args...)
@@ -421,7 +474,7 @@ func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 			trace = io.Discard
 		}
 		if _, err := fmt.Fprintf(trace, "Braid: Executing %s in %s\n", FormatArgv(append([]string{DefaultGitExecutable}, args...)), displayDir(r.WorkDir)); err != nil {
-			return result, err
+			return nil, result, err
 		}
 	}
 
@@ -433,21 +486,7 @@ func (r Runner) Run(ctx context.Context, args ...string) (Result, error) {
 	cmd := exec.CommandContext(ctx, executable, commandArgs...)
 	cmd.Dir = r.WorkDir
 	cmd.Env = r.environment()
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	result.Stdout = stdout.String()
-	result.Stderr = stderr.String()
-	result.ExitCode = exitCode(err)
-
-	var exitErr *exec.ExitError
-	if err != nil && !errors.As(err, &exitErr) {
-		return result, err
-	}
-	return result, nil
+	return cmd, result, nil
 }
 
 func (r Runner) executable() string {

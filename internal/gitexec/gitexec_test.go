@@ -51,6 +51,56 @@ func TestRunnerRunOKMapsNonZeroToExitError(t *testing.T) {
 	}
 }
 
+func TestRunnerRunInteractivePassesStdioAndStatus(t *testing.T) {
+	runner := helperRunner(t, map[string]string{"GITEXEC_HELPER_EXIT": "7"})
+	var stdout, stderr bytes.Buffer
+
+	result, err := runner.RunInteractive(context.Background(), strings.NewReader("input text\n"), &stdout, &stderr, "interactive")
+
+	if err != nil {
+		t.Fatalf("RunInteractive returned error: %v", err)
+	}
+	if result.ExitCode != 7 {
+		t.Fatalf("ExitCode = %d, want 7", result.ExitCode)
+	}
+	if stdout.String() != "helper stdout: input text\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if stderr.String() != "helper stderr: input text\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if result.Stdout != "" {
+		t.Fatalf("Result.Stdout = %q, want empty for interactive run", result.Stdout)
+	}
+	if result.Stderr != "" {
+		t.Fatalf("Result.Stderr = %q, want empty for interactive run", result.Stderr)
+	}
+	if !reflect.DeepEqual(result.GitArgs, []string{"interactive"}) {
+		t.Fatalf("GitArgs = %#v", result.GitArgs)
+	}
+}
+
+func TestRunnerRunInteractiveOKMapsNonZeroToExitError(t *testing.T) {
+	runner := helperRunner(t, map[string]string{"GITEXEC_HELPER_EXIT": "9"})
+	var stdout, stderr bytes.Buffer
+
+	result, err := runner.RunInteractiveOK(context.Background(), strings.NewReader("failure\n"), &stdout, &stderr, "interactive")
+
+	if result.ExitCode != 9 {
+		t.Fatalf("ExitCode = %d, want 9", result.ExitCode)
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("error = %T %v, want *ExitError", err, err)
+	}
+	if stdout.String() != "helper stdout: failure\n" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if stderr.String() != "helper stderr: failure\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunnerUsesArgvWithoutShellInterpretation(t *testing.T) {
 	runner := helperRunner(t, nil)
 	dangerous := "semi;colon $(echo no) && still-one-arg"
@@ -207,6 +257,15 @@ func TestHelperProcess(t *testing.T) {
 	case "mock-output":
 		helperFprintln(os.Stdout, "helper stdout")
 		helperFprintln(os.Stderr, "helper stderr")
+		os.Exit(helperExitCode())
+	case "interactive":
+		input, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			helperFprintf(os.Stderr, "read stdin: %v\n", err)
+			os.Exit(2)
+		}
+		helperFprintf(os.Stdout, "helper stdout: %s", input)
+		helperFprintf(os.Stderr, "helper stderr: %s", input)
 		os.Exit(helperExitCode())
 	case "argv":
 		for _, arg := range args {
