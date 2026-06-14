@@ -54,6 +54,13 @@ type StatusGit interface {
 	LsFiles(context.Context, string) (string, error)
 }
 
+type UpdateGit interface {
+	StatusGit
+	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
+	MergeTrees(context.Context, map[string]string, string, string, string) (string, error)
+	RepoFilePath(context.Context, string) (string, error)
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -83,7 +90,7 @@ func NewAppWithOptions(options Options) cli.App {
 	app := cli.New()
 	app.Handler = map[cli.Command]cli.Handler{
 		cli.CommandAdd:    AddHandler{Options: options},
-		cli.CommandUpdate: Handler{Command: cli.CommandUpdate, Options: options},
+		cli.CommandUpdate: UpdateHandler{Options: options},
 		cli.CommandRemove: Handler{Command: cli.CommandRemove, Options: options},
 		cli.CommandDiff:   DiffHandler{Options: options},
 		cli.CommandPush:   Handler{Command: cli.CommandPush, Options: options},

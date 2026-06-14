@@ -220,8 +220,18 @@ func (g Git) ReadTreePrefix(ctx context.Context, prefix, treeish string, updateW
 	return err
 }
 
+func (g Git) ReadTreeIndexMerge(ctx context.Context, treeish string) error {
+	_, err := g.RunOK(ctx, "read-tree", "-im", treeish)
+	return err
+}
+
 func (g Git) UpdateIndexCacheInfo(ctx context.Context, mode, hash, path string) error {
 	_, err := g.RunOK(ctx, "update-index", "--add", "--cacheinfo", mode+","+hash+","+path)
+	return err
+}
+
+func (g Git) RemoveCachedRecursive(ctx context.Context, path string) error {
+	_, err := g.RunOK(ctx, "rm", "-r", "--cached", "--", path)
 	return err
 }
 
@@ -255,6 +265,10 @@ func (g Git) ResetHard(ctx context.Context, target string) error {
 }
 
 func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeItem) (string, error) {
+	return g.MakeTreeWithItemIn(ctx, "", itemPath, item)
+}
+
+func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath string, item TreeItem) (string, error) {
 	dir, err := os.MkdirTemp("", "braid-index")
 	if err != nil {
 		return "", err
@@ -264,6 +278,15 @@ func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeIte
 	tempGit := g
 	tempGit.Runner.Env = copyEnv(g.Runner.Env)
 	tempGit.Runner.Env["GIT_INDEX_FILE"] = filepath.Join(dir, "index")
+
+	if mainContent != "" && itemPath != "" {
+		if err := tempGit.ReadTreeIndexMerge(ctx, mainContent); err != nil {
+			return "", err
+		}
+		if err := tempGit.RemoveCachedRecursive(ctx, itemPath); err != nil {
+			return "", err
+		}
+	}
 
 	if item.Type == "blob" {
 		if err := tempGit.UpdateIndexCacheInfo(ctx, item.Mode, item.Hash, itemPath); err != nil {
@@ -277,6 +300,23 @@ func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeIte
 		return "", fmt.Errorf("tree item type %q is not supported", item.Type)
 	}
 	return tempGit.Output(ctx, "write-tree")
+}
+
+func (g Git) MergeTrees(ctx context.Context, env map[string]string, baseTreeish, localTreeish, remoteTreeish string) (string, error) {
+	mergeGit := g
+	mergeGit.Runner.Env = copyEnv(g.Runner.Env)
+	for key, value := range env {
+		mergeGit.Runner.Env[key] = value
+	}
+
+	result, runErr := mergeGit.Run(ctx, "merge-recursive", baseTreeish, "--", localTreeish, remoteTreeish)
+	if runErr != nil {
+		return result.Stdout, runErr
+	}
+	if result.ExitCode != 0 {
+		return result.Stdout, &ExitError{Result: result}
+	}
+	return result.Stdout, nil
 }
 
 func (g Git) Diff(ctx context.Context, args ...string) (string, error) {
