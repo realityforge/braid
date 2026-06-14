@@ -138,6 +138,28 @@ func (g Git) StatusPorcelain(ctx context.Context) (string, error) {
 	return result.Stdout, nil
 }
 
+func (g Git) RemoteURL(ctx context.Context, remote string) (string, bool, error) {
+	result, err := g.RunOK(ctx, "config", "--get", "remote."+remote+".url")
+	if err != nil {
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1 {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return strings.TrimSpace(result.Stdout), true, nil
+}
+
+func (g Git) RemoteAdd(ctx context.Context, remote, url string) error {
+	_, err := g.RunOK(ctx, "remote", "add", remote, url)
+	return err
+}
+
+func (g Git) RemoteRemove(ctx context.Context, remote string) error {
+	_, err := g.RunOK(ctx, "remote", "rm", remote)
+	return err
+}
+
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
 	result, err := r.Run(ctx, args...)
 	if err != nil {

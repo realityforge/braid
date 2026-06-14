@@ -21,6 +21,13 @@ type Git interface {
 	StatusPorcelain(context.Context) (string, error)
 }
 
+type RemoteGit interface {
+	Git
+	RemoteURL(context.Context, string) (string, bool, error)
+	RemoteAdd(context.Context, string, string) error
+	RemoteRemove(context.Context, string) error
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -54,7 +61,7 @@ func NewAppWithOptions(options Options) cli.App {
 		cli.CommandRemove: Handler{Command: cli.CommandRemove, Options: options},
 		cli.CommandDiff:   Handler{Command: cli.CommandDiff, Options: options},
 		cli.CommandPush:   Handler{Command: cli.CommandPush, Options: options},
-		cli.CommandSetup:  Handler{Command: cli.CommandSetup, Options: options},
+		cli.CommandSetup:  SetupHandler{Options: options},
 		cli.CommandStatus: Handler{Command: cli.CommandStatus, Options: options},
 	}
 	return app

@@ -2,19 +2,32 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "command",
-    srcs = ["preflight.go"],
+    srcs = [
+        "cache.go",
+        "preflight.go",
+        "setup.go",
+    ],
     importpath = "braid/internal/command",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/cli",
         "//internal/config",
         "//internal/gitexec",
+        "//internal/mirror",
+        "//internal/pathcheck",
     ],
 )
 
 go_test(
     name = "command_test",
-    srcs = ["preflight_test.go"],
+    srcs = [
+        "preflight_test.go",
+        "setup_test.go",
+    ],
     embed = [":command"],
-    deps = ["//internal/cli"],
+    deps = [
+        "//internal/cli",
+        "//internal/config",
+        "//internal/testutil",
+    ],
 )
