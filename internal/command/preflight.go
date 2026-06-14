@@ -61,6 +61,15 @@ type UpdateGit interface {
 	RepoFilePath(context.Context, string) (string, error)
 }
 
+type RemoveGit interface {
+	RemoteGit
+	Head(context.Context) (string, error)
+	RemoveRecursive(context.Context, string) error
+	Add(context.Context, string) error
+	CommitMessage(context.Context, string) (bool, error)
+	ResetHard(context.Context, string) error
+}
+
 type Requirements struct {
 	Git      bool
 	Root     bool
@@ -91,7 +100,7 @@ func NewAppWithOptions(options Options) cli.App {
 	app.Handler = map[cli.Command]cli.Handler{
 		cli.CommandAdd:    AddHandler{Options: options},
 		cli.CommandUpdate: UpdateHandler{Options: options},
-		cli.CommandRemove: Handler{Command: cli.CommandRemove, Options: options},
+		cli.CommandRemove: RemoveHandler{Options: options},
 		cli.CommandDiff:   DiffHandler{Options: options},
 		cli.CommandPush:   Handler{Command: cli.CommandPush, Options: options},
 		cli.CommandSetup:  SetupHandler{Options: options},

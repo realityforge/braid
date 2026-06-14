@@ -235,6 +235,11 @@ func (g Git) RemoveCachedRecursive(ctx context.Context, path string) error {
 	return err
 }
 
+func (g Git) RemoveRecursive(ctx context.Context, path string) error {
+	_, err := g.RunOK(ctx, "rm", "-r", "--", path)
+	return err
+}
+
 func (g Git) CheckoutIndex(ctx context.Context, path string) error {
 	_, err := g.RunOK(ctx, "checkout-index", "--", path)
 	return err
