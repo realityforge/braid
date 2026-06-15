@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const DefaultVersion = "0.0.0-dev"
+var DefaultVersion = "0.0.0-dev"
 
 type Command string
 

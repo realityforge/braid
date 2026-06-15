@@ -12,6 +12,7 @@ go_binary(
     name = "braid",
     embed = [":braid_lib"],
     visibility = ["//visibility:public"],
+    x_defs = {"braid/internal/cli.DefaultVersion": "{STABLE_BRAID_VERSION}"},
 )
 
 go_test(

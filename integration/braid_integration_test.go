@@ -22,6 +22,13 @@ const (
 	defaultEmail = "braid-integration@example.invalid"
 )
 
+func expectedBraidVersion() string {
+	if version := os.Getenv("BRAID_EXPECTED_VERSION"); version != "" {
+		return version
+	}
+	return "0.0.0-dev"
+}
+
 func TestExecutablePrimaryLifecycle(t *testing.T) {
 	root := t.TempDir()
 	env := newProcessEnv(t, root)
@@ -41,7 +48,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	writeFailingPreCommitHook(t, downstream)
 
 	version := runBraid(t, env, root, braid, "version")
-	assertResult(t, version, 0, "braid 0.0.0-dev\n", "")
+	assertResult(t, version, 0, "braid "+expectedBraidVersion()+"\n", "")
 
 	localPath := "vendor/lib with spaces"
 	remote := remoteName("main", localPath)
