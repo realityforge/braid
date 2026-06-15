@@ -2,6 +2,7 @@ package command
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -101,6 +102,32 @@ func TestResolveCacheFallsBackWhenUserCacheDirUnavailable(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".braid", "cache"); got.Dir != want {
 		t.Fatalf("cache Dir = %q, want %q", got.Dir, want)
+	}
+}
+
+func TestRuntimeCacheUsesCanonicalWorkingDirForRelativeCacheDir(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatalf("create real dir: %v", err)
+	}
+	linkDir := filepath.Join(root, "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	t.Chdir(linkDir)
+
+	got, err := runtimeCache(cli.GlobalOptions{CacheDir: "cache", CacheDirSet: true})
+	if err != nil {
+		t.Fatalf("runtimeCache returned error: %v", err)
+	}
+	canonicalRealDir, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatalf("canonicalize real dir: %v", err)
+	}
+	want := CacheConfig{Enabled: true, Dir: filepath.Join(canonicalRealDir, "cache")}
+	if got != want {
+		t.Fatalf("runtimeCache = %#v, want %#v", got, want)
 	}
 }
 

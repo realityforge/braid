@@ -170,7 +170,11 @@ func TestSetupCommandHonorsNoCacheAndCacheDir(t *testing.T) {
 		t.Fatalf("setup --cache-dir exit = %d, stderr = %q", code, stderr.String())
 	}
 	cacheURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
-	if !strings.HasPrefix(cacheURL, filepath.Join(repo, "local-cache")) {
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatalf("canonicalize repo path: %v", err)
+	}
+	if !strings.HasPrefix(cacheURL, filepath.Join(canonicalRepo, "local-cache")) {
 		t.Fatalf("cache URL = %q, want under relative cache dir", cacheURL)
 	}
 }

@@ -66,11 +66,19 @@ func CachePath(cacheDir, url string) string {
 }
 
 func runtimeCache(global cli.GlobalOptions) (CacheConfig, error) {
-	cwd, err := os.Getwd()
+	cwd, err := currentWorkingDir()
 	if err != nil {
 		return CacheConfig{}, err
 	}
 	return ResolveCache(global, os.LookupEnv, cwd)
+}
+
+func currentWorkingDir() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(cwd)
 }
 
 func absolutePath(value, cwd string) (string, error) {
