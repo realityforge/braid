@@ -1,6 +1,6 @@
 meta:
   project: global-verbose-flag
-  status: accepted
+  status: completed
   last_updated: 2026-06-15
   required_full_gates:
     - bazel run @rules_go//go -- fmt ./...
@@ -11,7 +11,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T01
+current_focus: complete
 
 tasks:
   - id: PLAN-DRAFT
@@ -74,7 +74,7 @@ tasks:
 
   - id: T01
     title: Move verbose into global CLI parsing
-    status: pending
+    status: completed
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -87,14 +87,18 @@ tasks:
     files_touched:
       - internal/cli/cli.go
       - internal/cli/cli_test.go
-    evidence: []
+    evidence:
+      - command: bazel run @rules_go//go -- fmt internal/cli/cli.go internal/cli/cli_test.go
+        result: pass; parser files formatted.
+      - command: bazel test //internal/cli:cli_test
+        result: pass; 1 test target passed.
     commit:
-      hash: pending
-      message: pending
+      hash: 4b7eafb
+      message: "feat(cli): promote verbose to global flag"
 
   - id: T02
     title: Wire command behavior to global verbose
-    status: pending
+    status: completed
     priority: high
     depends_on:
       - T01
@@ -107,14 +111,22 @@ tasks:
     files_touched:
       - internal/command/*.go
       - internal/command/*_test.go
-    evidence: []
+    evidence:
+      - command: 'rg -n "\.Verbose|verbose\(inv\)|options\.Verbose|inv\.[A-Za-z]+\.Verbose" internal cmd'
+        result: pass; command code uses only inv.Global.Verbose, with remaining git runner Verbose internals expected.
+      - command: bazel run @rules_go//go -- fmt internal/command/add_test.go internal/command/add.go internal/command/diff.go internal/command/preflight.go internal/command/push.go internal/command/remove.go internal/command/setup.go internal/command/status.go internal/command/update.go
+        result: pass; command files formatted.
+      - command: bazel test //internal/command:command_test
+        result: fail; first trace assertion expected shell-style text while runner emits deterministic argv.
+      - command: bazel test //internal/command:command_test
+        result: pass; 1 test target passed after correcting trace assertions.
     commit:
-      hash: pending
-      message: pending
+      hash: 4b7eafb
+      message: "feat(cli): promote verbose to global flag"
 
   - id: T03
     title: Align help text and documentation
-    status: pending
+    status: completed
     priority: medium
     depends_on:
       - T01
@@ -130,14 +142,22 @@ tasks:
       - internal/cli/cli_test.go
       - README.md
       - plans/go-port-braid/00-requirements.md
-    evidence: []
+    evidence:
+      - command: bazel run @rules_go//go -- fmt internal/cli/cli.go internal/cli/cli_test.go
+        result: pass; CLI help/test files formatted.
+      - command: bazel test //internal/cli:cli_test
+        result: pass; 1 test target passed after help assertions.
+      - command: 'rg -n -- "usage: braid \[--no-cache|\[--verbose\|-v\]|Global cache flags" README.md plans/go-port-braid/00-requirements.md internal/cli/cli.go internal/cli/cli_test.go'
+        result: pass; no stale top-level usage or old global-cache prose remains outside negative test coverage.
+      - command: 'rg -n -- "\[--verbose\|-v\]" plans/go-port-braid/00-requirements.md internal/cli/cli.go README.md'
+        result: pass; verbose syntax appears only in global usage surfaces.
     commit:
-      hash: pending
-      message: pending
+      hash: 4b7eafb
+      message: "feat(cli): promote verbose to global flag"
 
   - id: T04
     title: Final validation and evidence capture
-    status: pending
+    status: completed
     priority: high
     depends_on:
       - T03
@@ -151,10 +171,20 @@ tasks:
       - Completed tasks record either a real commit SHA or `not_required`, never `pending`.
     files_touched:
       - plans/global-verbose-flag/20-task-board.yaml
-    evidence: []
+    evidence:
+      - command: ruby -e 'require "yaml"; YAML.load_file("plans/global-verbose-flag/20-task-board.yaml"); puts "task board yaml ok"'
+        result: pass; task board yaml ok before full validation.
+      - command: git diff --check
+        result: pass; no whitespace errors.
+      - command: bazel run @rules_go//go -- fmt ./...
+        result: pass; formatting command completed successfully.
+      - command: bazel test //cmd/braid:braid_test
+        result: pass; 1 test target passed.
+      - command: bazel test //...
+        result: pass; 10 test targets passed.
     commit:
-      hash: pending
-      message: pending
+      hash: not_required
+      message: Final validation evidence tracking only.
 
 history:
   - timestamp: 2026-06-15
@@ -169,3 +199,19 @@ history:
     task: PLAN-APPROVAL
     commit: not_required
     note: User approved the reviewed global verbose flag plan for implementation.
+  - timestamp: 2026-06-15
+    task: T01
+    commit: 4b7eafb
+    note: Moved verbose parsing into global options and verified the CLI parser target.
+  - timestamp: 2026-06-15
+    task: T02
+    commit: 4b7eafb
+    note: Rewired command handlers to inv.Global.Verbose and added explicit verbose trace propagation coverage.
+  - timestamp: 2026-06-15
+    task: T03
+    commit: 4b7eafb
+    note: Updated help text, README, and active Go-port requirements for global verbose syntax.
+  - timestamp: 2026-06-15
+    task: T04
+    commit: not_required
+    note: Full formatting and test gates passed; delivery evidence recorded.
