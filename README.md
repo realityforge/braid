@@ -311,7 +311,8 @@ includes it.
 
 ## Build And Test
 
-The build infrastructure relies on Bazel or Bazelisk with Bzlmod enabled.
+This repository is Bazel-first. Use Bazel as the source of truth for builds,
+tests, formatting, vetting, linting, and Go toolchain selection.
 
 ```bash
 bazel test //...
