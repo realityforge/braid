@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T04
+current_focus: T05
 
 tasks:
   - id: PLAN-DRAFT
@@ -156,7 +156,7 @@ tasks:
 
   - id: T04
     title: Add tag-ref release workflow
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T03
@@ -171,14 +171,22 @@ tasks:
       - tools/release/build-artifact.sh
       - tools/release/verify-dist.sh
       - tools/release/publish-draft.sh
-    evidence: []
+    evidence:
+      - command: bash -n tools/release/build-artifact.sh tools/release/verify-dist.sh tools/release/publish-draft.sh tools/release/wait-for-checks.sh tools/release/version.sh tools/release/workspace-status.sh
+        result: pass; shell syntax valid.
+      - command: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release.yml"); puts "release yaml ok"'
+        result: pass; release yaml ok.
+      - command: tools/release/build-artifact.sh darwin-arm64 1.2.3 && dist/braid-darwin-arm64 version
+        result: pass; local native artifact printed braid 1.2.3.
+      - command: tools/release/verify-dist.sh "$tmp"
+        result: pass; temporary complete artifact set and SHA256SUMS verified.
     commit:
-      hash: pending
-      message: pending
+      hash: d09c44d
+      message: "feat(release): build draft release artifacts"
 
   - id: T05
     title: Minimize release documentation
-    status: pending
+    status: in_progress
     priority: medium
     depends_on:
       - T04
@@ -243,3 +251,7 @@ history:
     task: T03
     commit: 8bde22e
     note: Added release-cut workflow and exact-SHA GitHub check polling.
+  - timestamp: 2026-06-15
+    task: T04
+    commit: d09c44d
+    note: Added tag-ref release workflow, native artifact build helpers, dist verification, and draft release publishing.

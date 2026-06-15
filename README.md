@@ -337,9 +337,8 @@ bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
 bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 ```
 
-The full release artifact process, checksum generation, manual macOS
-signing/notarization path, and native smoke matrix are documented in
-[`docs/release.md`](docs/release.md).
+Release automation and the manual macOS signing/notarization caveat are
+documented in [`docs/release.md`](docs/release.md).
 
 ## Documentation
 

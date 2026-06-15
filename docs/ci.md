@@ -5,13 +5,15 @@ every pull request and every push to `main`.
 
 ## Workflow
 
-The workflow lives in `.github/workflows/ci.yml` and has one job:
+The workflow lives in `.github/workflows/ci.yml` and has two job families:
 
 - `Go quality and lint` runs formatting, tests, vet, and golangci-lint through
   Bazel. Tests use `bazel test //...` so unit tests, real-Git tests, and the
   executable integration target all run as first-class Bazel targets.
+- `Integration (<platform>)` runs the executable integration target on the
+  non-default native release platforms used for early cross-platform signal.
 
-The job installs Bazel, then uses `rules_go` to supply Go. golangci-lint is run
+Each job installs Bazel, then uses `rules_go` to supply Go. golangci-lint is run
 with `bazel run @rules_go//go -- run ...` so CI still has a single automation
 entrypoint: Bazel.
 
@@ -64,10 +66,11 @@ behavior gate: it runs the Bazel-built `//cmd/braid:braid` binary as a
 subprocess against generated local Git repositories.
 
 The pull request workflow runs that target through `bazel test //...` on its
-Linux runner. The release gate in `docs/release.md` owns the fixed native
-Linux, macOS, and Windows runner matrix for
-`bazel test //integration:braid_integration_test`, plus release-platform builds
-and packaged-artifact checks.
+Linux runner. Release automation lives in `.github/workflows/release-cut.yml`
+and `.github/workflows/release.yml`; those workflows own the fixed native
+release matrix, stamped release builds, packaged-artifact checks, and draft
+release creation. The non-obvious release policy is documented in
+[`docs/release.md`](release.md).
 
 ## GitHub Setup
 
@@ -79,4 +82,5 @@ After pushing this repository to GitHub:
 
 1. Enable GitHub Actions for the repository.
 2. Push a branch or open a pull request and confirm the `CI` workflow appears.
-3. Protect `main` and require the `Go quality and lint` check before merge.
+3. Protect `main` and require the CI checks that release automation expects
+   before merge.
