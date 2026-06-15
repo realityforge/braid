@@ -328,8 +328,19 @@ bazel run @rules_go//go -- vet ./...
 bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
 ```
 
-GitHub Actions CI and the local pull request checks are documented in
-[`docs/ci.md`](docs/ci.md).
+## GitHub Actions CI Workflow
+
+GitHub Actions CI workflow lives in `.github/workflows/ci.yml` and has two job families:
+
+- `Go quality and lint` runs formatting, tests, vet, and golangci-lint through
+  Bazel. Tests use `bazel test //...` so unit tests, real-Git tests, and the
+  executable integration target all run as first-class Bazel targets.
+- `Integration (<platform>)` runs the executable integration target on the
+  non-default native release platforms used for early cross-platform signal.
+
+Each job installs Bazel, then uses `rules_go` to supply Go. golangci-lint is run
+with `bazel run @rules_go//go -- run ...` so CI still has a single automation
+entrypoint: Bazel.
 
 # Release Builds
 
@@ -345,8 +356,3 @@ Releases are cut through GitHub Actions:
 
 The workflow files own the operational details, including runner labels,
 permissions, version stamping, artifact names, and verification commands.
-
-## Documentation
-
-- [`docs/ci.md`](docs/ci.md): GitHub Actions workflow and local Go quality
-  checks.
