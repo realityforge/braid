@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T03
+current_focus: T04
 
 tasks:
   - id: PLAN-DRAFT
@@ -128,7 +128,7 @@ tasks:
 
   - id: T03
     title: Add release-cut workflow
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T02
@@ -143,14 +143,20 @@ tasks:
       - .github/workflows/release-cut.yml
       - tools/release/wait-for-checks.sh
       - tools/release/version.sh
-    evidence: []
+    evidence:
+      - command: bash -n tools/release/wait-for-checks.sh tools/release/version.sh tools/release/workspace-status.sh
+        result: pass; shell syntax valid.
+      - command: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release-cut.yml"); puts "release-cut yaml ok"'
+        result: pass; release-cut yaml ok.
+      - command: GITHUB_REPOSITORY=realityforge/braid tools/release/wait-for-checks.sh d024c502c5eb988f47ac54944f0c5be16bd3b045 5 1 "Go quality and lint"
+        result: pass; existing remote CI check was detected as succeeded.
     commit:
-      hash: pending
-      message: pending
+      hash: 8bde22e
+      message: "feat(release): add release cut workflow"
 
   - id: T04
     title: Add tag-ref release workflow
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T03
@@ -233,3 +239,7 @@ history:
     task: T02
     commit: 6aab63e
     note: Added stable version normalization/comparison helper and Bazel coverage for deterministic edge cases.
+  - timestamp: 2026-06-15
+    task: T03
+    commit: 8bde22e
+    note: Added release-cut workflow and exact-SHA GitHub check polling.

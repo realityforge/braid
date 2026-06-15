@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v6
+
+      - name: Validate dispatched ref
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "Release workflow must be dispatched on a v* tag ref; got ${GITHUB_REF}" >&2
+            exit 1
+          fi
+          tools/release/version.sh is-stable-tag "${GITHUB_REF_NAME}"
+          version=$(tools/release/version.sh normalize "${GITHUB_REF_NAME}")
+          echo "tag=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            artifact: braid-linux-amd64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            artifact: braid-linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin-amd64
+            artifact: braid-darwin-amd64
+            runner: macos-15-intel
+          - platform: darwin-arm64
+            artifact: braid-darwin-arm64
+            runner: macos-15
+          - platform: windows-amd64
+            artifact: braid-windows-amd64.exe
+            runner: windows-2025
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v6
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-${{ matrix.platform }}
+          repository-cache: true
+
+      - name: Test integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRAID_VERSION="${VERSION}" bazel test \
+            --stamp \
+            --workspace_status_command=tools/release/workspace-status.sh \
+            --test_env=BRAID_EXPECTED_VERSION="${VERSION}" \
+            //integration:braid_integration_test
+
+      - name: Build artifact
+        shell: bash
+        run: tools/release/build-artifact.sh "${{ matrix.platform }}" "${VERSION}"
+
+      - name: Smoke artifact
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(dist/${{ matrix.artifact }} version)
+          if [[ "${output}" != "braid ${VERSION}" ]]; then
+            echo "version output ${output}; want braid ${VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Smoke Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $output = & ".\dist\${{ matrix.artifact }}" version
+          if ($output -ne "braid $env:VERSION") {
+            throw "version output $output; want braid $env:VERSION"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  publish:
+    name: Create draft release
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.validate.outputs.tag }}
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: braid-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x dist/braid-linux-amd64 dist/braid-linux-arm64 dist/braid-darwin-amd64 dist/braid-darwin-arm64
+          (cd dist && shasum -a 256 braid-* > SHA256SUMS)
+          tools/release/verify-dist.sh dist
+
+      - name: Create draft release
+        run: tools/release/publish-draft.sh "${TAG}" "${VERSION}" dist
