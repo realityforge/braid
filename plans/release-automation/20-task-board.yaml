@@ -1,0 +1,215 @@
+meta:
+  project: release-automation
+  status: accepted
+  last_updated: 2026-06-15
+  required_full_gates:
+    - bazel run @rules_go//go -- fmt ./...
+    - git diff --exit-code
+    - bazel test //...
+    - bazel run @rules_go//go -- vet ./...
+    - bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: T01
+
+tasks:
+  - id: PLAN-DRAFT
+    title: Draft release automation plan
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Requirements document captures mission, scope, behavior, gates, and resolved questions.
+      - Implementation plan captures ordered phases, risks, gates, and decision log.
+      - Task board captures implementation tasks and leaves user approval incomplete.
+    files_touched:
+      - plans/release-automation/00-requirements.md
+      - plans/release-automation/10-implementation-plan.md
+      - plans/release-automation/20-task-board.yaml
+    evidence:
+      - command: Structured planning interview through Q-36
+        result: pass; all design questions resolved by accepted recommendations.
+      - command: ruby -e 'require "yaml"; YAML.load_file("plans/release-automation/20-task-board.yaml"); puts "task board yaml ok"'
+        result: pass; task board yaml ok.
+      - command: git diff --check -- plans/release-automation
+        result: pass; no whitespace errors reported.
+    commit:
+      hash: not_required
+      message: Planning draft only; no implementation commit requested.
+
+  - id: PLAN-APPROVAL
+    title: User review and plan acceptance
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-DRAFT
+    acceptance_criteria:
+      - User review is explicitly requested.
+      - User feedback is incorporated into planning artifacts.
+      - Plan status changes to accepted only after feedback is resolved.
+      - If acceptance requires no implementation commit, commit.hash is recorded as not_required when the task completes.
+    files_touched:
+      - plans/release-automation/00-requirements.md
+      - plans/release-automation/10-implementation-plan.md
+      - plans/release-automation/20-task-board.yaml
+    evidence:
+      - command: iterative-plan-review round 1
+        result: pass; eight valid findings fixed in plan artifacts.
+      - command: iterative-plan-review round 2
+        result: pass; exact-success check conclusion finding fixed in plan artifacts.
+      - command: iterative-plan-review round 3
+        result: pass; reviewer reported Findings none.
+      - command: ruby -e 'require "yaml"; YAML.load_file("plans/release-automation/20-task-board.yaml"); puts "task board yaml ok"'
+        result: pass; task board yaml ok after review-loop edits.
+      - command: git diff --check -- plans/release-automation
+        result: pass; no whitespace errors reported after review-loop edits.
+      - command: user instruction "implement"
+        result: pass; plan accepted for implementation.
+    commit:
+      hash: not_required
+      message: Review-only approval recorded before implementation.
+
+  - id: T01
+    title: Add tag-driven version stamping
+    status: in_progress
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - internal/cli.DefaultVersion is stampable without changing default dev output.
+      - Unstamped binary prints braid 0.0.0-dev.
+      - Stamped binary for vX.Y.Z prints braid X.Y.Z.
+      - Integration test can validate the expected stamped version in release workflow.
+    files_touched:
+      - internal/cli/cli.go
+      - cmd/braid/BUILD.bazel
+      - integration/braid_integration_test.go
+      - tools/release/workspace-status.sh
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T02
+    title: Add release shell scripts and deterministic tests
+    status: pending
+    priority: high
+    depends_on:
+      - T01
+    acceptance_criteria:
+      - Version normalization accepts X.Y.Z and vX.Y.Z.
+      - Version normalization rejects prerelease/build metadata, leading-zero numeric components, and malformed inputs.
+      - Stable semver comparison rejects older or equal requested versions.
+      - Stable semver comparison accepts empty existing-tag sets and newer requested versions.
+      - Shell tests run through Bazel.
+    files_touched:
+      - tools/release/**
+      - tools/release/BUILD.bazel
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T03
+    title: Add release-cut workflow
+    status: pending
+    priority: high
+    depends_on:
+      - T02
+    acceptance_criteria:
+      - Workflow is manually triggered with version input.
+      - Workflow runs only from main, validates origin/main HEAD, rechecks it before tagging, and validates exact-SHA required checks.
+      - Required checks pass only with conclusion exactly success; all other completed conclusions fail closed.
+      - Workflow creates annotated vX.Y.Z tag only after gates pass.
+      - Workflow explicitly dispatches release.yml on the new tag ref after tag creation.
+      - Workflow uses concurrency and explicit minimal required permissions.
+    files_touched:
+      - .github/workflows/release-cut.yml
+      - tools/release/wait-for-checks.sh
+      - tools/release/version.sh
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T04
+    title: Add tag-ref release workflow
+    status: pending
+    priority: high
+    depends_on:
+      - T03
+    acceptance_criteria:
+      - Workflow is dispatched on a stable v* tag ref and rejects non-tag refs.
+      - Five native platform jobs build and smoke-test stamped artifacts.
+      - Matrix jobs upload workflow artifacts only.
+      - Final job verifies dist, generates SHA256SUMS, and creates draft release.
+      - Draft release macOS assets are intentionally unsigned unless manually replaced before publication.
+    files_touched:
+      - .github/workflows/release.yml
+      - tools/release/build-artifact.sh
+      - tools/release/verify-dist.sh
+      - tools/release/publish-draft.sh
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T05
+    title: Minimize release documentation
+    status: pending
+    priority: medium
+    depends_on:
+      - T04
+    acceptance_criteria:
+      - Release docs no longer duplicate workflow-owned operational detail.
+      - Non-obvious manual publishing and macOS signing caveats remain documented.
+      - README links or contains the remaining release guidance as appropriate.
+    files_touched:
+      - docs/release.md
+      - README.md
+      - docs/ci.md
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T06
+    title: Final validation and release readiness evidence
+    status: pending
+    priority: high
+    depends_on:
+      - T05
+    acceptance_criteria:
+      - Required local full gates pass.
+      - Release workflow remote validation expectations are recorded.
+      - Task board evidence and commit metadata are complete.
+      - No completed task has pending commit metadata.
+    files_touched:
+      - plans/release-automation/20-task-board.yaml
+      - plans/release-automation/10-implementation-plan.md
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+history:
+  - timestamp: 2026-06-15
+    task: PLAN-DRAFT
+    commit: not_required
+    note: Drafted release automation requirements, implementation plan, and task board from resolved planning interview decisions.
+  - timestamp: 2026-06-15
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Iterative plan review round 1 tightened GitHub workflow handoff, SHA provenance checks, permissions, stamped test commands, macOS asset policy, semver edge cases, branch protection prerequisites, and approval metadata.
+  - timestamp: 2026-06-15
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Iterative plan review round 2 changed required check polling to exact-success allowlisting with all other completed conclusions failing closed.
+  - timestamp: 2026-06-15
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: User approved the reviewed plan for implementation.
