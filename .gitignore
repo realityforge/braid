@@ -1,7 +1,7 @@
 .DS_Store
 
-# Ignore hierarchy that has been downloaded for references
-/vendor
+# Ignore temp directory
+/tmp
 
 # Bazel output symlinks
 /bazel-*
