@@ -1,7 +1,7 @@
 meta:
   project: go-port-braid
-  status: completed
-  last_updated: 2026-06-14
+  status: in_progress
+  last_updated: 2026-06-15
   required_full_gates:
     - bazel test //...
     - bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
@@ -15,7 +15,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: none
+current_focus: EIT-02
 
 tasks:
   - id: T01
@@ -708,14 +708,14 @@ tasks:
       message: "docs: add Go port usage and migration notes"
 
   - id: T18
-    title: Final gates and closeout
+    title: Original Go port final gates and closeout
     status: completed
     priority: high
     depends_on: [T17]
     acceptance_criteria:
       - Required full gates pass.
       - Native release smoke evidence is either recorded for a release cut or explicitly marked not_applicable when no release is being cut.
-      - No pending tasks remain for accepted scope.
+      - No pending tasks remain for the original accepted Go port scope.
       - No completed task has pending commit metadata.
       - Final compatibility matrix and test strategy match implemented behavior.
     files_touched:
@@ -866,6 +866,63 @@ tasks:
     commit:
       hash: not_required
       message: not_required
+
+  - id: EIT-01
+    title: Executable integration test suite
+    status: completed
+    priority: high
+    depends_on: [T16, WPH-06]
+    acceptance_criteria:
+      - integration/BUILD.bazel defines go_test name braid_integration_test with data for //cmd/braid:braid.
+      - The Go harness resolves the built //cmd/braid:braid executable through Bazel runfiles and invokes it as a subprocess.
+      - The integration package does not import braid/cmd/braid or braid/internal/command.
+      - Git and Braid subprocesses share an explicit curated environment with isolated home, config, and cache paths.
+      - The executable scenario matrix covers each command at least once, key cache modes, platform-sensitive paths, rollback, and merge conflict behavior.
+      - docs/release.md replaces behavior-heavy smoke scripts with native bazel test //integration:braid_integration_test gates plus packaged-artifact checks.
+      - docs/ci.md and release or CI automation document fixed native Linux, macOS, and Windows runner gates for the executable integration target.
+      - docs/contributing.md documents the executable integration gate and no longer points contributors at behavior-heavy native smoke tests.
+      - Validation evidence includes bazel test //... and native platform evidence for //integration:braid_integration_test.
+    files_touched:
+      - integration/**
+      - docs/ci.md
+      - docs/contributing.md
+      - docs/release.md
+      - plans/go-port-braid/**
+    evidence:
+      - command: bazel run @rules_go//go -- fmt integration/braid_integration_test.go
+        result: pass
+      - command: bazel test //integration:braid_integration_test --nocache_test_results
+        result: pass; native macOS arm64 executable integration run executed 1 test target.
+      - command: bazel test //...
+        result: pass; 9 test targets pass, including //integration:braid_integration_test from cache after the forced native run.
+      - command: rg -n '^\s*"braid/(cmd/braid|internal/command)"' integration/*.go
+        result: pass; no forbidden executable integration imports found.
+      - command: rg -n "smoke|fixture-backed|behavior-heavy|Native Smoke|release smoke" docs/release.md docs/ci.md docs/contributing.md
+        result: pass; no legacy behavior-heavy smoke-test guidance remains in release, CI, or contributing docs.
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: EIT-02
+    title: Executable integration final gates and closeout
+    status: pending
+    priority: high
+    depends_on: [EIT-01]
+    acceptance_criteria:
+      - bazel test //... passes after the executable integration suite lands.
+      - Native Linux, macOS, and Windows evidence is recorded for bazel test //integration:braid_integration_test.
+      - docs/release.md, docs/ci.md, and docs/contributing.md reflect the native integration gate and packaged-artifact release checks.
+      - No pending executable integration tasks remain.
+      - No completed executable integration task has pending commit metadata.
+    files_touched:
+      - docs/ci.md
+      - docs/contributing.md
+      - docs/release.md
+      - plans/go-port-braid/**
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
 
 history:
   - timestamp: 2026-06-14
@@ -1032,3 +1089,19 @@ history:
     task: WPH-06
     commit: not_required
     note: Windows upstream tree compatibility boundary is documented, and the native Windows release smoke script now covers local path, spaces, backslash selectors, cache on/off, push, update, and remove.
+  - timestamp: 2026-06-15
+    task: T16
+    commit: not_required
+    note: Iterative plan review round 1 tightened the executable integration test contract, native platform gate, release smoke replacement boundary, subprocess environment requirements, and future parallelism TODO.
+  - timestamp: 2026-06-15
+    task: EIT-01
+    commit: not_required
+    note: Iterative plan review round 2 added the executable integration suite as an owned task and replaced release smoke placeholders with native Bazel integration gates plus packaged-artifact checks.
+  - timestamp: 2026-06-15
+    task: EIT-02
+    commit: not_required
+    note: Iterative plan review round 3 added executable integration closeout ownership and included docs/contributing.md in the native integration gate documentation scope.
+  - timestamp: 2026-06-15
+    task: EIT-01
+    commit: not_required
+    note: Executable integration suite landed as //integration:braid_integration_test with runfiles-based binary execution, hermetic subprocess environments, lifecycle/cache/failure/conflict coverage, and release/CI/contributor docs updated to use native Bazel integration gates.

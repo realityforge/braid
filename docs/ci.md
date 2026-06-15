@@ -1,14 +1,15 @@
 # Continuous Integration
 
-GitHub Actions runs the fast Go quality gate on every pull request and every
-push to `main`.
+GitHub Actions runs the Go quality gate and the default Bazel test suite on
+every pull request and every push to `main`.
 
 ## Workflow
 
 The workflow lives in `.github/workflows/ci.yml` and has one job:
 
 - `Go quality and lint` runs formatting, tests, vet, and golangci-lint through
-  Bazel. Tests use `bazel test //...` so they run as first-class Bazel targets.
+  Bazel. Tests use `bazel test //...` so unit tests, real-Git tests, and the
+  executable integration target all run as first-class Bazel targets.
 
 The job installs Bazel, then uses `rules_go` to supply Go. golangci-lint is run
 with `bazel run @rules_go//go -- run ...` so CI still has a single automation
@@ -20,6 +21,7 @@ Run the same checks locally before opening a pull request:
 
 ```bash
 bazel run @rules_go//go -- fmt ./...
+bazel test //integration:braid_integration_test
 bazel test //...
 bazel run @rules_go//go -- vet ./...
 bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
@@ -57,9 +59,15 @@ files, and test fixtures. Do not add broad suppressions just to make CI green.
 ## Bazel Gate
 
 This repository remains Bazel-first for release builds and cross-platform
-validation. The GitHub Actions Go quality gate checks source-level Go health;
-the release gate in `docs/release.md` still owns Bazel platform builds and
-native release smoke tests.
+validation. `//integration:braid_integration_test` is the native executable
+behavior gate: it runs the Bazel-built `//cmd/braid:braid` binary as a
+subprocess against generated local Git repositories.
+
+The pull request workflow runs that target through `bazel test //...` on its
+Linux runner. The release gate in `docs/release.md` owns the fixed native
+Linux, macOS, and Windows runner matrix for
+`bazel test //integration:braid_integration_test`, plus release-platform builds
+and packaged-artifact checks.
 
 ## GitHub Setup
 

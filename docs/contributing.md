@@ -39,7 +39,8 @@ bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
 bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 ```
 
-Release packaging and native smoke tests are documented in
+Release packaging, fixed native executable integration gates, and packaged
+artifact checks are documented in
 [`docs/release.md`](release.md).
 
 GitHub Actions CI is documented in [`docs/ci.md`](ci.md).
@@ -67,7 +68,9 @@ Cross-platform confidence comes from two layers:
 
 - Targeted tests for path separators, paths with spaces, shell metacharacters,
   argv preservation, and root-only execution.
-- Bazel release-platform builds plus native smoke tests before a release cut.
+- Bazel release-platform builds plus fixed native Linux, macOS, and Windows
+  runs of `bazel test //integration:braid_integration_test` before a release
+  cut.
 
 Ruby oracle tests are migration aids only. Final gates are Go/Bazel-only.
 

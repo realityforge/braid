@@ -2,7 +2,8 @@
 
 This document defines the first Go/Bazel release process for Braid. It covers
 raw binary artifacts, checksum generation, manual macOS signing/notarization,
-and native smoke tests. It does not define automated publishing.
+native executable integration gates, and packaged-artifact checks. It does not
+define automated publishing.
 
 References checked on 2026-06-14:
 
@@ -60,8 +61,9 @@ bytes. The first release ships raw binaries plus `SHA256SUMS`.
 - Artifacts are raw binaries named by OS and architecture.
 - `SHA256SUMS` is generated for the exact files uploaded to the release.
 - macOS signing and notarization are manual for the first release.
-- Release automation is not complete until native smoke evidence is collected
-  on the runner matrix below.
+- Release automation is not complete until native
+  `bazel test //integration:braid_integration_test` evidence is collected on
+  the runner matrix below.
 
 ## Manual macOS Signing And Notarization
 
@@ -97,61 +99,58 @@ xcrun notarytool submit dist/braid-darwin-arm64.zip --keychain-profile "$NOTARY_
 The first release still publishes raw binaries. If notarized zip archives are
 also published, generate checksums for the exact files that will be uploaded.
 
-## Native Smoke Matrix
+## Native Integration Matrix
 
-Foreign-platform Bazel builds prove compilation only. Before a release cut,
-run the smoke test on each native OS/architecture row.
+Foreign-platform Bazel builds prove compilation only. Before a release cut, run
+the executable integration test on each native OS/architecture row. This target
+builds and runs the Bazel `//cmd/braid:braid` executable as a subprocess against
+generated local Git repositories, so packaged-artifact scripts should not
+duplicate that behavior coverage.
 
-| Artifact | Native runner | Required smoke |
+| Artifact | Native runner | Required gate |
 | --- | --- | --- |
-| `braid-linux-amd64` | GitHub hosted `ubuntu-24.04` | `braid version`; fixture-backed `braid add` |
-| `braid-linux-arm64` | GitHub hosted `ubuntu-24.04-arm` | `braid version`; fixture-backed `braid add` |
-| `braid-darwin-amd64` | GitHub hosted `macos-15-intel` | `braid version`; fixture-backed `braid add` |
-| `braid-darwin-arm64` | GitHub hosted `macos-15` | `braid version`; fixture-backed `braid add` |
-| `braid-windows-amd64.exe` | GitHub hosted `windows-2025` | `braid version`; fixture-backed `braid add` |
+| `braid-linux-amd64` | GitHub hosted `ubuntu-24.04` | `bazel test //integration:braid_integration_test` |
+| `braid-linux-arm64` | GitHub hosted `ubuntu-24.04-arm` | `bazel test //integration:braid_integration_test` |
+| `braid-darwin-amd64` | GitHub hosted `macos-15-intel` | `bazel test //integration:braid_integration_test` |
+| `braid-darwin-arm64` | GitHub hosted `macos-15` | `bazel test //integration:braid_integration_test` |
+| `braid-windows-amd64.exe` | GitHub hosted `windows-2025` | `bazel test //integration:braid_integration_test` |
 
 Use fixed runner labels in release automation. Do not use `*-latest` labels for
 release gates because GitHub documents them as moving labels.
 
-### Linux And macOS Smoke
+## Packaged Artifact Checks
+
+After the native integration matrix passes, keep packaged-artifact checks
+focused on the files that will be uploaded:
+
+- The copied binary launches and `version` exits successfully.
+- `SHA256SUMS` matches the exact uploaded files.
+- Unix artifacts have executable bits set.
+- Windows artifacts keep the `.exe` suffix.
+- macOS artifacts pass signing and notarization verification when signing is
+  performed.
+
+### Linux And macOS Artifacts
 
 ```bash
 set -eu
 
-bin="$PWD/dist/braid-linux-amd64"
+test -x dist/braid-linux-amd64
+test -x dist/braid-linux-arm64
+test -x dist/braid-darwin-amd64
+test -x dist/braid-darwin-arm64
+
 case "$(uname -s)-$(uname -m)" in
-  Linux-x86_64) bin="$PWD/dist/braid-linux-amd64" ;;
-  Linux-aarch64|Linux-arm64) bin="$PWD/dist/braid-linux-arm64" ;;
-  Darwin-x86_64) bin="$PWD/dist/braid-darwin-amd64" ;;
-  Darwin-arm64) bin="$PWD/dist/braid-darwin-arm64" ;;
-  *) echo "unsupported smoke host: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+  Linux-x86_64) dist/braid-linux-amd64 version ;;
+  Linux-aarch64|Linux-arm64) dist/braid-linux-arm64 version ;;
+  Darwin-x86_64) dist/braid-darwin-amd64 version ;;
+  Darwin-arm64) dist/braid-darwin-arm64 version ;;
 esac
 
-"$bin" version
-
-tmp="$(mktemp -d)"
-upstream="$tmp/upstream"
-downstream="$tmp/downstream"
-git init --initial-branch=main "$upstream"
-git -C "$upstream" config user.name 'Braid Release Smoke'
-git -C "$upstream" config user.email 'braid-release@example.invalid'
-printf 'release smoke\n' > "$upstream/README.md"
-git -C "$upstream" add README.md
-git -C "$upstream" commit -m 'seed upstream'
-
-git init --initial-branch=main "$downstream"
-git -C "$downstream" config user.name 'Braid Release Smoke'
-git -C "$downstream" config user.email 'braid-release@example.invalid'
-git -C "$downstream" config commit.gpgsign false
-(
-  cd "$downstream"
-  "$bin" add "$upstream" vendor/smoke
-  test -f vendor/smoke/README.md
-  "$bin" status vendor/smoke
-)
+shasum -a 256 -c dist/SHA256SUMS
 ```
 
-### Windows Smoke
+### Windows Artifact
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -159,55 +158,12 @@ $ErrorActionPreference = "Stop"
 $bin = Resolve-Path ".\dist\braid-windows-amd64.exe"
 & $bin version
 
-$tmp = New-Item -ItemType Directory -Path ([System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), [System.Guid]::NewGuid()))
-$upstream = Join-Path $tmp.FullName "upstream repo"
-$downstream = Join-Path $tmp.FullName "downstream"
-$mirror = "vendor/smoke path"
-$editor = Join-Path $tmp.FullName "editor.ps1"
-Set-Content -Path $editor -Value 'Set-Content -NoNewline -Path $args[0] -Value "Release smoke push"'
-$env:GIT_EDITOR = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$editor`""
-
-git init --initial-branch=main $upstream
-git -C $upstream config user.name "Braid Release Smoke"
-git -C $upstream config user.email "braid-release@example.invalid"
-git -C $upstream config commit.gpgsign false
-git -C $upstream config receive.denyCurrentBranch updateInstead
-Set-Content -NoNewline -Path (Join-Path $upstream "README.md") -Value "release smoke`n"
-New-Item -ItemType Directory -Path (Join-Path $upstream "folder with spaces")
-Set-Content -NoNewline -Path (Join-Path $upstream "folder with spaces\file.txt") -Value "spaces`n"
-git -C $upstream add README.md
-git -C $upstream add "folder with spaces/file.txt"
-git -C $upstream commit -m "seed upstream"
-
-git init --initial-branch=main $downstream
-git -C $downstream config user.name "Braid Release Smoke"
-git -C $downstream config user.email "braid-release@example.invalid"
-git -C $downstream config commit.gpgsign false
-Push-Location $downstream
-try {
-  & $bin add $upstream $mirror
-  if (-not (Test-Path "vendor\smoke path\folder with spaces\file.txt")) {
-    throw "missing mirrored file with spaces"
-  }
-  & $bin status "vendor\smoke path"
-  & $bin --no-cache status "vendor\smoke path"
-  & $bin diff "vendor\smoke path"
-
-  Set-Content -NoNewline -Path "vendor\smoke path\README.md" -Value "release smoke local`n"
-  git add "vendor/smoke path/README.md"
-  git commit -m "change mirrored content"
-  & $bin push "vendor\smoke path" --branch main
-  $pushed = Get-Content -Raw -Path (Join-Path $upstream "README.md")
-  if ($pushed -ne "release smoke local`n") {
-    throw "push did not update upstream"
-  }
-
-  & $bin update "vendor\smoke path"
-  & $bin remove "vendor\smoke path"
-  if (Test-Path "vendor\smoke path") {
-    throw "mirror path still exists after remove"
-  }
-} finally {
-  Pop-Location
+$expected = Get-Content .\dist\SHA256SUMS | Where-Object { $_ -match "braid-windows-amd64\.exe$" }
+if (-not $expected) {
+  throw "missing checksum entry for braid-windows-amd64.exe"
+}
+$actual = (Get-FileHash -Algorithm SHA256 $bin).Hash.ToLowerInvariant()
+if (-not $expected.StartsWith($actual)) {
+  throw "checksum mismatch for braid-windows-amd64.exe"
 }
 ```

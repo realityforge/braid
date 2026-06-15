@@ -1,7 +1,7 @@
 # Test Strategy
 
 Status: completed
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 ## Test Philosophy
 
@@ -45,6 +45,67 @@ Expectations:
 - Use local repositories as upstream remotes.
 - Keep temp directories isolated.
 - Avoid relying on global user Git config.
+
+### Executable Integration Tests
+
+Targets:
+
+- The Bazel-built `//cmd/braid:braid` executable running as a subprocess.
+- Full command lifecycles against synthesized upstream and downstream repository trees.
+- Explicit per-test environments, including isolated home and cache directories.
+- Exact post-command assertions for file trees, `.braids.json`, cache use, stdout/stderr, exit codes, remotes, and Git commit metadata.
+
+Expectations:
+
+- Add a default `bazel test //...` target, not a manual-only target:
+  `//integration:braid_integration_test`.
+- Define `integration/BUILD.bazel` with a Go test target that has
+  `data = ["//cmd/braid:braid"]`.
+- Locate the executable through Bazel runfiles and apply the platform executable
+  suffix where needed.
+- Do not import `braid/cmd/braid` or `braid/internal/command`; the integration
+  boundary is the process interface.
+- Use local repositories and generated directory trees under `t.TempDir()`.
+- Use one shared subprocess helper for both Git setup/assertion commands and
+  Braid commands.
+- Build subprocess environments from an explicit allow-list. Required entries
+  include `PATH`/`Path`, isolated `HOME`, isolated `USERPROFILE`,
+  Unix cache/config homes where applicable, Windows process essentials where
+  applicable, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_TERMINAL_PROMPT=0`, deterministic locale, editor variables for push
+  tests, and `BRAID_LOCAL_CACHE_DIR` except in focused cache precedence tests.
+- Use an explicit `BRAID_LOCAL_CACHE_DIR` in main scenarios, with separate
+  tests for cache env and flag precedence.
+- Keep tests serial in the first pass.
+- Future TODO: after the executable integration suite is stable, evaluate adding `t.Parallel()` to selected scenarios if runtime becomes a problem.
+
+Executable scenario ownership:
+
+- Primary lifecycle: `version`, `add`, `status`, `diff`, `update`, `push`, and
+  `remove` through the built binary, asserting process output, exit code, file
+  tree, config, cache, remotes, and commit metadata after each step.
+- Setup/cache: `setup`, `setup --force`, default cache use, `--no-cache`, and
+  `--cache-dir` subprocess behavior.
+- Path variants: at least one subprocess scenario for subdirectory mirrors,
+  single-file mirrors, or paths with spaces; deeper branch/tag/revision/path
+  matrices remain owned by the existing in-process command tests.
+- Failure paths: missing config, unsupported legacy `.braids`, wrong working
+  directory or subdirectory execution, invalid cache flag combinations, failed
+  add rollback, and merge conflict behavior.
+
+Native platform gate:
+
+- The platform-of-interest execution gate is `bazel test
+  //integration:braid_integration_test` on fixed native Linux, macOS, and
+  Windows runners.
+- Release behavior coverage should use that Bazel target rather than duplicated
+  release smoke scripts.
+- Release packaging checks stay artifact-focused: copied binary launches,
+  `version` prints successfully, checksums match the uploaded files, executable
+  bits are correct where applicable, and macOS signing/notarization checks pass
+  when signing is performed.
+- Updating `docs/release.md` and release/CI automation to reflect this split is
+  part of implementing the executable integration suite.
 
 ### Characterization Tests
 
@@ -103,7 +164,7 @@ Targets:
 Expectations:
 
 - Bazel cross-builds prove compilation only.
-- Native CI smoke tests prove execution.
+- Native Bazel integration gates prove execution on each platform of interest.
 
 ## Fixture Strategy
 
@@ -168,13 +229,16 @@ Release gate:
 bazel test //...
 bazel build <all approved release platforms>
 <generate checksums for release binaries>
-<native linux smoke test>
-<native macOS smoke test>
-<native Windows smoke test>
+<native Linux bazel test //integration:braid_integration_test>
+<native macOS bazel test //integration:braid_integration_test>
+<native Windows bazel test //integration:braid_integration_test>
+<packaged artifact version/checksum/executable/signing checks>
 ```
 
-Concrete artifact names, fixed native runner labels, checksum commands, and
-Linux/macOS/Windows smoke commands are documented in `docs/release.md`.
+Concrete artifact names, fixed native runner labels, checksum commands,
+native integration-test commands, and packaged artifact checks must be
+documented in `docs/release.md`. Behavior-heavy release smoke scripts should
+be removed after `//integration:braid_integration_test` owns that coverage.
 
 ## Test Data Hygiene
 

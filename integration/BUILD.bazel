@@ -1,0 +1,7 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "braid_integration_test",
+    srcs = ["braid_integration_test.go"],
+    data = ["//cmd/braid:braid"],
+)
