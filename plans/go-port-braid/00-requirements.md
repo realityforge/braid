@@ -52,15 +52,15 @@ Out of scope:
 
 The Go port should implement these commands with compatible names, required arguments, and high-level behavior:
 
-- Global cache flags, placed before the command: `--no-cache` and `--cache-dir <path>`.
-- `braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--verbose|-v]`
-- `braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--verbose|-v]`
-- `braid remove <local_path> [--keep] [--verbose|-v]`
-- `braid diff [local_path] [--keep] [--verbose|-v] [-- <git_diff_arg>...]`
-- `braid push <local_path> [--branch|-b <branch>] [--keep] [--verbose|-v]`
-- `braid setup [local_path] [--force|-f] [--verbose|-v]`
+- Global flags, placed before the command: `--verbose|-v`, `--no-cache`, and `--cache-dir <path>`.
+- `braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>]`
+- `braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]`
+- `braid remove <local_path> [--keep]`
+- `braid diff [local_path] [--keep] [-- <git_diff_arg>...]`
+- `braid push <local_path> [--branch|-b <branch>] [--keep]`
+- `braid setup [local_path] [--force|-f]`
 - `braid version`
-- `braid status [local_path] [--verbose|-v]`
+- `braid status [local_path]`
 
 `upgrade-config` is intentionally not implemented in the Go port.
 
@@ -121,6 +121,7 @@ Native release smoke matrix:
 - No `upgrade-config` command.
 - Output and help text may diverge from Ruby as long as behavior remains compatible.
 - No `update --head` option; the Go CLI should reject it as an unknown flag.
+- No post-command `--verbose|-v`; verbose tracing is a pre-command global flag.
 - No v1 support for running commands from subdirectories of the downstream Git worktree.
 - Unsafe path validation will be stricter than the Ruby implementation's TODO-covered behavior.
 - Implementation will require Git 2.43.0 or newer.

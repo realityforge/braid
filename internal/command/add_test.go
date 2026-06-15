@@ -47,6 +47,27 @@ func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
 	}
 }
 
+func TestAddCommandGlobalVerboseTracesWorktreeAndCacheGit(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "trace\n")
+	testutil.CommitAll(t, upstream, "upstream")
+
+	repo := initDownstream(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Chdir(repo)
+
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run([]string{"--verbose", "add", upstream, "vendor/basic"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("braid add exit = %d, stderr = %q", code, stderr.String())
+	}
+	trace := stderr.String()
+	assertContains(t, trace, `Braid: Executing ["git", "--version"]`)
+	assertContains(t, trace, `Braid: Executing ["git", "fetch", "-n", "main_braid_vendor_basic"]`)
+	assertContains(t, trace, `Braid: Executing ["git", "clone", "--mirror"`)
+}
+
 func TestAddCommandMirrorVariants(t *testing.T) {
 	tests := []struct {
 		name       string

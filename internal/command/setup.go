@@ -53,7 +53,7 @@ func (h SetupHandler) remoteGit(inv cli.Invocation, trace io.Writer) RemoteGit {
 	if git, ok := h.Options.Git.(RemoteGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
 func setupOne(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig) error {

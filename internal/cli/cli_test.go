@@ -17,16 +17,15 @@ func TestParseCommands(t *testing.T) {
 	}{
 		{
 			name: "add branch mirror",
-			args: []string{"--cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib", "--verbose"},
+			args: []string{"--verbose", "--cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib"},
 			want: Invocation{
-				Global:  GlobalOptions{CacheDir: ".cache", CacheDirSet: true},
+				Global:  GlobalOptions{CacheDir: ".cache", CacheDirSet: true, Verbose: true},
 				Command: CommandAdd,
 				Add: AddOptions{
 					URL:        "https://example.test/repo.git",
 					LocalPath:  "vendor/repo",
 					Branch:     "main",
 					RemotePath: "lib",
-					Verbose:    true,
 				},
 			},
 		},
@@ -43,10 +42,11 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "update one mirror",
-			args: []string{"update", "vendor/repo", "-r", "abc123", "--keep", "-v"},
+			args: []string{"-v", "update", "vendor/repo", "-r", "abc123", "--keep"},
 			want: Invocation{
+				Global:  GlobalOptions{Verbose: true},
 				Command: CommandUpdate,
-				Update:  UpdateOptions{LocalPath: "vendor/repo", Revision: "abc123", Keep: true, Verbose: true},
+				Update:  UpdateOptions{LocalPath: "vendor/repo", Revision: "abc123", Keep: true},
 			},
 		},
 		{
@@ -56,27 +56,27 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "remove",
-			args: []string{"remove", "vendor/repo", "--keep", "-v"},
-			want: Invocation{Command: CommandRemove, Remove: RemoveOptions{LocalPath: "vendor/repo", Keep: true, Verbose: true}},
+			args: []string{"--verbose", "remove", "vendor/repo", "--keep"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandRemove, Remove: RemoveOptions{LocalPath: "vendor/repo", Keep: true}},
 		},
 		{
 			name: "diff passthrough",
-			args: []string{"--no-cache", "diff", "vendor/repo", "-v", "--", "--stat", "weird;path"},
+			args: []string{"--no-cache", "-v", "diff", "vendor/repo", "--", "--stat", "weird;path"},
 			want: Invocation{
-				Global:  GlobalOptions{NoCache: true},
+				Global:  GlobalOptions{NoCache: true, Verbose: true},
 				Command: CommandDiff,
-				Diff:    DiffOptions{LocalPath: "vendor/repo", Verbose: true, GitDiffArgs: []string{"--stat", "weird;path"}},
+				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--stat", "weird;path"}},
 			},
 		},
 		{
 			name: "push",
-			args: []string{"push", "vendor/repo", "-b", "main", "--keep", "-v"},
-			want: Invocation{Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Branch: "main", Keep: true, Verbose: true}},
+			args: []string{"-v", "push", "vendor/repo", "-b", "main", "--keep"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Branch: "main", Keep: true}},
 		},
 		{
 			name: "setup",
-			args: []string{"setup", "vendor/repo", "--force", "-v"},
-			want: Invocation{Command: CommandSetup, Setup: SetupOptions{LocalPath: "vendor/repo", Force: true, Verbose: true}},
+			args: []string{"--verbose", "setup", "vendor/repo", "--force"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandSetup, Setup: SetupOptions{LocalPath: "vendor/repo", Force: true}},
 		},
 		{
 			name: "version",
@@ -85,8 +85,8 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "status",
-			args: []string{"status", "vendor/repo", "-v"},
-			want: Invocation{Command: CommandStatus, Status: StatusOptions{LocalPath: "vendor/repo", Verbose: true}},
+			args: []string{"-v", "status", "vendor/repo"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandStatus, Status: StatusOptions{LocalPath: "vendor/repo"}},
 		},
 	}
 
@@ -113,6 +113,8 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "unknown command", args: []string{"upgrade-config"}, want: "unknown command upgrade-config"},
 		{name: "unknown global flag", args: []string{"--bogus", "version"}, want: "unknown global flag --bogus"},
 		{name: "global no cache after command", args: []string{"add", "--no-cache", "url"}, want: "unknown flag for add: --no-cache"},
+		{name: "global verbose after command", args: []string{"add", "url", "--verbose"}, want: "unknown flag for add: --verbose"},
+		{name: "global verbose short after command", args: []string{"update", "vendor/repo", "-v"}, want: "unknown flag for update: -v"},
 		{name: "cache flags conflict", args: []string{"--no-cache", "--cache-dir", "cache", "version"}, want: "--no-cache and --cache-dir cannot be used together"},
 		{name: "empty cache dir", args: []string{"--cache-dir=", "version"}, want: "--cache-dir requires a non-empty value"},
 		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
@@ -192,6 +194,7 @@ func TestHelpParsing(t *testing.T) {
 	}{
 		{args: []string{"help"}},
 		{args: []string{"--help"}},
+		{args: []string{"-v", "help"}},
 		{args: []string{"add", "help"}, wantCommand: CommandAdd},
 		{args: []string{"diff", "--help"}, wantCommand: CommandDiff},
 	}
@@ -206,6 +209,28 @@ func TestHelpParsing(t *testing.T) {
 		}
 		if got.Command != test.wantCommand {
 			t.Fatalf("Parse(%v) command = %q, want %q", test.args, got.Command, test.wantCommand)
+		}
+	}
+}
+
+func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
+	if strings.Contains(Usage(), "usage: braid [--no-cache | --cache-dir <path>] <command> [options]") {
+		t.Fatalf("top-level usage still contains old global syntax:\n%s", Usage())
+	}
+	if !strings.Contains(Usage(), "usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]") {
+		t.Fatalf("top-level usage missing global verbose syntax:\n%s", Usage())
+	}
+	for _, command := range []Command{
+		CommandAdd,
+		CommandUpdate,
+		CommandRemove,
+		CommandDiff,
+		CommandPush,
+		CommandSetup,
+		CommandStatus,
+	} {
+		if usage := CommandUsage(command); strings.Contains(usage, "--verbose") || strings.Contains(usage, "|-v") {
+			t.Fatalf("CommandUsage(%s) = %q, want no command-local verbose syntax", command, usage)
 		}
 	}
 }

@@ -31,19 +31,19 @@ func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if inv.Update.LocalPath != "" {
-		return h.updateOne(ctx, git, cache, inv.Update.LocalPath, inv.Update, stdout, stderr)
+		return h.updateOne(ctx, git, cache, inv.Update.LocalPath, inv.Update, inv.Global.Verbose, stdout, stderr)
 	}
-	return h.updateAll(ctx, git, cache, inv.Update, stdout, stderr)
+	return h.updateAll(ctx, git, cache, inv.Update, inv.Global.Verbose, stdout, stderr)
 }
 
 func (h UpdateHandler) updateGit(inv cli.Invocation, trace io.Writer) UpdateGit {
 	if git, ok := h.Options.Git.(UpdateGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
-func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache CacheConfig, options cli.UpdateOptions, stdout, trace io.Writer) error {
+func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache CacheConfig, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options))
 	if err != nil {
 		return err
@@ -60,14 +60,14 @@ func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache Cache
 		if err := ensureClean(ctx, git); err != nil {
 			return err
 		}
-		if err := h.updateOne(ctx, git, cache, localPath, options, stdout, trace); err != nil {
+		if err := h.updateOne(ctx, git, cache, localPath, options, verbose, stdout, trace); err != nil {
 			return fmt.Errorf("update %s: %w", localPath, err)
 		}
 	}
 	return nil
 }
 
-func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache CacheConfig, localPath string, options cli.UpdateOptions, stdout, trace io.Writer) error {
+func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options))
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 	applyUpdateStrategy(&m, options)
 
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, options.Verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
 			return err
 		}
 	}

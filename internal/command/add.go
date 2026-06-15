@@ -54,7 +54,7 @@ func (h AddHandler) addGit(inv cli.Invocation, trace io.Writer) AddGit {
 	if git, ok := h.Options.Git.(AddGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
 func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, trace io.Writer) (string, error) {
@@ -97,7 +97,7 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 		return "", err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, verbose(inv), trace); err != nil {
+		if err := fetchCache(ctx, cache, m.URL, inv.Global.Verbose, trace); err != nil {
 			return "", err
 		}
 	}

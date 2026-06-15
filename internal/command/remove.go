@@ -37,7 +37,7 @@ func (h RemoveHandler) removeGit(inv cli.Invocation, trace io.Writer) RemoveGit 
 	if git, ok := h.Options.Git.(RemoveGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
 func (h RemoveHandler) remove(ctx context.Context, git RemoveGit, options cli.RemoveOptions) error {

@@ -43,7 +43,7 @@ func (h PushHandler) pushGit(inv cli.Invocation, trace io.Writer) PushGit {
 	if git, ok := h.Options.Git.(PushGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
 func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, stderr io.Writer) (err error) {
@@ -60,7 +60,7 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, inv.Push.Verbose, stderr); err != nil {
+		if err := fetchCache(ctx, cache, m.URL, inv.Global.Verbose, stderr); err != nil {
 			return err
 		}
 	}
@@ -113,7 +113,7 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 	if err != nil {
 		return err
 	}
-	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, localItem, inv.Push.Verbose, h.stdin(), stdout, stderr)
+	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, localItem, inv.Global.Verbose, h.stdin(), stdout, stderr)
 }
 
 func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision string, localItem gitexec.TreeItem, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {

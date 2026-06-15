@@ -130,7 +130,7 @@ func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, opt
 
 	git := options.Git
 	if git == nil {
-		git = gitexec.New(workDir(options.WorkDir), verbose(inv), trace)
+		git = gitexec.New(workDir(options.WorkDir), inv.Global.Verbose, trace)
 	}
 
 	if err := git.RequireVersion(ctx, gitexec.MinimumGitVersion); err != nil {
@@ -215,8 +215,4 @@ func workDir(value string) string {
 		return "."
 	}
 	return value
-}
-
-func verbose(inv cli.Invocation) bool {
-	return inv.Add.Verbose || inv.Update.Verbose || inv.Remove.Verbose || inv.Diff.Verbose || inv.Push.Verbose || inv.Setup.Verbose || inv.Status.Verbose
 }

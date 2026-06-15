@@ -40,11 +40,11 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return h.statusOne(ctx, git, cache, m, inv.Status, stdout, stderr)
+		return h.statusOne(ctx, git, cache, m, inv.Global.Verbose, stdout, stderr)
 	}
 
 	for _, localPath := range cfg.Paths() {
-		if err := h.statusOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Status, stdout, stderr); err != nil {
+		if err := h.statusOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Global.Verbose, stdout, stderr); err != nil {
 			return err
 		}
 	}
@@ -55,12 +55,12 @@ func (h StatusHandler) statusGit(inv cli.Invocation, trace io.Writer) StatusGit 
 	if git, ok := h.Options.Git.(StatusGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), verbose(inv), trace)
+	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
-func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, options cli.StatusOptions, stdout, trace io.Writer) (err error) {
+func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, verbose bool, stdout, trace io.Writer) (err error) {
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, options.Verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
 			return err
 		}
 	}

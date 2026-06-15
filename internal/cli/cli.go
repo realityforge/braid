@@ -25,6 +25,7 @@ type GlobalOptions struct {
 	NoCache     bool
 	CacheDir    string
 	CacheDirSet bool
+	Verbose     bool
 }
 
 type AddOptions struct {
@@ -34,7 +35,6 @@ type AddOptions struct {
 	Tag        string
 	Revision   string
 	RemotePath string
-	Verbose    bool
 }
 
 type UpdateOptions struct {
@@ -43,19 +43,16 @@ type UpdateOptions struct {
 	Tag       string
 	Revision  string
 	Keep      bool
-	Verbose   bool
 }
 
 type RemoveOptions struct {
 	LocalPath string
 	Keep      bool
-	Verbose   bool
 }
 
 type DiffOptions struct {
 	LocalPath   string
 	Keep        bool
-	Verbose     bool
 	GitDiffArgs []string
 }
 
@@ -63,18 +60,15 @@ type PushOptions struct {
 	LocalPath string
 	Branch    string
 	Keep      bool
-	Verbose   bool
 }
 
 type SetupOptions struct {
 	LocalPath string
 	Force     bool
-	Verbose   bool
 }
 
 type StatusOptions struct {
 	LocalPath string
-	Verbose   bool
 }
 
 type Invocation struct {
@@ -254,6 +248,9 @@ func parseGlobal(args []string, global *GlobalOptions) ([]string, error) {
 		case arg == "--no-cache":
 			global.NoCache = true
 			i++
+		case arg == "--verbose" || arg == "-v":
+			global.Verbose = true
+			i++
 		case arg == "--cache-dir":
 			if i+1 >= len(args) {
 				return nil, usageError("--cache-dir requires a value")
@@ -286,7 +283,6 @@ func parseAdd(args []string, options *AddOptions) error {
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
 		valueFlag("--path", "-p", "path", func(value string) { options.RemotePath = value }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -316,7 +312,6 @@ func parseUpdate(args []string, options *UpdateOptions) error {
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
 		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -344,7 +339,6 @@ func parseRemove(args []string, options *RemoveOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandRemove, args, []flagSpec{
 		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -362,7 +356,6 @@ func parseDiff(args []string, options *DiffOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandDiff, args, []flagSpec{
 		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, passthrough []string) {
 		positionals = pos
 		options.GitDiffArgs = passthrough
@@ -384,7 +377,6 @@ func parsePush(args []string, options *PushOptions) error {
 	err := parseCommandArgs(CommandPush, args, []flagSpec{
 		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
 		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -402,7 +394,6 @@ func parseSetup(args []string, options *SetupOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandSetup, args, []flagSpec{
 		boolFlag("--force", "-f", func() { options.Force = true }),
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -420,9 +411,7 @@ func parseSetup(args []string, options *SetupOptions) error {
 
 func parseStatus(args []string, options *StatusOptions) error {
 	var positionals []string
-	err := parseCommandArgs(CommandStatus, args, []flagSpec{
-		boolFlag("--verbose", "-v", func() { options.Verbose = true }),
-	}, func(pos []string, _ []string) {
+	err := parseCommandArgs(CommandStatus, args, nil, func(pos []string, _ []string) {
 		positionals = pos
 	})
 	if err != nil {
@@ -550,7 +539,7 @@ func usageError(format string, args ...interface{}) error {
 
 func Usage() string {
 	return strings.TrimLeft(`
-usage: braid [--no-cache | --cache-dir <path>] <command> [options]
+usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]
 
 commands:
   add       Add a new mirror
@@ -569,21 +558,21 @@ Run "braid <command> help" for command-specific usage.
 func CommandUsage(command Command) string {
 	switch command {
 	case CommandAdd:
-		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--verbose|-v]\n"
+		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>]\n"
 	case CommandUpdate:
-		return "usage: braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--verbose|-v]\n"
+		return "usage: braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"
 	case CommandRemove:
-		return "usage: braid remove <local_path> [--keep] [--verbose|-v]\n"
+		return "usage: braid remove <local_path> [--keep]\n"
 	case CommandDiff:
-		return "usage: braid diff [local_path] [--keep] [--verbose|-v] [-- <git_diff_arg>...]\n"
+		return "usage: braid diff [local_path] [--keep] [-- <git_diff_arg>...]\n"
 	case CommandPush:
-		return "usage: braid push <local_path> [--branch|-b <branch>] [--keep] [--verbose|-v]\n"
+		return "usage: braid push <local_path> [--branch|-b <branch>] [--keep]\n"
 	case CommandSetup:
-		return "usage: braid setup [local_path] [--force|-f] [--verbose|-v]\n"
+		return "usage: braid setup [local_path] [--force|-f]\n"
 	case CommandVersion:
 		return "usage: braid version\n"
 	case CommandStatus:
-		return "usage: braid status [local_path] [--verbose|-v]\n"
+		return "usage: braid status [local_path]\n"
 	default:
 		return Usage()
 	}

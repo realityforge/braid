@@ -80,10 +80,10 @@ send local mirror changes upstream.
 
 ### Command Form
 
-Global cache flags must appear before the command name:
+Global flags must appear before the command name:
 
 ```bash
-braid [--no-cache | --cache-dir <path>] <command> [options]
+braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]
 ```
 
 Use the built-in help for the command list or command-specific syntax:
