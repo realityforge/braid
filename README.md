@@ -330,12 +330,12 @@ bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci
 
 Release automation and the manual macOS signing/notarization caveat are
 documented in [`docs/release.md`](docs/release.md).
+GitHub Actions CI and the local pull request checks are documented in
+[`docs/ci.md`](docs/ci.md).
 
 ## Documentation
 
 - [`docs/migration.md`](docs/migration.md): migration notes and intentional
   divergences from Ruby Braid.
-- [`docs/contributing.md`](docs/contributing.md): contributor workflow, test
-  strategy, and Git assumptions.
 - [`docs/ci.md`](docs/ci.md): GitHub Actions workflow and local Go quality
   checks.
