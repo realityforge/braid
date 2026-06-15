@@ -69,6 +69,14 @@ func TestParseCommands(t *testing.T) {
 			},
 		},
 		{
+			name: "diff verbose passthrough",
+			args: []string{"diff", "vendor/repo", "--", "--verbose"},
+			want: Invocation{
+				Command: CommandDiff,
+				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--verbose"}},
+			},
+		},
+		{
 			name: "push",
 			args: []string{"-v", "push", "vendor/repo", "-b", "main", "--keep"},
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Branch: "main", Keep: true}},
@@ -82,6 +90,11 @@ func TestParseCommands(t *testing.T) {
 			name: "version",
 			args: []string{"version"},
 			want: Invocation{Command: CommandVersion},
+		},
+		{
+			name: "global verbose version",
+			args: []string{"--verbose", "version"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandVersion},
 		},
 		{
 			name: "status",
@@ -194,6 +207,7 @@ func TestHelpParsing(t *testing.T) {
 	}{
 		{args: []string{"help"}},
 		{args: []string{"--help"}},
+		{args: []string{"--verbose", "help"}},
 		{args: []string{"-v", "help"}},
 		{args: []string{"add", "help"}, wantCommand: CommandAdd},
 		{args: []string{"diff", "--help"}, wantCommand: CommandDiff},

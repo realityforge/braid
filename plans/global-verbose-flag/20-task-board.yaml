@@ -182,6 +182,16 @@ tasks:
         result: pass; 1 test target passed.
       - command: bazel test //...
         result: pass; 10 test targets passed.
+      - command: iterative-plan-implementation-review round 1
+        result: pass; two valid parser coverage gaps fixed.
+      - command: bazel run @rules_go//go -- fmt internal/cli/cli_test.go
+        result: pass; parser test file formatted after review fixes.
+      - command: bazel test //internal/cli:cli_test
+        result: pass; 1 test target passed after adding no-op verbose/version and diff passthrough coverage.
+      - command: bazel run @rules_go//go -- fmt ./...
+        result: pass; full formatting gate passed after review fixes.
+      - command: bazel test //...
+        result: pass; 10 test targets passed after review fixes.
     commit:
       hash: not_required
       message: Final validation evidence tracking only.
@@ -215,3 +225,7 @@ history:
     task: T04
     commit: not_required
     note: Full formatting and test gates passed; delivery evidence recorded.
+  - timestamp: 2026-06-15
+    task: T04
+    commit: not_required
+    note: Implementation review round 1 added parser coverage for global verbose version and diff passthrough verbose, then reran targeted and full gates.
