@@ -7,9 +7,7 @@
 
 ## Git And Tests
 
-- Product code that invokes Git should stay behind `internal/gitexec`; the port's
-  Git behavior assumptions and intentional divergences are documented in
-  [`docs/migration.md`](migration.md#intentional-divergences).
+- Product code that invokes Git should stay behind `internal/gitexec`.
 - Tests must not depend on the user's global Git identity, real Braid cache, or
   network remotes.
 - Integration tests should create local upstream/downstream repositories in

@@ -348,7 +348,5 @@ permissions, version stamping, artifact names, and verification commands.
 
 ## Documentation
 
-- [`docs/migration.md`](docs/migration.md): migration notes and intentional
-  divergences from Ruby Braid.
 - [`docs/ci.md`](docs/ci.md): GitHub Actions workflow and local Go quality
   checks.
