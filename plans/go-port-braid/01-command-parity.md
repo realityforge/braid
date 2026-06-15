@@ -114,7 +114,7 @@ Intentional divergences:
 
 - No legacy config readers.
 - Stricter path validation.
-- Git minimum is 2.43.0.
+- Git minimum is 2.39.0.
 - Deprecated `update --head` is removed.
 - Help text and ordinary output may use a new idiomatic Go design.
 

@@ -247,5 +247,5 @@ be removed after `//integration:braid_integration_test` owns that coverage.
 - No tests should write outside `t.TempDir()` or Bazel test temp directories.
 - Tests that need `HOME` or cache paths must set them explicitly.
 - Tests must clean up temporary remotes and worktrees unless failure diagnostics need preserved artifacts.
-- Tests should verify startup fails clearly when `git --version` reports older than 2.43.0.
+- Tests should verify startup fails clearly when `git --version` reports older than 2.39.0.
 - Cache tests must verify default-on behavior, `BRAID_USE_LOCAL_CACHE`, `BRAID_LOCAL_CACHE_DIR`, global `--no-cache`, global `--cache-dir`, and rejection or documented handling of cache flags placed after a subcommand.

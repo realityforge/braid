@@ -166,7 +166,7 @@ func TestGitVersionAndRequirement(t *testing.T) {
 	if version != "2.51.0" {
 		t.Fatalf("version = %q, want 2.51.0", version)
 	}
-	if err := git.RequireVersion(context.Background(), "2.43.0"); err != nil {
+	if err := git.RequireVersion(context.Background(), MinimumGitVersion); err != nil {
 		t.Fatalf("RequireVersion returned error: %v", err)
 	}
 	if err := git.RequireVersion(context.Background(), "2.60.0"); err == nil {
@@ -189,11 +189,11 @@ func TestParseAndCompareVersions(t *testing.T) {
 	if CompareVersions("1.5.5.1.98.gf0ec4", "1.5.4.5") <= 0 {
 		t.Fatal("expected 1.5.5.1.98.gf0ec4 to be greater than 1.5.4.5")
 	}
-	if CompareVersions("2.42.9", MinimumGitVersion) >= 0 {
-		t.Fatal("expected 2.42.9 to be less than minimum")
+	if CompareVersions("2.38.9", MinimumGitVersion) >= 0 {
+		t.Fatal("expected 2.38.9 to be less than minimum")
 	}
-	if CompareVersions("2.43.0", MinimumGitVersion) != 0 {
-		t.Fatal("expected 2.43.0 to equal minimum")
+	if CompareVersions("2.39.0", MinimumGitVersion) != 0 {
+		t.Fatal("expected 2.39.0 to equal minimum")
 	}
 }
 

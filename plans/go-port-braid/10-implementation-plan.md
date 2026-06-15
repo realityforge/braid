@@ -57,7 +57,7 @@ plans/go-port-braid/
 - Go SDK: 1.26.4, current Go 1.26 patch release when checked on 2026-06-14.
 - Cross-build mechanism: `rules_go` platforms with pure-Go builds for `linux_amd64`, `linux_arm64`, `darwin_amd64`, `darwin_arm64`, and `windows_amd64`.
 - Cgo policy: off unless a future decision explicitly approves a specific need.
-- Runtime Git minimum: 2.43.0.
+- Runtime Git minimum: 2.39.0.
 
 Package intent:
 
@@ -160,7 +160,7 @@ bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
 - Q-06: User selected Ruby oracle tests during migration only; final required gates are Go/Bazel-only.
 - Q-07: User selected raw binaries and checksums with documented manual signing/notarization path for first release artifacts.
 - Q-08: User selected root-only execution for v1 with subdirectory execution as a future enhancement.
-- Q-09: User selected Git 2.43.0 as the exact minimum, anchored to Ubuntu 24.04 LTS package availability.
+- Q-09: User selected Git 2.39.0 as the exact minimum, anchored to GitHub Actions macOS runner Apple Git availability.
 - Q-10: User selected global cache flags before the command: `--no-cache` and `--cache-dir <path>`.
 
 ## Review Fix Log

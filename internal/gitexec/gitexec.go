@@ -17,7 +17,7 @@ import (
 
 const (
 	DefaultGitExecutable = "git"
-	MinimumGitVersion    = "2.43.0"
+	MinimumGitVersion    = "2.39.0"
 )
 
 type Runner struct {

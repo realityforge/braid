@@ -13,7 +13,7 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 |---|---|---|
 | Ruby runtime | Required | Not required |
 | Go runtime | Not applicable | Not required on target |
-| Git executable | Required, minimum 2.8.0 | Required, minimum 2.43.0 |
+| Git executable | Required, minimum 2.8.0 | Required, minimum 2.39.0 |
 | Shell | Ruby uses safe process APIs for Git but tests use shell snippets | Product code must not use shell execution |
 | `.braids.json` | Supported | Supported |
 | `.braids` YAML/PStore | Legacy upgrade path | Unsupported by design |
@@ -51,7 +51,7 @@ The Go port should preserve user-visible behavior that matters for modern `.brai
 | D-01 | Legacy config | No YAML/PStore `.braids` support | User explicitly does not need historic infrastructure. | locked |
 | D-02 | Removed mirror types | No SVN/full-history migration | Removed behavior is historic and adds complexity. | locked |
 | D-03 | Path validation | Reject unsafe paths earlier than Ruby | Security and cross-platform predictability. | review round 2 resolved |
-| D-04 | Git minimum | Requires Git 2.43.0 or newer | Reduce compatibility branches while supporting Ubuntu 24.04 LTS default Git. | Q-02 and Q-09 resolved |
+| D-04 | Git minimum | Requires Git 2.39.0 or newer | Reduce compatibility branches while supporting the default Apple Git on GitHub Actions macOS runners. | Q-02 and Q-09 resolved |
 | D-05 | Help/output text | New idiomatic output/help design with behavior parity only | Avoid preserving Ruby CLI framework quirks and brittle text tests. | Q-04 resolved |
 | D-06 | Command surface | `upgrade-config` is removed | Historic config migration is out of scope. | Q-03 resolved |
 | D-07 | Cache flags and no-cache tag behavior | Cache remains on by default and gains global `--no-cache` and `--cache-dir` overrides; tag and annotated-tag mirrors must still work when cache is disabled | Preserve performance by default while making runtime cache choice explicit and avoiding feature loss when cache is disabled. | Q-05, Q-10, and review round 2 resolved |

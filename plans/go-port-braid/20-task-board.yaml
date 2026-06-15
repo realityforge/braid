@@ -940,7 +940,7 @@ history:
   - timestamp: 2026-06-14
     task: T01
     commit: not_required
-    note: Resolved Q-09 as Git 2.43.0 minimum and updated compatibility notes.
+    note: Resolved Q-09 as Git 2.39.0 minimum and updated compatibility notes.
   - timestamp: 2026-06-14
     task: T01
     commit: not_required

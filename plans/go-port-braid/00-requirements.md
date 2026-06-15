@@ -124,7 +124,7 @@ Native release smoke matrix:
 - No post-command `--verbose|-v`; verbose tracing is a pre-command global flag.
 - No v1 support for running commands from subdirectories of the downstream Git worktree.
 - Unsafe path validation will be stricter than the Ruby implementation's TODO-covered behavior.
-- Implementation will require Git 2.43.0 or newer.
+- Implementation will require Git 2.39.0 or newer.
 
 ## Preflight Matrix
 
@@ -340,9 +340,9 @@ slash-separated and must still pass the portable path validation contract above.
 
 - status: resolved
 - question: What exact Git version should implement the Q-02 "current package manager" policy?
-- context: Current package evidence checked on 2026-06-14: Ubuntu 24.04 LTS packages Git 2.43.0; Ubuntu 26.04 LTS packages Git 2.53.0; Debian 13 packages Git 2.47.3; Homebrew and Git for Windows list Git 2.54.0. The selected floor determines which "current" systems work out of the box.
+- context: Current package evidence checked on 2026-06-14: Ubuntu 24.04 LTS packages Git 2.43.0; Ubuntu 26.04 LTS packages Git 2.53.0; Debian 13 packages Git 2.47.3; Homebrew and Git for Windows list Git 2.54.0. The selected floor determines which "current" systems work out of the box. CI evidence on 2026-06-15 showed the GitHub Actions `macos-15` runner invoking Apple Git 2.39.5 by default.
 - options:
-  - A: Git 2.43.0, anchored to Ubuntu 24.04 LTS.
+  - A: Git 2.39.0, anchored to the GitHub Actions macOS runner Apple Git series.
   - B: Git 2.47.0, anchored near Debian 13 stable.
   - C: Git 2.53.0, anchored to Ubuntu 26.04 LTS.
 - tradeoffs:
@@ -350,7 +350,7 @@ slash-separated and must still pass the portable path validation contract above.
   - B is a stricter modern floor but excludes Ubuntu 24.04 LTS default Git.
   - C is very current but excludes Ubuntu 24.04 LTS and Debian 13 default Git.
 - recommended_default: A.
-- user_decision: A. Require Git 2.43.0 or newer, anchored to Ubuntu 24.04 LTS while still being much newer than Ruby Braid's 2.8.0 floor.
+- user_decision: A. Require Git 2.39.0 or newer, anchored to the GitHub Actions macOS runner Apple Git series while still being much newer than Ruby Braid's 2.8.0 floor.
 - artifacts_updated: `00-requirements.md`, `10-implementation-plan.md`, `20-task-board.yaml`, `30-compatibility-matrix.md`, `40-test-strategy.md`
 
 ### Q-10
