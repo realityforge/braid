@@ -1,6 +1,6 @@
 meta:
   project: release-automation
-  status: accepted
+  status: completed
   last_updated: 2026-06-15
   required_full_gates:
     - bazel run @rules_go//go -- fmt ./...
@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T05
+current_focus: complete
 
 tasks:
   - id: PLAN-DRAFT
@@ -186,7 +186,7 @@ tasks:
 
   - id: T05
     title: Minimize release documentation
-    status: in_progress
+    status: completed
     priority: medium
     depends_on:
       - T04
@@ -198,14 +198,18 @@ tasks:
       - docs/release.md
       - README.md
       - docs/ci.md
-    evidence: []
+    evidence:
+      - command: git diff --check -- docs/release.md docs/ci.md README.md plans/release-automation/20-task-board.yaml
+        result: pass; no whitespace errors reported.
+      - command: rg -n "does not define automated|Release automation is not complete|Native Integration Matrix|Packaged Artifact Checks|full release artifact process|The job installs" docs/release.md docs/ci.md README.md docs/contributing.md docs/migration.md
+        result: pass; no stale release-process wording found.
     commit:
-      hash: pending
-      message: pending
+      hash: 54c4a19
+      message: "docs(release): document automated release path"
 
   - id: T06
     title: Final validation and release readiness evidence
-    status: pending
+    status: completed
     priority: high
     depends_on:
       - T05
@@ -217,10 +221,22 @@ tasks:
     files_touched:
       - plans/release-automation/20-task-board.yaml
       - plans/release-automation/10-implementation-plan.md
-    evidence: []
+    evidence:
+      - command: bazel run @rules_go//go -- fmt ./...
+        result: pass; formatting command completed successfully.
+      - command: git diff --exit-code
+        result: pass; formatting left no worktree diff.
+      - command: bazel test //...
+        result: pass; 10 test targets passed, including //tools/release:version_test and //integration:braid_integration_test.
+      - command: bazel run @rules_go//go -- vet ./...
+        result: pass; vet completed successfully.
+      - command: bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+        result: pass; 0 issues.
+      - command: remote release workflow validation
+        result: pending external run; requires pushing these workflow commits and cutting the next real release from GitHub Actions.
     commit:
-      hash: pending
-      message: pending
+      hash: not_required
+      message: Final evidence tracking only.
 
 history:
   - timestamp: 2026-06-15
@@ -255,3 +271,11 @@ history:
     task: T04
     commit: d09c44d
     note: Added tag-ref release workflow, native artifact build helpers, dist verification, and draft release publishing.
+  - timestamp: 2026-06-15
+    task: T05
+    commit: 54c4a19
+    note: Replaced manual release docs with concise workflow-focused release policy and caveats.
+  - timestamp: 2026-06-15
+    task: T06
+    commit: not_required
+    note: Full local gates passed; remote release validation is recorded as the next external release-cut run.

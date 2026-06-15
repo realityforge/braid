@@ -200,6 +200,14 @@ Remote release readiness evidence:
 - Working tree is clean after committed implementation, unless explicitly
   deferred by the user.
 
+## Implementation Closeout Evidence
+
+- Local full gates passed on 2026-06-15.
+- The first remote release validation still requires pushing these workflow
+  commits, running `Release Cut` on `main` with a real next version, confirming
+  the dispatched `Release` workflow completes, and reviewing the created draft
+  release assets.
+
 ## Decision Log
 
 - Q-01: Use tag-driven Bazel stamping; remove source version patch/bump from
