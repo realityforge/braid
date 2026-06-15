@@ -63,8 +63,3 @@ matches the current upstream revision. A tag or revision mirror requires an
 explicit `--branch` target. The temporary push repository copies local
 `user.name`, `user.email`, and `commit.gpgsign` settings when present.
 
-## Release Notes
-
-The first Go port release produces raw binaries and checksums. macOS
-signing/notarization is documented as a manual path and is not automated in the
-initial release workflow. See [`docs/release.md`](release.md).
