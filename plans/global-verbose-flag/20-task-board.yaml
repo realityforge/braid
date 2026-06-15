@@ -1,0 +1,171 @@
+meta:
+  project: global-verbose-flag
+  status: accepted
+  last_updated: 2026-06-15
+  required_full_gates:
+    - bazel run @rules_go//go -- fmt ./...
+    - bazel test //...
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: T01
+
+tasks:
+  - id: PLAN-DRAFT
+    title: Draft global verbose flag plan
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Requirements document captures mission, scope, behavior, gates, and resolved questions.
+      - Implementation plan captures ordered phases, risks, gates, and decision log.
+      - Task board captures implementation tasks and leaves user approval incomplete.
+    files_touched:
+      - plans/global-verbose-flag/00-requirements.md
+      - plans/global-verbose-flag/10-implementation-plan.md
+      - plans/global-verbose-flag/20-task-board.yaml
+    evidence:
+      - command: sed -n '1,260p' /Users/peter/.codex/skills/structured-delivery-workflow/SKILL.md
+        result: pass; first half of skill instructions read.
+      - command: sed -n '261,520p' /Users/peter/.codex/skills/structured-delivery-workflow/SKILL.md
+        result: pass; second half of skill instructions read.
+      - command: rg -n "verbose|Verbose|--verbose|-v" internal cmd README.md docs plans -g '!*.lock'
+        result: pass; current verbose duplication and docs surface identified.
+      - command: grill-me planning interview Q-01 through Q-07
+        result: pass; all recommendations accepted by user.
+      - command: ruby -e 'require "yaml"; YAML.load_file("plans/global-verbose-flag/20-task-board.yaml"); puts "task board yaml ok"'
+        result: pass; task board yaml ok.
+      - command: rg -n "[[:blank:]]$" plans/global-verbose-flag
+        result: pass; no trailing whitespace matches.
+    commit:
+      hash: not_required
+      message: Planning draft only; no implementation commit requested yet.
+
+  - id: PLAN-APPROVAL
+    title: User review and plan acceptance
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-DRAFT
+    acceptance_criteria:
+      - User review is explicitly requested.
+      - User feedback is incorporated into planning artifacts.
+      - Plan status changes to accepted only after feedback is resolved.
+      - If acceptance requires no implementation commit, commit.hash is recorded as not_required when the task completes.
+    files_touched:
+      - plans/global-verbose-flag/00-requirements.md
+      - plans/global-verbose-flag/10-implementation-plan.md
+      - plans/global-verbose-flag/20-task-board.yaml
+    evidence:
+      - command: pending user review
+        result: pending
+      - command: iterative-plan-review round 1
+        result: pass; three valid findings fixed in plan artifacts.
+      - command: iterative-plan-review round 2
+        result: pass; reviewer reported Findings none.
+      - command: user instruction "implement"
+        result: pass; plan accepted for implementation.
+    commit:
+      hash: not_required
+      message: Review-only approval recorded before implementation.
+
+  - id: T01
+    title: Move verbose into global CLI parsing
+    status: pending
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - "`cli.GlobalOptions` contains `Verbose bool`."
+      - "`parseGlobal` accepts pre-command `--verbose` and `-v`."
+      - Command-specific option structs no longer contain verbose fields.
+      - "Per-command parsers no longer accept `--verbose` or `-v`."
+      - Parser tests cover accepted global placement and rejected post-command placement.
+    files_touched:
+      - internal/cli/cli.go
+      - internal/cli/cli_test.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T02
+    title: Wire command behavior to global verbose
+    status: pending
+    priority: high
+    depends_on:
+      - T01
+    acceptance_criteria:
+      - "Command code uses `inv.Global.Verbose` directly."
+      - "`command.verbose(inv)` is removed."
+      - Cache fetches, git runner construction, and push temp repo setup preserve verbose behavior.
+      - Global verbose trace propagation is explicitly tested for at least one normal git path and one cache or temporary-repository path.
+      - Command tests pass.
+    files_touched:
+      - internal/command/*.go
+      - internal/command/*_test.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T03
+    title: Align help text and documentation
+    status: pending
+    priority: medium
+    depends_on:
+      - T01
+      - T02
+    acceptance_criteria:
+      - "Top-level usage advertises `--verbose|-v` as global."
+      - "Command-specific usage strings omit `--verbose|-v`."
+      - README command form describes global verbose placement.
+      - "`plans/go-port-braid/00-requirements.md` command surface reflects the implemented syntax."
+      - "`plans/go-port-braid/00-requirements.md` records post-command verbose removal as an intentional divergence."
+    files_touched:
+      - internal/cli/cli.go
+      - internal/cli/cli_test.go
+      - README.md
+      - plans/go-port-braid/00-requirements.md
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T04
+    title: Final validation and evidence capture
+    status: pending
+    priority: high
+    depends_on:
+      - T03
+    acceptance_criteria:
+      - "`bazel run @rules_go//go -- fmt ./...` passes or leaves no formatting diff."
+      - "`bazel test //internal/cli:cli_test` passes."
+      - "`bazel test //internal/command:command_test` passes."
+      - "`bazel test //cmd/braid:braid_test` passes."
+      - "`bazel test //...` passes."
+      - Task board records validation evidence and commit metadata.
+      - Completed tasks record either a real commit SHA or `not_required`, never `pending`.
+    files_touched:
+      - plans/global-verbose-flag/20-task-board.yaml
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+history:
+  - timestamp: 2026-06-15
+    task: PLAN-DRAFT
+    commit: not_required
+    note: Draft plan emitted from resolved grill-me decisions; plan acceptance remains pending user review.
+  - timestamp: 2026-06-15
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Iterative plan-review round 1 found three valid issues; plan updated for verbose propagation tests, Go-port divergence docs, and commit closeout rules.
+  - timestamp: 2026-06-15
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: User approved the reviewed global verbose flag plan for implementation.
