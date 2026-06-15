@@ -11,7 +11,7 @@ go_library(
 go_test(
     name = "testutil_test",
     srcs = ["git_test.go"],
-    data = ["//testdata/fixtures:fixtures"],
+    data = ["//testdata/fixtures"],
     embed = [":testutil"],
 )
 
