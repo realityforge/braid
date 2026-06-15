@@ -72,7 +72,7 @@ func TestMirrorRefsAndRemote(t *testing.T) {
 	}
 }
 
-func TestRemoteSanitizesPathLikeRuby(t *testing.T) {
+func TestRemoteSanitizesUnsafePathChars(t *testing.T) {
 	got, err := NewFromOptions("http://example.test/path.git", Options{
 		LocalPath: ".dotfolder/.dotfile.ext",
 		Branch:    "master",

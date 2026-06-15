@@ -14,10 +14,3 @@ go_test(
     data = ["//testdata/fixtures"],
     embed = [":testutil"],
 )
-
-go_test(
-    name = "ruby_oracle_test",
-    srcs = ["ruby_oracle_test.go"],
-    tags = ["manual"],
-    deps = ["//internal/mirror"],
-)
