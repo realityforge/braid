@@ -328,10 +328,23 @@ bazel run @rules_go//go -- vet ./...
 bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
 ```
 
-Release automation and the manual macOS signing/notarization caveat are
-documented in [`docs/release.md`](docs/release.md).
 GitHub Actions CI and the local pull request checks are documented in
 [`docs/ci.md`](docs/ci.md).
+
+# Release Builds
+
+Releases are cut through GitHub Actions:
+
+1. Run the `Release Cut` workflow from `main` with a stable version such as
+   `0.1.0` or `v0.1.0`.
+2. The workflow validates the exact `main` commit, creates an annotated
+   `vX.Y.Z` tag, and dispatches the `Release` workflow on that tag.
+3. The `Release` workflow builds the supported native artifacts, verifies
+   checksums, and creates a draft GitHub release.
+4. Review the draft release assets and generated notes, then publish manually.
+
+The workflow files own the operational details, including runner labels,
+permissions, version stamping, artifact names, and verification commands.
 
 ## Documentation
 

@@ -1,5 +1,10 @@
 # Architecture Notes
 
+## Release and Versioning policy
+
+* Releases publish raw binaries plus `SHA256SUMS`.
+* Version tags use `vX.Y.Z`; binaries print `X.Y.Z`.
+
 ## Git And Tests
 
 - Product code that invokes Git should stay behind `internal/gitexec`; the port's
