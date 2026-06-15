@@ -1,0 +1,7 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "version_test",
+    srcs = ["version_test.go"],
+    data = ["version.sh"],
+)

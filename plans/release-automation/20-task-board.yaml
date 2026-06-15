@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T01
+current_focus: T02
 
 tasks:
   - id: PLAN-DRAFT
@@ -75,7 +75,7 @@ tasks:
 
   - id: T01
     title: Add tag-driven version stamping
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -89,14 +89,22 @@ tasks:
       - cmd/braid/BUILD.bazel
       - integration/braid_integration_test.go
       - tools/release/workspace-status.sh
-    evidence: []
+    evidence:
+      - command: bazel run //cmd/braid:braid -- version
+        result: pass; printed braid 0.0.0-dev.
+      - command: BRAID_VERSION=1.2.3 bazel run --stamp --workspace_status_command=tools/release/workspace-status.sh //cmd/braid:braid -- version
+        result: pass; printed braid 1.2.3.
+      - command: bazel test //integration:braid_integration_test
+        result: pass; 1 test target passed.
+      - command: BRAID_VERSION=1.2.3 bazel test --stamp --workspace_status_command=tools/release/workspace-status.sh --test_env=BRAID_EXPECTED_VERSION=1.2.3 //integration:braid_integration_test
+        result: pass; 1 test target passed with stamped version expectation.
     commit:
-      hash: pending
-      message: pending
+      hash: f05f854
+      message: "feat(release): stamp braid version from Bazel"
 
   - id: T02
     title: Add release shell scripts and deterministic tests
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T01
@@ -213,3 +221,7 @@ history:
     task: PLAN-APPROVAL
     commit: not_required
     note: User approved the reviewed plan for implementation.
+  - timestamp: 2026-06-15
+    task: T01
+    commit: f05f854
+    note: Added rules_go stamping for the CLI version and verified normal and stamped integration behavior.
