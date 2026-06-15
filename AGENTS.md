@@ -1,0 +1,12 @@
+# Architecture Notes
+
+## Git And Tests
+
+- Product code that invokes Git should stay behind `internal/gitexec`; the port's
+  Git behavior assumptions and intentional divergences are documented in
+  [`docs/migration.md`](migration.md#intentional-divergences).
+- Tests must not depend on the user's global Git identity, real Braid cache, or
+  network remotes.
+- Integration tests should create local upstream/downstream repositories in
+  `t.TempDir()`, configure local user identity, and disable GPG signing unless
+  the test explicitly covers signing config propagation.
