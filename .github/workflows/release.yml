@@ -82,9 +82,9 @@ jobs:
           set -euo pipefail
           # The release integration gate runs the stamped binary on each native
           # platform so the artifact version matches the tag, not 0.0.0-dev.
-          MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' BRAID_VERSION="${VERSION}" bazel test \
+          MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bazel test \
             --stamp \
-            --workspace_status_command=tools/release/workspace-status.sh \
+            --embed_label="${VERSION}" \
             --test_env=BRAID_EXPECTED_VERSION="${VERSION}" \
             //integration:braid_integration_test
 

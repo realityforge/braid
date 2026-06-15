@@ -32,13 +32,11 @@ Last updated: 2026-06-15
 - Change `internal/cli.DefaultVersion` from `const` to `var` so rules_go can
   stamp it at link time.
 - Add `x_defs` to `//cmd/braid:braid` for
-  `braid/internal/cli.DefaultVersion = "{STABLE_BRAID_VERSION}"`.
-- Add `tools/release/workspace-status.sh` that emits
-  `STABLE_BRAID_VERSION <version>` when release workflows set `BRAID_VERSION`.
+  `braid/internal/cli.DefaultVersion = "{BUILD_EMBED_LABEL}"`.
 - Verify unstamped `bazel run //cmd/braid:braid -- version` still prints
   `braid 0.0.0-dev`.
 - Verify stamped builds print `braid X.Y.Z` with:
-  `BRAID_VERSION=1.2.3 bazel run --stamp --workspace_status_command=tools/release/workspace-status.sh //cmd/braid:braid -- version`.
+  `bazel run --stamp --embed_label=1.2.3 //cmd/braid:braid -- version`.
 - Update integration test version assertion so normal tests expect
   `0.0.0-dev`, while release matrix tests can set `BRAID_EXPECTED_VERSION`.
   Release matrix tests must pass it explicitly with:
@@ -110,8 +108,7 @@ Add `.github/workflows/release.yml`:
   - windows-amd64 on `windows-2025`.
 - Each matrix job:
   - Runs `bazel test //integration:braid_integration_test` with
-    `--stamp`, `--workspace_status_command=tools/release/workspace-status.sh`,
-    `BRAID_VERSION=$VERSION`, and
+    `--stamp`, `--embed_label=$VERSION`, and
     `--test_env=BRAID_EXPECTED_VERSION=$VERSION`.
   - Builds the platform artifact with stamping.
   - Runs the copied artifact's `version` command natively.
@@ -142,7 +139,7 @@ Add `.github/workflows/release.yml`:
 - Risk: stamping accidentally changes normal development output.
   - Impact: local tests and existing documentation become misleading.
   - Mitigation: targeted unstamped and stamped version checks; keep release
-    stamp opt-in through `--stamp --workspace_status_command`.
+    stamp opt-in through `--stamp --embed_label`.
 - Risk: release-cut blesses the wrong SHA.
   - Impact: tag provenance is wrong.
   - Mitigation: require the workflow ref to be `main`, resolve `origin/main`,

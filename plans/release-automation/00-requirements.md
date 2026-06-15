@@ -143,9 +143,9 @@ Targeted validation during implementation:
   and empty existing-tag sets.
 - Unstamped binary check: `bazel run //cmd/braid:braid -- version`.
 - Stamped binary check with:
-  `BRAID_VERSION=1.2.3 bazel run --stamp --workspace_status_command=tools/release/workspace-status.sh //cmd/braid:braid -- version`.
+  `bazel run --stamp --embed_label=1.2.3 //cmd/braid:braid -- version`.
 - Stamped integration check with:
-  `BRAID_VERSION=1.2.3 bazel test --stamp --workspace_status_command=tools/release/workspace-status.sh --test_env=BRAID_EXPECTED_VERSION=1.2.3 //integration:braid_integration_test`.
+  `bazel test --stamp --embed_label=1.2.3 --test_env=BRAID_EXPECTED_VERSION=1.2.3 //integration:braid_integration_test`.
 - Native platform artifact smoke in release matrix: copied artifact runs
   `version` and prints the stamped version.
 - Workflow YAML syntax sanity checks where local tooling can verify without

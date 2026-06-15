@@ -58,9 +58,9 @@ esac
 rm -rf dist
 mkdir -p dist
 
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' BRAID_VERSION="${version}" bazel build \
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bazel build \
   --stamp \
-  --workspace_status_command=tools/release/workspace-status.sh \
+  --embed_label="${version}" \
   --platforms="${bazel_platform}" \
   //cmd/braid:braid
 
