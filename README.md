@@ -338,5 +338,3 @@ documented in [`docs/release.md`](docs/release.md).
   strategy, and Git assumptions.
 - [`docs/ci.md`](docs/ci.md): GitHub Actions workflow and local Go quality
   checks.
-- [`docs/future-subdirectory-execution.md`](docs/future-subdirectory-execution.md):
-  why v1 requires root-only execution.
