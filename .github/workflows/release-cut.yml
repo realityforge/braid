@@ -1,0 +1,117 @@
+name: Release Cut
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version to release, with or without the v prefix.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  checks: read
+  actions: write
+
+concurrency:
+  group: release-cut
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    name: Cut release tag
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify dispatch ref
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Release cuts must be dispatched from main; got ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Normalize version
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(tools/release/version.sh normalize "${{ inputs.version }}")
+          tag=$(tools/release/version.sh tag "${version}")
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve release commit
+        id: commit
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main --tags
+          release_sha=$(git rev-parse HEAD)
+          remote_sha=$(git rev-parse refs/remotes/origin/main)
+          if [[ "${release_sha}" != "${remote_sha}" ]]; then
+            echo "main moved or checkout is stale; rerun release cut" >&2
+            echo "checkout: ${release_sha}" >&2
+            echo "origin/main: ${remote_sha}" >&2
+            exit 1
+          fi
+          echo "sha=${release_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate version is new
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists locally" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin" >&2
+            exit 1
+          fi
+          mapfile -t tags < <(git tag -l 'v*')
+          tools/release/version.sh assert-newer "${VERSION}" "${tags[@]}"
+
+      - name: Wait for required CI checks
+        run: |
+          set -euo pipefail
+          tools/release/wait-for-checks.sh "${{ steps.commit.outputs.sha }}" 2700 15 \
+            "Go quality and lint" \
+            "Integration (windows-amd64)" \
+            "Integration (linux-arm64)" \
+            "Integration (darwin-amd64)" \
+            "Integration (darwin-arm64)"
+
+      - name: Create annotated tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main
+          remote_sha=$(git rev-parse refs/remotes/origin/main)
+          if [[ "${remote_sha}" != "${RELEASE_SHA}" ]]; then
+            echo "origin/main changed while waiting for checks; rerun release cut" >&2
+            echo "checked SHA: ${RELEASE_SHA}" >&2
+            echo "origin/main: ${remote_sha}" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" "${RELEASE_SHA}" -m "Braid ${VERSION}"
+          git push origin "refs/tags/${TAG}"
+
+      - name: Dispatch release workflow
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref "${TAG}"

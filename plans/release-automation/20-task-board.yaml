@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T02
+current_focus: T03
 
 tasks:
   - id: PLAN-DRAFT
@@ -104,7 +104,7 @@ tasks:
 
   - id: T02
     title: Add release shell scripts and deterministic tests
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T01
@@ -117,14 +117,18 @@ tasks:
     files_touched:
       - tools/release/**
       - tools/release/BUILD.bazel
-    evidence: []
+    evidence:
+      - command: bazel test //tools/release:version_test
+        result: pass; 1 test target passed.
+      - command: tools/release/version.sh normalize v1.2.3 && tools/release/version.sh tag 1.2.3 && tools/release/version.sh assert-newer 1.2.4 v1.2.3
+        result: pass; printed 1.2.3, v1.2.3, and v1.2.4.
     commit:
-      hash: pending
-      message: pending
+      hash: 6aab63e
+      message: "feat(release): add stable version validation scripts"
 
   - id: T03
     title: Add release-cut workflow
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T02
@@ -225,3 +229,7 @@ history:
     task: T01
     commit: f05f854
     note: Added rules_go stamping for the CLI version and verified normal and stamped integration behavior.
+  - timestamp: 2026-06-15
+    task: T02
+    commit: 6aab63e
+    note: Added stable version normalization/comparison helper and Bazel coverage for deterministic edge cases.
