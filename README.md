@@ -327,16 +327,6 @@ bazel run @rules_go//go -- vet ./...
 bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
 ```
 
-Release target builds:
-
-```bash
-bazel build --platforms=@rules_go//go/toolchain:linux_amd64 //cmd/braid:braid
-bazel build --platforms=@rules_go//go/toolchain:linux_arm64 //cmd/braid:braid
-bazel build --platforms=@rules_go//go/toolchain:darwin_amd64 //cmd/braid:braid
-bazel build --platforms=@rules_go//go/toolchain:darwin_arm64 //cmd/braid:braid
-bazel build --platforms=@rules_go//go/toolchain:windows_amd64 //cmd/braid:braid
-```
-
 Release automation and the manual macOS signing/notarization caveat are
 documented in [`docs/release.md`](docs/release.md).
 

@@ -7,6 +7,8 @@ permissions:
   contents: read
 
 concurrency:
+  # Keep retries for the same tag serialized so only one draft release attempt
+  # can publish assets for a given immutable ref.
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
@@ -25,6 +27,8 @@ jobs:
         id: version
         run: |
           set -euo pipefail
+          # Release Cut dispatches this workflow on the tag ref it just created;
+          # direct manual runs against branches are rejected here.
           if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
             echo "Release workflow must be dispatched on a v* tag ref; got ${GITHUB_REF}" >&2
             exit 1
@@ -76,6 +80,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The release integration gate runs the stamped binary on each native
+          # platform so the artifact version matches the tag, not 0.0.0-dev.
           BRAID_VERSION="${VERSION}" bazel test \
             --stamp \
             --workspace_status_command=tools/release/workspace-status.sh \
@@ -110,6 +116,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
+          # Matrix jobs do not write release assets directly; the publish job
+          # verifies the complete set before creating a draft release.
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
           if-no-files-found: error
@@ -142,6 +150,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Checksums are generated only after all matrix artifacts are present;
+          # unsigned macOS binaries are intentional for the first automation.
           chmod +x dist/braid-linux-amd64 dist/braid-linux-arm64 dist/braid-darwin-amd64 dist/braid-darwin-arm64
           (cd dist && shasum -a 256 braid-* > SHA256SUMS)
           tools/release/verify-dist.sh dist
