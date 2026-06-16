@@ -239,6 +239,24 @@ func TestPushCommandStopsWhenNotUpToDateOrNoLocalChanges(t *testing.T) {
 			t.Fatalf("upstream HEAD = %s, want unchanged %s", gotHead, head)
 		}
 	})
+
+	t.Run("uncommitted local changes", func(t *testing.T) {
+		upstream := testutil.InitRepo(t)
+		testutil.WriteFile(t, upstream, "README.md", "base\n")
+		head := testutil.CommitAll(t, upstream, "base")
+		repo := initDownstream(t)
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+		testutil.WriteFile(t, repo, "vendor/basic/README.md", "uncommitted\n")
+		t.Setenv("GIT_EDITOR", writeEditor(t, "Should not push"))
+
+		out := runCommandOK(t, repo, []string{"push", "vendor/basic"})
+		assertContains(t, out, "downstream HEAD")
+		gotHead := strings.TrimSpace(testutil.Git(t, upstream, "rev-parse", "HEAD").Stdout)
+		if gotHead != head {
+			t.Fatalf("upstream HEAD = %s, want unchanged %s", gotHead, head)
+		}
+		assertFile(t, upstream, "README.md", "base\n")
+	})
 }
 
 func TestPushCommandDoesNotPushWhenEditorFails(t *testing.T) {

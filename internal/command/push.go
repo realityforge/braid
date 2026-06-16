@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"braid/internal/cli"
 	"braid/internal/config"
@@ -94,29 +93,29 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return nil
 	}
 
-	diffArgs, err := buildDiffArgs(ctx, git, m, nil)
+	localItem, err := git.LsTreeItem(ctx, "HEAD", m.Path)
 	if err != nil {
 		return err
 	}
-	diff, err := git.Diff(ctx, diffArgs...)
+	newTree, err := git.MakeTreeWithItemIn(ctx, baseRevision, m.RemotePath, localItem)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(diff) == "" {
-		if _, err := fmt.Fprintln(stdout, "Braid: No local changes found. Stopping."); err != nil {
+	baseTree, err := git.RevParse(ctx, baseRevision+"^{tree}")
+	if err != nil {
+		return err
+	}
+	if newTree == baseTree {
+		if _, err := fmt.Fprintln(stdout, "Braid: No local changes found in downstream HEAD. Stopping."); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	localItem, err := git.LsTreeItem(ctx, "HEAD", m.Path)
-	if err != nil {
-		return err
-	}
-	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, localItem, inv.Global.Verbose, h.stdin(), stdout, stderr)
+	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, newTree, inv.Global.Verbose, h.stdin(), stdout, stderr)
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision string, localItem gitexec.TreeItem, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	tempDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -138,10 +137,6 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 		return err
 	}
 	if err := tempGit.UpdateRef(ctx, "--no-deref", "HEAD", baseRevision); err != nil {
-		return err
-	}
-	newTree, err := tempGit.MakeTreeWithItemIn(ctx, baseRevision, m.RemotePath, localItem)
-	if err != nil {
 		return err
 	}
 	if err := tempGit.ConfigSet(ctx, "--local", "core.sparsecheckout", "true"); err != nil {
