@@ -407,6 +407,64 @@ func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t
 	}
 }
 
+func TestHashBytesStoresBlobWithoutWorktreeChanges(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+	before := realGitOutput(t, repo, "status", "--porcelain")
+
+	item, err := New(repo, false, nil).HashBytes(context.Background(), []byte("config bytes\n"))
+	if err != nil {
+		t.Fatalf("HashBytes returned error: %v", err)
+	}
+	if item.Mode != "100644" || item.Type != "blob" || item.Hash == "" {
+		t.Fatalf("HashBytes item = %#v, want blob item", item)
+	}
+	if got := realGitOutput(t, repo, "cat-file", "-p", item.Hash); got != "config bytes" {
+		t.Fatalf("blob content = %q, want config bytes", got)
+	}
+	after := realGitOutput(t, repo, "status", "--porcelain")
+	if after != before {
+		t.Fatalf("status changed from %q to %q", before, after)
+	}
+}
+
+func TestMakeTreeWithoutPathRemovesPathAndPreservesRealIndexAndWorktree(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "vendor/remove/file.txt", "remove\n")
+	writeRealFile(t, repo, "vendor/keep/file.txt", "keep\n")
+	writeRealFile(t, repo, "unrelated.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	writeRealFile(t, repo, "unrelated.txt", "staged\n")
+	realGit(t, repo, "add", "unrelated.txt")
+	before := realGitOutput(t, repo, "status", "--porcelain")
+
+	tree, err := New(repo, false, nil).MakeTreeWithoutPath(context.Background(), "HEAD", "vendor/remove")
+	if err != nil {
+		t.Fatalf("MakeTreeWithoutPath returned error: %v", err)
+	}
+	names := realGitOutput(t, repo, "ls-tree", "-r", "--name-only", tree)
+	if strings.Contains(names, "vendor/remove/file.txt") {
+		t.Fatalf("tree names = %q, want vendor/remove removed", names)
+	}
+	if !strings.Contains(names, "vendor/keep/file.txt") {
+		t.Fatalf("tree names = %q, want vendor/keep retained", names)
+	}
+	after := realGitOutput(t, repo, "status", "--porcelain")
+	if after != before {
+		t.Fatalf("status changed from %q to %q", before, after)
+	}
+	if got := readRealFile(t, repo, "vendor/remove/file.txt"); got != "remove\n" {
+		t.Fatalf("worktree vendor/remove/file.txt = %q, want unchanged", got)
+	}
+	if got := strings.TrimSpace(realGitOutput(t, repo, "show", ":unrelated.txt")); got != "staged" {
+		t.Fatalf("staged unrelated blob = %q, want staged", got)
+	}
+}
+
 func TestRestorePathspecsFromHeadUpdatesOnlyExplicitPathspecs(t *testing.T) {
 	repo := initRealRepo(t)
 	writeRealFile(t, repo, "restore.txt", "base\n")

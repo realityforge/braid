@@ -324,6 +324,20 @@ func (g Git) HashFile(ctx context.Context, path string) (TreeItem, error) {
 	return TreeItem{Mode: "100644", Type: "blob", Hash: hash}, nil
 }
 
+func (g Git) HashBytes(ctx context.Context, data []byte) (TreeItem, error) {
+	var stdout, stderr bytes.Buffer
+	result, err := g.Runner.RunInteractive(ctx, bytes.NewReader(data), &stdout, &stderr, "hash-object", "-w", "--stdin")
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	if err != nil {
+		return TreeItem{}, err
+	}
+	if result.ExitCode != 0 {
+		return TreeItem{}, &ExitError{Result: result}
+	}
+	return TreeItem{Mode: "100644", Type: "blob", Hash: strings.TrimSpace(result.Stdout)}, nil
+}
+
 func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
 	result, err := g.Run(ctx, "commit", "--no-verify", "-m", message)
 	if err != nil {
@@ -406,6 +420,32 @@ func (g Git) Push(ctx context.Context, args ...string) error {
 
 func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeItem) (string, error) {
 	return g.MakeTreeWithItemIn(ctx, "", itemPath, item)
+}
+
+func (g Git) MakeTreeWithoutPath(ctx context.Context, mainContent, itemPath string) (string, error) {
+	if mainContent == "" {
+		return "", errors.New("base treeish is required")
+	}
+	if itemPath == "" {
+		return "", errors.New("item path is required")
+	}
+
+	dir, err := os.MkdirTemp("", "braid-index")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
+
+	tempGit := g.withIndex(filepath.Join(dir, "index"))
+	if err := tempGit.ReadTreeIndexMerge(ctx, mainContent); err != nil {
+		return "", err
+	}
+	if err := tempGit.RemoveCachedRecursive(ctx, itemPath); err != nil {
+		return "", err
+	}
+	return tempGit.Output(ctx, "write-tree")
 }
 
 func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath string, item TreeItem) (string, error) {
