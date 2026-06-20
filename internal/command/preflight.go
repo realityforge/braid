@@ -122,7 +122,7 @@ func NewAppWithOptions(options Options) cli.App {
 	return app
 }
 
-func (h Handler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
+func (h Handler) Run(inv cli.Invocation, _, stderr io.Writer) error {
 	if err := Preflight(context.Background(), h.Command, inv, h.Options, stderr); err != nil {
 		return err
 	}
