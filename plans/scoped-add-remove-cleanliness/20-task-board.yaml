@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T06
+current_focus: T07
 
 tasks:
   - id: PLAN-APPROVAL
@@ -165,7 +165,7 @@ tasks:
 
   - id: T06
     title: Update README and align planning artifacts with final behavior
-    status: in_progress
+    status: completed
     priority: medium
     depends_on:
       - T03
@@ -188,12 +188,12 @@ tasks:
       - command: ruby -e 'require "yaml"; YAML.load_file("plans/scoped-add-remove-cleanliness/20-task-board.yaml"); puts "yaml ok"'
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 269ec95
+      message: "docs(readme): document scoped automatic commits"
 
   - id: T07
     title: Run full validation and final audit
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T06
@@ -204,7 +204,17 @@ tasks:
       - Commit metadata is recorded for completed implementation tasks.
     files_touched:
       - plans/scoped-add-remove-cleanliness/20-task-board.yaml
-    evidence: []
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/gitexec:gitexec_test
+        result: pass
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
+        result: pass
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //integration:braid_integration_test
+        result: pass
+      - command: bazel --output_user_root=/tmp/braid2-bazel-output test --repo_contents_cache= //...
+        result: pass
+      - command: git status --short
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -246,3 +256,7 @@ history:
     task: T05
     commit: b9e4175
     note: Added executable-level add/remove preservation and blocker coverage; integration target passed.
+  - timestamp: 2026-06-20
+    task: T06
+    commit: 269ec95
+    note: Updated README scoped-cleanliness wording and aligned plan/test artifacts with final coverage.
