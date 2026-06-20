@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"braid/internal/config"
@@ -26,6 +27,41 @@ func TestRemoveCommandDeletesContentConfigAndRemote(t *testing.T) {
 	assertNoRemote(t, repo, remote)
 	assertCommitSubject(t, repo, "Braid: Remove mirror 'vendor/basic'")
 	assertClean(t, repo)
+}
+
+func TestRemoveCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked base\n")
+	testutil.Git(t, repo, "add", "tracked.txt")
+	testutil.Git(t, repo, "commit", "-m", "add unrelated tracked file")
+
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked dirty\n")
+	testutil.WriteFile(t, repo, "untracked.txt", "untracked content\n")
+
+	runCommandOK(t, repo, []string{"remove", "vendor/basic"})
+
+	changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+	wantChanged := []string{".braids.json", "vendor/basic/README.md"}
+	if strings.Join(changed, "\n") != strings.Join(wantChanged, "\n") {
+		t.Fatalf("Braid commit changed %#v, want %#v", changed, wantChanged)
+	}
+	assertPathMissing(t, repo, "vendor/basic")
+	assertMirrorMissing(t, repo, "vendor/basic")
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+	assertFile(t, repo, "tracked.txt", "tracked dirty\n")
+	assertFile(t, repo, "untracked.txt", "untracked content\n")
+	status := testutil.Git(t, repo, "status", "--porcelain").Stdout
+	assertContains(t, status, "A  staged.txt")
+	assertContains(t, status, " M tracked.txt")
+	assertContains(t, status, "?? untracked.txt")
 }
 
 func TestRemoveCommandKeepsRemote(t *testing.T) {
@@ -97,6 +133,93 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 			assertClean(t, repo)
 		})
 	}
+}
+
+func TestRemoveCommandScopedPrecheckBlocksDirtyConfigAndTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		dirty   func(t *testing.T, repo string)
+		wantErr string
+	}{
+		{
+			name: "config",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				path := filepath.Join(repo, config.FileName)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatalf("read config: %v", err)
+				}
+				if err := os.WriteFile(path, append(data, []byte(" \n")...), 0o644); err != nil {
+					t.Fatalf("dirty config: %v", err)
+				}
+			},
+			wantErr: "local changes are present in .braids.json",
+		},
+		{
+			name: "staged mirror change",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/README.md", "staged\n")
+				testutil.Git(t, repo, "add", "vendor/basic/README.md")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "unstaged mirror change",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/README.md", "unstaged\n")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "missing tracked mirror content",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(repo, "vendor", "basic", "README.md")); err != nil {
+					t.Fatalf("remove mirror file: %v", err)
+				}
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "untracked mirror content",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/untracked.txt", "untracked\n")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, "README.md", "base\n")
+			testutil.CommitAll(t, upstream, "base")
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+			test.dirty(t, repo)
+			stderr := runCommandError(t, repo, []string{"remove", "vendor/basic"})
+			assertContains(t, stderr, test.wantErr)
+		})
+	}
+}
+
+func TestRemoveCommandBlocksUnresolvedGitOperationBeforeScopedStatus(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	if err := os.WriteFile(filepath.Join(repo, ".git", "MERGE_HEAD"), []byte("abc123\n"), 0o644); err != nil {
+		t.Fatalf("write MERGE_HEAD: %v", err)
+	}
+
+	stderr := runCommandError(t, repo, []string{"remove", "vendor/basic"})
+	assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
 }
 
 func assertPathMissing(t *testing.T, repo, relativePath string) {

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"braid/internal/cli"
 	"braid/internal/config"
@@ -18,7 +17,6 @@ type Git interface {
 	RequireVersion(context.Context, string) error
 	IsInsideWorkTree(context.Context) (bool, error)
 	RelativeWorkingDir(context.Context) (string, error)
-	StatusPorcelain(context.Context) (string, error)
 }
 
 type RemoteGit interface {
@@ -74,11 +72,13 @@ type UpdateGit interface {
 
 type RemoveGit interface {
 	RemoteGit
-	Head(context.Context) (string, error)
-	RemoveRecursive(context.Context, string) error
-	Add(context.Context, string) error
-	CommitMessage(context.Context, string) (bool, error)
-	ResetHard(context.Context, string) error
+	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
+	BlockingOperation(context.Context) (string, bool, error)
+	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
+	MakeTreeWithoutPath(context.Context, string, string) (string, error)
+	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
+	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
+	RestorePathspecsFromHead(context.Context, ...string) error
 }
 
 type PushGit interface {
@@ -90,7 +90,6 @@ type Requirements struct {
 	Git      bool
 	Root     bool
 	Config   bool
-	Clean    bool
 	MayWrite bool
 }
 
@@ -174,16 +173,6 @@ func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, opt
 		return err
 	}
 
-	if requirements.Clean {
-		status, err := git.StatusPorcelain(ctx)
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(status) != "" {
-			return errors.New("local changes are present")
-		}
-	}
-
 	return nil
 }
 
@@ -198,7 +187,7 @@ func RequirementsFor(command cli.Command) Requirements {
 	case cli.CommandUpdate:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandRemove:
-		return Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}
+		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandPush:
 		return Requirements{Git: true, Root: true, Config: true}
 	default:

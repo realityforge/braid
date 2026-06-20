@@ -365,14 +365,3 @@ func mirrorOverlapsConfig(path string) bool {
 	clean := strings.TrimRight(path, "/")
 	return clean == config.FileName || strings.HasPrefix(clean, config.FileName+"/")
 }
-
-func ensureClean(ctx context.Context, git Git) error {
-	status, err := git.StatusPorcelain(ctx)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(status) != "" {
-		return fmt.Errorf("local changes are present")
-	}
-	return nil
-}

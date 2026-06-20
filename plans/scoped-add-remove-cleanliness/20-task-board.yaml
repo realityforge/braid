@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T03
+current_focus: T04
 
 tasks:
   - id: PLAN-APPROVAL
@@ -86,7 +86,7 @@ tasks:
 
   - id: T03
     title: Implement scoped unrelated-work preservation for braid add
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T01
@@ -112,12 +112,12 @@ tasks:
       - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/gitexec:gitexec_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: d1557cd
+      message: "feat(add): preserve unrelated work during adds"
 
   - id: T04
     title: Implement scoped unrelated-work preservation for braid remove
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T01
@@ -134,7 +134,11 @@ tasks:
       - internal/command/remove.go
       - internal/command/remove_test.go
       - internal/command/preflight.go
-    evidence: []
+      - internal/command/preflight_test.go
+      - internal/command/update.go
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -223,3 +227,7 @@ history:
     task: T02
     commit: 2ec6d86
     note: Extracted shared scoped cleanliness helpers; targeted command test passed.
+  - timestamp: 2026-06-20
+    task: T03
+    commit: d1557cd
+    note: Reworked add to use scoped checks and temporary-index commits; targeted command and gitexec tests passed.

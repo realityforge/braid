@@ -2,9 +2,9 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"braid/internal/cli"
 	"braid/internal/config"
@@ -23,14 +23,7 @@ func (h RemoveHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.removeGit(inv, stderr)
-	head, err := git.Head(ctx)
-	if err != nil {
-		return err
-	}
-	if err := h.remove(ctx, git, inv.Remove); err != nil {
-		return resetRemoveOnError(ctx, git, head, err)
-	}
-	return nil
+	return h.remove(ctx, git, inv.Remove)
 }
 
 func (h RemoveHandler) removeGit(inv cli.Invocation, trace io.Writer) RemoveGit {
@@ -52,37 +45,64 @@ func (h RemoveHandler) remove(ctx context.Context, git RemoveGit, options cli.Re
 	if err != nil {
 		return err
 	}
-
-	if err := git.RemoveRecursive(ctx, m.Path); err != nil {
+	if mirrorOverlapsConfig(m.Path) {
+		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
+	}
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options), true, m.Path); err != nil {
 		return err
 	}
+
 	if err := cfg.Remove(m.Path); err != nil {
 		return err
 	}
-	if err := cfg.WriteFile(filepath.Join(configRoot(h.Options), config.FileName)); err != nil {
+	configData, err := cfg.MarshalJSON()
+	if err != nil {
 		return err
 	}
-	if err := git.Add(ctx, config.FileName); err != nil {
+	configItem, err := git.HashBytes(ctx, configData)
+	if err != nil {
 		return err
 	}
-	if !options.Keep {
+
+	treeWithoutMirror, err := git.MakeTreeWithoutPath(ctx, "HEAD", m.Path)
+	if err != nil {
+		return err
+	}
+	finalTree, err := git.MakeTreeWithItemIn(ctx, treeWithoutMirror, config.FileName, configItem)
+	if err != nil {
+		return err
+	}
+	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, removeCommitSubject(m))
+	if err != nil {
+		return err
+	}
+	if !committed {
+		return errors.New("remove produced no commit")
+	}
+
+	cleanupRemote := func(cause error) error {
+		if options.Keep {
+			return cause
+		}
 		if _, ok, err := git.RemoteURL(ctx, m.Remote()); err != nil {
-			return err
+			if cause != nil {
+				return fmt.Errorf("%w; failed to inspect Braid remote %q: %w", cause, m.Remote(), err)
+			}
+			return fmt.Errorf("remove committed but failed to inspect Braid remote %q: %w", m.Remote(), err)
 		} else if ok {
 			if err := git.RemoteRemove(ctx, m.Remote()); err != nil {
-				return err
+				if cause != nil {
+					return fmt.Errorf("%w; failed to remove Braid remote %q: %w", cause, m.Remote(), err)
+				}
+				return fmt.Errorf("remove committed but failed to remove Braid remote %q: %w", m.Remote(), err)
 			}
 		}
+		return cause
 	}
-	_, err = git.CommitMessage(ctx, removeCommitSubject(m))
-	return err
-}
-
-func resetRemoveOnError(ctx context.Context, git RemoveGit, head string, cause error) error {
-	if resetErr := git.ResetHard(ctx, head); resetErr != nil {
-		return fmt.Errorf("%w; failed to reset to %s: %w", cause, shortRevision(head), resetErr)
+	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
+		return cleanupRemote(err)
 	}
-	return cause
+	return cleanupRemote(nil)
 }
 
 func removeCommitSubject(m mirror.Mirror) string {

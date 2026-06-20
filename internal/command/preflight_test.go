@@ -22,7 +22,7 @@ func TestRequirementsForPreflightMatrix(t *testing.T) {
 		{command: cli.CommandDiff, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandAdd, want: Requirements{Git: true, Root: true, MayWrite: true}},
 		{command: cli.CommandUpdate, want: Requirements{Git: true, Root: true, Config: true, MayWrite: true}},
-		{command: cli.CommandRemove, want: Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}},
+		{command: cli.CommandRemove, want: Requirements{Git: true, Root: true, Config: true, MayWrite: true}},
 		{command: cli.CommandPush, want: Requirements{Git: true, Root: true, Config: true}},
 	}
 
@@ -135,52 +135,6 @@ func TestLegacyConfigRejectedForConfigRequiredCommand(t *testing.T) {
 	}
 }
 
-func TestCleanWorktreeRequirements(t *testing.T) {
-	root := configRootWithModernConfig(t)
-	git := &fakeGit{inside: true, status: " M file\n"}
-	app := NewAppWithOptions(Options{Git: git, ConfigRoot: root})
-	var stdout, stderr bytes.Buffer
-
-	if code := app.Run([]string{"remove", "vendor/repo"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("remove exit = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "local changes are present") {
-		t.Fatalf("stderr = %q", stderr.String())
-	}
-	if !containsCall(git.calls, "status") {
-		t.Fatalf("status was not called: %#v", git.calls)
-	}
-
-	git.calls = nil
-	git.status = " M file\n"
-	stdout.Reset()
-	stderr.Reset()
-	if code := app.Run([]string{"diff"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("diff exit = %d, want not implemented after preflight", code)
-	}
-	if containsCall(git.calls, "status") {
-		t.Fatalf("diff should not require clean status: %#v", git.calls)
-	}
-
-	git.calls = nil
-	git.status = " M file\n"
-	if err := Preflight(context.Background(), cli.CommandAdd, cli.Invocation{Command: cli.CommandAdd}, Options{Git: git, ConfigRoot: root}, &stderr); err != nil {
-		t.Fatalf("add Preflight returned error: %v", err)
-	}
-	if containsCall(git.calls, "status") {
-		t.Fatalf("add should not require global clean status in preflight: %#v", git.calls)
-	}
-
-	git.calls = nil
-	git.status = " M file\n"
-	if err := Preflight(context.Background(), cli.CommandUpdate, cli.Invocation{Command: cli.CommandUpdate}, Options{Git: git, ConfigRoot: root}, &stderr); err != nil {
-		t.Fatalf("update Preflight returned error: %v", err)
-	}
-	if containsCall(git.calls, "status") {
-		t.Fatalf("update should not require global clean status in preflight: %#v", git.calls)
-	}
-}
-
 func configRootWithModernConfig(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -194,7 +148,6 @@ func configRootWithModernConfig(t *testing.T) string {
 type fakeGit struct {
 	inside     bool
 	prefix     string
-	status     string
 	versionErr error
 	calls      []string
 }
@@ -212,20 +165,6 @@ func (f *fakeGit) IsInsideWorkTree(context.Context) (bool, error) {
 func (f *fakeGit) RelativeWorkingDir(context.Context) (string, error) {
 	f.calls = append(f.calls, "prefix")
 	return f.prefix, nil
-}
-
-func (f *fakeGit) StatusPorcelain(context.Context) (string, error) {
-	f.calls = append(f.calls, "status")
-	return f.status, nil
-}
-
-func containsCall(calls []string, want string) bool {
-	for _, call := range calls {
-		if call == want {
-			return true
-		}
-	}
-	return false
 }
 
 var _ Git = (*fakeGit)(nil)
