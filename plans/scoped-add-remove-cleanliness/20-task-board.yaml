@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T04
+current_focus: T05
 
 tasks:
   - id: PLAN-APPROVAL
@@ -117,7 +117,7 @@ tasks:
 
   - id: T04
     title: Implement scoped unrelated-work preservation for braid remove
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T01
@@ -140,12 +140,12 @@ tasks:
       - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 179feec
+      message: "feat(remove): preserve unrelated work during removes"
 
   - id: T05
     title: Add integration coverage for add/remove scoped preservation and blockers
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T03
@@ -156,7 +156,9 @@ tasks:
       - Integration test covers representative scoped blockers for add and remove.
     files_touched:
       - integration/braid_integration_test.go
-    evidence: []
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //integration:braid_integration_test
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -231,3 +233,7 @@ history:
     task: T03
     commit: d1557cd
     note: Reworked add to use scoped checks and temporary-index commits; targeted command and gitexec tests passed.
+  - timestamp: 2026-06-20
+    task: T04
+    commit: 179feec
+    note: Reworked remove to use scoped checks and temporary-index commits; removed global Clean preflight surface.
