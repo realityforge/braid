@@ -16,6 +16,7 @@ const (
 	CommandRemove  Command = "remove"
 	CommandDiff    Command = "diff"
 	CommandPush    Command = "push"
+	CommandSync    Command = "sync"
 	CommandSetup   Command = "setup"
 	CommandVersion Command = "version"
 	CommandStatus  Command = "status"
@@ -62,6 +63,12 @@ type PushOptions struct {
 	Keep      bool
 }
 
+type SyncOptions struct {
+	LocalPaths []string
+	PullOnly   bool
+	Keep       bool
+}
+
 type SetupOptions struct {
 	LocalPath string
 	Force     bool
@@ -81,6 +88,7 @@ type Invocation struct {
 	Remove RemoveOptions
 	Diff   DiffOptions
 	Push   PushOptions
+	Sync   SyncOptions
 	Setup  SetupOptions
 	Status StatusOptions
 }
@@ -109,6 +117,7 @@ func New() App {
 			CommandRemove: notImplemented(CommandRemove),
 			CommandDiff:   notImplemented(CommandDiff),
 			CommandPush:   notImplemented(CommandPush),
+			CommandSync:   notImplemented(CommandSync),
 			CommandSetup:  notImplemented(CommandSetup),
 			CommandStatus: notImplemented(CommandStatus),
 		},
@@ -229,6 +238,8 @@ func Parse(args []string) (Invocation, error) {
 		return inv, parseDiff(commandArgs, &inv.Diff)
 	case CommandPush:
 		return inv, parsePush(commandArgs, &inv.Push)
+	case CommandSync:
+		return inv, parseSync(commandArgs, &inv.Sync)
 	case CommandSetup:
 		return inv, parseSetup(commandArgs, &inv.Setup)
 	case CommandVersion:
@@ -390,6 +401,24 @@ func parsePush(args []string, options *PushOptions) error {
 	return nil
 }
 
+func parseSync(args []string, options *SyncOptions) error {
+	var positionals []string
+	err := parseCommandArgs(CommandSync, args, []flagSpec{
+		boolFlag("--pull-only", "", func() { options.PullOnly = true }),
+		boolFlag("--keep", "", func() { options.Keep = true }),
+	}, func(pos []string, _ []string) {
+		positionals = pos
+	})
+	if err != nil {
+		return err
+	}
+	options.LocalPaths = make([]string, 0, len(positionals))
+	for _, positional := range positionals {
+		options.LocalPaths = append(options.LocalPaths, normalizeLocalPathArg(positional))
+	}
+	return nil
+}
+
 func parseSetup(args []string, options *SetupOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandSetup, args, []flagSpec{
@@ -505,7 +534,7 @@ func matchFlag(arg string, flags []flagSpec) (flagSpec, string, bool) {
 func parseCommand(value string) (Command, bool) {
 	command := Command(value)
 	switch command {
-	case CommandAdd, CommandUpdate, CommandRemove, CommandDiff, CommandPush, CommandSetup, CommandVersion, CommandStatus:
+	case CommandAdd, CommandUpdate, CommandRemove, CommandDiff, CommandPush, CommandSync, CommandSetup, CommandVersion, CommandStatus:
 		return command, true
 	default:
 		return "", false
@@ -547,6 +576,7 @@ commands:
   remove    Remove a mirror
   diff      Show local mirror changes
   push      Push local mirror changes upstream
+  sync      Push local mirror changes, then update mirrors
   setup     Set up mirror remotes
   status    Show mirror status
   version   Show braid version
@@ -567,6 +597,8 @@ func CommandUsage(command Command) string {
 		return "usage: braid diff [local_path] [--keep] [-- <git_diff_arg>...]\n"
 	case CommandPush:
 		return "usage: braid push <local_path> [--branch|-b <branch>] [--keep]\n"
+	case CommandSync:
+		return "usage: braid sync [local_path...] [--pull-only] [--keep]\n"
 	case CommandSetup:
 		return "usage: braid setup [local_path] [--force|-f]\n"
 	case CommandVersion:

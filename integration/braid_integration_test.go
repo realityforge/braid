@@ -127,6 +127,78 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertClean(t, env, downstream)
 }
 
+func TestExecutableSyncPushesThenUpdates(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "README.md", "base\n")
+	baseRevision := commitAll(t, env, upstream, "seed upstream")
+	gitOK(t, env, upstream, "config", "--local", "receive.denyCurrentBranch", "updateInstead")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	assertResult(t, add, 0, "", "")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
+	})
+
+	writeFile(t, downstream, "vendor/basic/README.md", "local\n")
+	commitAll(t, env, downstream, "local mirror change")
+	syncEnv := env.with("GIT_EDITOR", editorCommand(t, root, "Executable sync"))
+	sync := runBraid(t, syncEnv, downstream, braid, "sync", "vendor/basic")
+	assertExit(t, sync, 0)
+	assertEmpty(t, "sync stderr", sync.stderr)
+	assertContains(t, sync.stdout, "Executable sync")
+
+	assertFile(t, upstream, "README.md", "local\n")
+	pushedRevision := gitOutput(t, env, upstream, "rev-parse", "HEAD")
+	assertLatestCommit(t, env, upstream, defaultName+" <"+defaultEmail+">", "Executable sync")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: pushedRevision},
+	})
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update mirror 'vendor/basic' to '"+shortRevision(pushedRevision)+"'")
+	assertNoRemote(t, env, downstream, remoteName("main", "vendor/basic"))
+	assertClean(t, env, downstream)
+}
+
+func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "README.md", "base\n")
+	commitAll(t, env, upstream, "seed upstream")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	assertResult(t, add, 0, "", "")
+
+	writeFile(t, upstream, "README.md", "remote\n")
+	remoteRevision := commitAll(t, env, upstream, "remote update")
+	syncEnv := env.with("GIT_EDITOR", failingEditorCommand(t, root))
+	sync := runBraid(t, syncEnv, downstream, braid, "sync", "--pull-only", "vendor/basic")
+	assertResult(t, sync, 0, "", "")
+
+	assertFile(t, downstream, "vendor/basic/README.md", "remote\n")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
+	})
+	assertLatestCommit(t, env, upstream, defaultName+" <"+defaultEmail+">", "remote update")
+	assertNoRemote(t, env, downstream, remoteName("main", "vendor/basic"))
+	assertClean(t, env, downstream)
+}
+
 func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 	root := t.TempDir()
 	env := newProcessEnv(t, root)
@@ -1140,6 +1212,22 @@ func editorCommand(t *testing.T, root, message string) string {
 	body := "#!/bin/sh\nprintf '%s\\n' " + shellQuote(message) + " > \"$1\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write editor script: %v", err)
+	}
+	return shellQuote(path)
+}
+
+func failingEditorCommand(t *testing.T, root string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(root, "failing-editor.cmd")
+		if err := os.WriteFile(path, []byte("@echo off\r\nexit /b 1\r\n"), 0o644); err != nil {
+			t.Fatalf("write failing editor script: %v", err)
+		}
+		return `"` + path + `"`
+	}
+	path := filepath.Join(root, "failing-editor.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write failing editor script: %v", err)
 	}
 	return shellQuote(path)
 }

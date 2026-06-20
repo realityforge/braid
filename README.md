@@ -75,6 +75,7 @@ whether to update, prepare a patch, or send local mirror changes upstream.
 - [Adding mirrors](#adding-mirrors)
 - [Checking status and local changes](#checking-status-and-local-changes)
 - [Updating mirrors](#updating-mirrors)
+- [Syncing mirrors](#syncing-mirrors)
 - [Pushing local changes upstream](#pushing-local-changes-upstream)
 - [Removing mirrors](#removing-mirrors)
 - [Remotes, cache, and paths](#remotes-cache-and-paths)
@@ -132,8 +133,17 @@ braid push lib/grit
 braid push lib/grit --branch myproject_customizations
 ```
 
-After upstream accepts your changes, update the mirror again so your downstream
-repository records the accepted upstream revision:
+For the common branch-mirror workflow, `sync` combines the tracked-branch push
+and follow-up update:
+
+```bash
+braid sync lib/grit
+```
+
+It pushes committed local mirror changes when the branch is still up to date,
+then updates the selected mirror so `.braids.json` records the new upstream
+revision. Use the explicit `push` and `update` commands when you need to push to
+a different branch or handle each step separately.
 
 ```bash
 braid update lib/grit
@@ -254,6 +264,53 @@ and may be included in that manual commit unless you unstage them first. To
 abandon a conflicted update while preserving unrelated work, restore only the
 mirror path and `.braids.json` from `HEAD`, then remove `.git/MERGE_MSG`.
 
+### Syncing Mirrors
+
+`braid sync` runs the safe push-then-update workflow for branch mirrors:
+
+```bash
+braid sync vendor/rails
+braid sync vendor/rails vendor/rack
+```
+
+With no paths, `braid sync` selects every configured branch or tag mirror in
+`.braids.json` path order and skips revision-locked mirrors, matching no-path
+`braid update`. Explicit paths are processed in the order provided and may name
+branch, tag, or revision mirrors.
+
+Before any fetch, push, editor, worktree write, config write, or update commit,
+`sync` checks unresolved Git operation state, `.braids.json`, and every selected
+mirror path for index and working tree changes. Dirty mirrors outside an
+explicit selection do not block that explicit sync.
+
+The default push phase only auto-pushes branch-tracking mirrors with committed
+local mirror changes. Branch mirrors without committed local changes are skipped
+quietly and still update normally, even if upstream has moved. Selected tag or
+revision mirrors with committed local changes stop the sync because `sync` has
+no `--branch`; run `braid push <path> --branch <branch>` for that explicit push
+intent, or rerun with `--pull-only` if you only intended to update.
+
+If a changed branch mirror's upstream branch moved since the recorded revision,
+`sync` fails before any mirror is pushed. Update first, resolve conflicts if
+needed, commit, then rerun `braid sync`. If the selected mirror path itself was
+deleted from downstream `HEAD`, `sync` also fails rather than trying to push the
+deletion of the mirror root; deletions inside an existing mirror directory are
+ordinary local mirror changes.
+
+Use `--pull-only` to run only the update phase with the same scoped precheck:
+
+```bash
+braid sync --pull-only
+braid sync --pull-only vendor/rails
+```
+
+Use `--keep` to retain temporary Braid remotes used during sync planning, push,
+and update:
+
+```bash
+braid sync vendor/rails --keep
+```
+
 ### Pushing Local Changes Upstream
 
 `braid push` creates an upstream commit from the mirror content recorded in your
@@ -316,8 +373,8 @@ lookup or storage. Absolute `local_path` inputs are accepted only when they are
 inside the Git working tree, and stored config paths remain relative.
 
 Commands without a `local_path`, such as `braid status`, `braid diff`,
-`braid setup`, and `braid update`, operate on the repository-wide mirror set
-from any subdirectory. Relative `--cache-dir` values and
+`braid setup`, `braid update`, and `braid sync`, operate on the repository-wide
+mirror set from any subdirectory. Relative `--cache-dir` values and
 `BRAID_LOCAL_CACHE_DIR` values remain relative to the process directory. Git
 diff arguments after `braid diff ... --` are passed through as raw `git diff`
 arguments from the process directory; Braid only anchors its own internal mirror
@@ -346,6 +403,7 @@ includes it.
 | `diff` | Show local mirror changes, with Git diff arguments after `--`. |
 | `update` | Update one mirror, or every branch/tag mirror when no path is given. |
 | `push` | Push committed local mirror changes upstream. |
+| `sync [local_path...] [--pull-only] [--keep]` | Push changed branch mirrors, then update selected mirrors. |
 | `remove` | Remove mirrored content and config. |
 | `setup` | Add or refresh Braid-managed Git remotes. |
 | `version` | Print the Braid version. |

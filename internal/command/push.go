@@ -17,6 +17,18 @@ type PushHandler struct {
 	Options Options
 }
 
+type pushStatus int
+
+const (
+	pushStatusPushed pushStatus = iota
+	pushStatusNoLocalChanges
+	pushStatusNotUpToDate
+)
+
+type pushResult struct {
+	Status pushStatus
+}
+
 func (h PushHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 	repo, err := Preflight(ctx, cli.CommandPush, inv, h.Options, stderr)
@@ -40,7 +52,17 @@ func (h PushHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return h.push(ctx, repo, git, m, inv, stdout, stderr)
+	result, err := h.push(ctx, repo, git, m, inv.Push.Branch, inv.Push.Keep, inv.Global, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	switch result.Status {
+	case pushStatusNotUpToDate:
+		_, err = fmt.Fprintln(stdout, "Braid: Mirror is not up to date. Stopping.")
+	case pushStatusNoLocalChanges:
+		_, err = fmt.Fprintln(stdout, "Braid: No local changes found in downstream HEAD. Stopping.")
+	}
+	return err
 }
 
 func (h PushHandler) pushGit(repo RepoContext, inv cli.Invocation, trace io.Writer) PushGit {
@@ -53,28 +75,27 @@ func (h PushHandler) pushGit(repo RepoContext, inv cli.Invocation, trace io.Writ
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, stderr io.Writer) (err error) {
-	branch := inv.Push.Branch
+func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m mirror.Mirror, branch string, keep bool, global cli.GlobalOptions, stdout, stderr io.Writer) (result pushResult, err error) {
 	if branch == "" {
 		branch = m.Branch
 	}
 	if branch == "" {
-		return fmt.Errorf("mirror has no tracked branch; specify --branch to push %s", m.Path)
+		return pushResult{}, fmt.Errorf("mirror has no tracked branch; specify --branch to push %s", m.Path)
 	}
 
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCache(global)
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, inv.Global.Verbose, stderr); err != nil {
-			return err
+		if err := fetchCache(ctx, cache, m.URL, global.Verbose, stderr); err != nil {
+			return pushResult{}, err
 		}
 	}
 	if err := setupOne(ctx, git, m, true, cache); err != nil {
-		return err
+		return pushResult{}, err
 	}
-	if !inv.Push.Keep {
+	if !keep {
 		defer func() {
 			removeErr := git.RemoteRemove(ctx, m.Remote())
 			if err == nil {
@@ -83,44 +104,41 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 		}()
 	}
 	if err := fetchMirror(ctx, git, m); err != nil {
-		return err
+		return pushResult{}, err
 	}
 
 	upstreamRevision, err := resolveAddRevision(ctx, git, m, "")
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	baseRevision, err := git.RevParse(ctx, m.Revision+"^{commit}")
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	if upstreamRevision != baseRevision {
-		if _, err := fmt.Fprintln(stdout, "Braid: Mirror is not up to date. Stopping."); err != nil {
-			return err
-		}
-		return nil
+		return pushResult{Status: pushStatusNotUpToDate}, nil
 	}
 
 	localItem, err := git.LsTreeItem(ctx, "HEAD", m.Path)
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	newTree, err := git.MakeTreeWithItemIn(ctx, baseRevision, m.RemotePath, localItem)
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	baseTree, err := git.RevParse(ctx, baseRevision+"^{tree}")
 	if err != nil {
-		return err
+		return pushResult{}, err
 	}
 	if newTree == baseTree {
-		if _, err := fmt.Fprintln(stdout, "Braid: No local changes found in downstream HEAD. Stopping."); err != nil {
-			return err
-		}
-		return nil
+		return pushResult{Status: pushStatusNoLocalChanges}, nil
 	}
 
-	return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, inv.Global.Verbose, h.stdin(), stdout, stderr)
+	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr); err != nil {
+		return pushResult{}, err
+	}
+	return pushResult{Status: pushStatusPushed}, nil
 }
 
 func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {

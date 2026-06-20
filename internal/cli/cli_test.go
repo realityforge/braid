@@ -82,6 +82,21 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Branch: "main", Keep: true}},
 		},
 		{
+			name: "sync all",
+			args: []string{"sync"},
+			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{}}},
+		},
+		{
+			name: "sync multiple paths",
+			args: []string{"sync", "vendor/a", "vendor/b"},
+			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a", "vendor/b"}}},
+		},
+		{
+			name: "sync pull only keep",
+			args: []string{"sync", "vendor/a", "--pull-only", "--keep"},
+			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a"}, PullOnly: true, Keep: true}},
+		},
+		{
 			name: "setup",
 			args: []string{"--verbose", "setup", "vendor/repo", "--force"},
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandSetup, Setup: SetupOptions{LocalPath: "vendor/repo", Force: true}},
@@ -135,6 +150,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "update all strategy flag", args: []string{"update", "--branch", "main"}, want: "update without local_path cannot use --branch, --tag, or --revision"},
 		{name: "update head removed", args: []string{"update", "vendor/repo", "--head"}, want: "unknown flag for update: --head"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
+		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},
 	}
 
@@ -162,6 +178,7 @@ func TestParseNormalizesLocalPathArguments(t *testing.T) {
 		{name: "remove selector", args: []string{"remove", `vendor\repo`}, want: "vendor/repo"},
 		{name: "diff selector", args: []string{"diff", `vendor\repo`}, want: "vendor/repo"},
 		{name: "push selector", args: []string{"push", `vendor\repo`}, want: "vendor/repo"},
+		{name: "sync selector", args: []string{"sync", `vendor\repo`}, want: "vendor/repo"},
 		{name: "setup selector", args: []string{"setup", `vendor\repo`}, want: "vendor/repo"},
 		{name: "status selector", args: []string{"status", `vendor\repo`}, want: "vendor/repo"},
 	}
@@ -191,6 +208,11 @@ func gotLocalPath(inv Invocation) string {
 		return inv.Diff.LocalPath
 	case CommandPush:
 		return inv.Push.LocalPath
+	case CommandSync:
+		if len(inv.Sync.LocalPaths) == 0 {
+			return ""
+		}
+		return inv.Sync.LocalPaths[0]
 	case CommandSetup:
 		return inv.Setup.LocalPath
 	case CommandStatus:
@@ -234,12 +256,19 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage missing global verbose syntax:\n%s", Usage())
 	}
+	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then update mirrors") {
+		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
+	}
+	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--keep]\n"; got != want {
+		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
+	}
 	for _, command := range []Command{
 		CommandAdd,
 		CommandUpdate,
 		CommandRemove,
 		CommandDiff,
 		CommandPush,
+		CommandSync,
 		CommandSetup,
 		CommandStatus,
 	} {

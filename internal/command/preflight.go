@@ -130,6 +130,7 @@ func NewAppWithOptions(options Options) cli.App {
 		cli.CommandRemove: RemoveHandler{Options: options},
 		cli.CommandDiff:   DiffHandler{Options: options},
 		cli.CommandPush:   PushHandler{Options: options},
+		cli.CommandSync:   SyncHandler{Options: options},
 		cli.CommandSetup:  SetupHandler{Options: options},
 		cli.CommandStatus: StatusHandler{Options: options},
 	}
@@ -344,6 +345,8 @@ func RequirementsFor(command cli.Command) Requirements {
 	case cli.CommandUpdate:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandRemove:
+		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
+	case cli.CommandSync:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandPush:
 		return Requirements{Git: true, Root: true, Config: true}
