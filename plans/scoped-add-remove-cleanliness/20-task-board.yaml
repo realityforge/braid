@@ -1,6 +1,6 @@
 meta:
   project: scoped-add-remove-cleanliness
-  status: accepted
+  status: completed
   last_updated: 2026-06-20
   required_full_gates:
     - bazel test //...
@@ -193,7 +193,7 @@ tasks:
 
   - id: T07
     title: Run full validation and final audit
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T06
@@ -216,8 +216,8 @@ tasks:
       - command: git status --short
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: b84e6ce
+      message: "test(plan): record scoped add remove validation"
 
 history:
   - timestamp: 2026-06-20
@@ -260,3 +260,7 @@ history:
     task: T06
     commit: 269ec95
     note: Updated README scoped-cleanliness wording and aligned plan/test artifacts with final coverage.
+  - timestamp: 2026-06-20
+    task: T07
+    commit: b84e6ce
+    note: Recorded targeted and full Bazel validation evidence; final working tree audit completed.
