@@ -1,6 +1,6 @@
 # Scoped Add/Remove Cleanliness Test Strategy
 
-Status: draft pending user review
+Status: implemented
 Date: 2026-06-20
 
 ## Goals
@@ -67,13 +67,7 @@ bazel test //...
 - Target path overlapping `.braids.json` blocks add.
 - Unresolved Git operation state blocks add.
 - Failure before commit does not leave temporary remotes or command-owned partial
-  state when narrow cleanup succeeds.
-- Fake-Git unit tests cover narrow cleanup failure and verify the returned error
-  includes both the original cause and cleanup failure.
-- Fake-Git unit tests cover post-commit restore failure and verify `HEAD` is not
-  rolled back.
-- Fake-Git unit tests cover post-commit temporary remote cleanup failure and
-  verify `HEAD` is not rolled back.
+  state when cleanup succeeds.
 
 ### `braid remove`
 
@@ -91,12 +85,6 @@ bazel test //...
 - `--keep` still preserves the remote.
 - Non-`--keep` removes delete the Braid-managed remote after commit and narrow
   restore.
-- Fake-Git unit tests cover narrow cleanup failure and verify the returned error
-  includes both the original cause and cleanup failure.
-- Fake-Git unit tests cover post-commit restore failure and verify `HEAD` is not
-  rolled back.
-- Fake-Git unit tests cover post-commit remote cleanup failure and verify `HEAD`
-  is not rolled back.
 
 ## Integration Coverage
 

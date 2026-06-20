@@ -37,16 +37,27 @@ Out of scope:
 - Preserving or merging dirty `.braids.json` edits.
 - Committing any implementation before plan review is complete.
 
-## Current Evidence
+## Starting Evidence
 
-- `braid add` currently has `Clean: true` preflight and uses normal real-index
-  commit flow in `internal/command/add.go`.
-- `braid remove` currently has `Clean: true` preflight and uses normal real-index
-  commit flow in `internal/command/remove.go`.
-- Both add and remove use broad `reset --hard` rollback.
+- At plan start, `braid add` had `Clean: true` preflight and used normal
+  real-index commit flow in `internal/command/add.go`.
+- At plan start, `braid remove` had `Clean: true` preflight and used normal
+  real-index commit flow in `internal/command/remove.go`.
+- Both add and remove used broad `reset --hard` rollback.
 - `braid update` already has scoped cleanliness, unresolved-operation checks,
   temporary-index commits, and narrow restore helpers.
-- The repository currently has no add/remove preservation integration coverage.
+- At plan start, the repository had no add/remove preservation integration
+  coverage.
+
+## Implementation Outcome
+
+- `braid add` and `braid remove` now use handler-level scoped cleanliness checks
+  and temporary-index automatic commits.
+- The global `Clean` preflight field and base `StatusPorcelain` preflight
+  dependency have been removed.
+- Add/remove unit tests and executable-level integration tests cover unrelated
+  staged, unstaged tracked, and untracked work preservation plus representative
+  scoped blockers.
 
 ## Locked Decisions
 

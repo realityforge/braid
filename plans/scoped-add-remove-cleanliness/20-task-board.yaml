@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T05
+current_focus: T06
 
 tasks:
   - id: PLAN-APPROVAL
@@ -145,7 +145,7 @@ tasks:
 
   - id: T05
     title: Add integration coverage for add/remove scoped preservation and blockers
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T03
@@ -160,12 +160,12 @@ tasks:
       - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //integration:braid_integration_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: b9e4175
+      message: "test(integration): cover scoped add remove preservation"
 
   - id: T06
     title: Update README and align planning artifacts with final behavior
-    status: pending
+    status: in_progress
     priority: medium
     depends_on:
       - T03
@@ -177,11 +177,16 @@ tasks:
       - Plan and test strategy reflect any implementation-time scope changes.
     files_touched:
       - README.md
+      - internal/command/add_test.go
       - plans/scoped-add-remove-cleanliness/00-requirements.md
       - plans/scoped-add-remove-cleanliness/10-implementation-plan.md
       - plans/scoped-add-remove-cleanliness/20-task-board.yaml
       - plans/scoped-add-remove-cleanliness/40-test-strategy.md
-    evidence: []
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
+        result: pass
+      - command: ruby -e 'require "yaml"; YAML.load_file("plans/scoped-add-remove-cleanliness/20-task-board.yaml"); puts "yaml ok"'
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -237,3 +242,7 @@ history:
     task: T04
     commit: 179feec
     note: Reworked remove to use scoped checks and temporary-index commits; removed global Clean preflight surface.
+  - timestamp: 2026-06-20
+    task: T05
+    commit: b9e4175
+    note: Added executable-level add/remove preservation and blocker coverage; integration target passed.

@@ -370,7 +370,7 @@ func TestAddCommandNoCacheTags(t *testing.T) {
 	}
 }
 
-func TestAddCommandMissingUpstreamPathResets(t *testing.T) {
+func TestAddCommandMissingUpstreamPathCleansUpTemporaryRemote(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "hello\n")
 	testutil.CommitAll(t, upstream, "upstream")

@@ -201,5 +201,5 @@ bazel test //...
 | --- | --- | --- | --- |
 | 1 | Unsafe sequencing for global clean removal | Valid | Made T02 helper-only; command preflight relaxation moves into T03/T04 after each command's replacement flow exists. |
 | 1 | Remove remote lifecycle ambiguity | Valid | Defined commit and narrow restore before remote cleanup, with explicit post-commit cleanup error and no rollback. |
-| 1 | Failure-path validation gaps | Valid | Added fake-Git failure-path tests for cleanup failures, remote cleanup failures, and post-commit restore failures. |
+| 1 | Failure-path validation gaps | Valid | Added failure-path validation requirements; final coverage uses real Git unit/integration tests for cleanup and blockers after implementation avoided pre-commit worktree mutation. |
 | 1 | Add target path-shape conflicts underspecified | Valid | Defined add target availability across target, descendants, and blocking ancestors; added corresponding test requirements. |

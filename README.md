@@ -63,12 +63,12 @@ bazel run //cmd/braid:braid -- version
 
 ## Usage
 
-Braid commands run from the root of a Git working tree. `add` and `remove` write
-commits and require a clean working tree. `update` requires `.braids.json` and
-the target mirror path or paths to be clean, but preserves unrelated staged,
-unstaged, and untracked work. `status`, `diff`, and `push` are the usual
-commands for deciding whether to update, prepare a patch, or send local mirror
-changes upstream.
+Braid commands run from the root of a Git working tree. Commands that create
+automatic commits (`add`, `update`, and `remove`) require their command-owned
+paths to be clean, block unresolved Git operations, and leave unrelated staged,
+unstaged, and untracked work untouched and out of Braid's commits. `status`,
+`diff`, and `push` are the usual commands for deciding whether to update,
+prepare a patch, or send local mirror changes upstream.
 
 - [Command form](#command-form)
 - [Quick start](#quick-start)
@@ -98,16 +98,16 @@ braid add --help
 
 ### Quick Start
 
-Start in the root of an existing Git repository with a clean working tree. Add a
-mirror at the path where you want the upstream content to live:
+Start in the root of an existing Git repository. Add a mirror at the path where
+you want the upstream content to live:
 
 ```bash
 braid add <upstream-git-url> lib/grit
 ```
 
 Braid copies the upstream content into `lib/grit`, records the mirror in
-`.braids.json`, stages both, and creates a `Braid: Add mirror ...` commit. If you
-do not specify `--branch`, `--tag`, or `--revision`, Braid tracks the upstream
+`.braids.json`, and creates a `Braid: Add mirror ...` commit. If you do not
+specify `--branch`, `--tag`, or `--revision`, Braid tracks the upstream
 repository's default branch.
 
 Later, bring in upstream changes with:
@@ -172,6 +172,11 @@ The `local_path` argument is optional. If you omit it, Braid derives the local
 path from the upstream repository name, or from the `--path` basename when
 mirroring a subdirectory or file.
 
+Before adding, Braid checks any existing `.braids.json` and requires the target
+path to be available. Tracked, staged, unstaged, or untracked content at the
+target, under the target, or at a blocking ancestor stops the add before Braid
+fetches or writes mirror content.
+
 ### Checking Status And Local Changes
 
 Show every configured mirror, or just one mirror:
@@ -227,13 +232,10 @@ braid update vendor/rails --branch main
 braid update vendor/rails --tag <tag>
 ```
 
-Before updating, Braid checks for unresolved Git operations such as merges,
-rebases, cherry-picks, reverts, or unmerged index entries. It also requires
-`.braids.json` and the mirror path being updated to be clean in both the index
-and working tree. For `braid update` without a path, that scoped cleanliness
-check covers every eligible branch or tag mirror before any mirror is fetched or
-updated. Dirty paths outside those scopes are left alone and are not included in
-Braid's automatic update commits.
+Before updating, Braid requires `.braids.json` and the mirror path being updated
+to be clean in both the index and working tree. For `braid update` without a
+path, that scoped cleanliness check covers every eligible branch or tag mirror
+before any mirror is fetched or updated.
 
 If an update conflicts with local mirror changes, Braid leaves conflict markers
 in the mirror working tree, stages the updated `.braids.json`, and writes a
@@ -282,6 +284,10 @@ braid remove vendor/rails
 
 Braid removes the vendored content, updates `.braids.json`, and creates a
 `Braid: Remove mirror ...` commit.
+
+Before removing, Braid requires `.braids.json` and the mirror path to be clean in
+both the index and working tree. Local edits, local deletions, staged mirror
+changes, and untracked files under the mirror path stop the remove.
 
 ### Remotes, Cache, And Paths
 
