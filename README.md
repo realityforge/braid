@@ -63,12 +63,12 @@ bazel run //cmd/braid:braid -- version
 
 ## Usage
 
-Braid commands run from the root of a Git working tree. Commands that create
-automatic commits (`add`, `update`, and `remove`) require their command-owned
-paths to be clean, block unresolved Git operations, and leave unrelated staged,
-unstaged, and untracked work untouched and out of Braid's commits. `status`,
-`diff`, and `push` are the usual commands for deciding whether to update,
-prepare a patch, or send local mirror changes upstream.
+Braid commands run from any directory inside a Git working tree. Commands that
+create automatic commits (`add`, `update`, and `remove`) require their
+command-owned paths to be clean, block unresolved Git operations, and leave
+unrelated staged, unstaged, and untracked work untouched and out of Braid's
+commits. `status`, `diff`, and `push` are the usual commands for deciding
+whether to update, prepare a patch, or send local mirror changes upstream.
 
 - [Command form](#command-form)
 - [Quick start](#quick-start)
@@ -98,8 +98,8 @@ braid add --help
 
 ### Quick Start
 
-Start in the root of an existing Git repository. Add a mirror at the path where
-you want the upstream content to live:
+Start anywhere inside an existing Git repository. Add a mirror at the path where
+you want the upstream content to live, relative to your current directory:
 
 ```bash
 braid add <upstream-git-url> lib/grit
@@ -170,7 +170,8 @@ braid add https://github.com/rails/rails.git vendor/rails --revision 5850a65
 
 The `local_path` argument is optional. If you omit it, Braid derives the local
 path from the upstream repository name, or from the `--path` basename when
-mirroring a subdirectory or file.
+mirroring a subdirectory or file, and places that derived path under your current
+directory.
 
 Before adding, Braid checks any existing `.braids.json` and requires the target
 path to be available. Tracked, staged, unstaged, or untracked content at the
@@ -239,11 +240,13 @@ before any mirror is fetched or updated.
 
 If an update conflicts with local mirror changes, Braid leaves conflict markers
 in the mirror working tree, stages the updated `.braids.json`, and writes a
-prepared `.git/MERGE_MSG`. Resolve the conflicts, stage the resolved mirror path
-and `.braids.json`, then commit with:
+prepared `MERGE_MSG`. Resolve the conflicts, then run the `git add` and
+`git commit` commands printed by Braid from the same directory where you invoked
+`braid update`. They use this shape:
 
 ```bash
-git commit -F .git/MERGE_MSG
+git add -- ':(top)vendor/rails' ':(top).braids.json'
+git commit -F '<MERGE_MSG path printed by Braid>'
 ```
 
 If unrelated files were staged before the conflicted update, they remain staged
@@ -305,12 +308,25 @@ the OS user cache directory with a `braid` child directory. Use
 `BRAID_LOCAL_CACHE_DIR` or `--cache-dir` to choose a location, and use
 `BRAID_USE_LOCAL_CACHE=false` or `--no-cache` to disable it.
 
-Mirror paths stored in `.braids.json` always use `/` separators. CLI mirror path
-arguments may use `/` or `\`; Braid normalizes them before config lookup. The
-`--path` option is an upstream Git path and should use Git's `/` separator. When
-adding from a local Windows repository path such as `C:\src\upstream.git`, Braid
-keeps that original upstream value for Git and derives the default mirror path
-from the repository basename.
+Mirror paths stored in `.braids.json` always use repo-root-relative `/`
+separators, and ordinary Braid output uses those same repo-root-relative paths.
+CLI mirror path arguments may use `/` or `\`; Braid resolves them relative to
+the directory where the command was invoked, then normalizes them before config
+lookup or storage. Absolute `local_path` inputs are accepted only when they are
+inside the Git working tree, and stored config paths remain relative.
+
+Commands without a `local_path`, such as `braid status`, `braid diff`,
+`braid setup`, and `braid update`, operate on the repository-wide mirror set
+from any subdirectory. Relative `--cache-dir` values and
+`BRAID_LOCAL_CACHE_DIR` values remain relative to the process directory. Git
+diff arguments after `braid diff ... --` are passed through as raw `git diff`
+arguments from the process directory; Braid only anchors its own internal mirror
+pathspecs.
+
+The `--path` option is an upstream Git path and should use Git's `/` separator.
+When adding from a local Windows repository path such as `C:\src\upstream.git`,
+Braid keeps that original upstream value for Git and derives the default mirror
+path from the repository basename.
 
 Braid validates configured mirror paths for cross-platform safety. It does not
 preflight every file inside the selected upstream tree; if an upstream filename

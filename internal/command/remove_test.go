@@ -231,7 +231,7 @@ func TestRemoveCommandReportsPostCommitRestoreFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{restoreErr: errors.New("restore failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
 	if err == nil || !strings.Contains(err.Error(), "restore failed") {
 		t.Fatalf("remove error = %v, want restore failure", err)
 	}
@@ -245,7 +245,7 @@ func TestRemoveCommandReportsPostCommitRemoteInspectFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{remoteURLErr: errors.New("inspect failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
 	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to inspect Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "inspect failed") {
 		t.Fatalf("remove error = %v, want post-commit remote inspect failure", err)
 	}
@@ -259,7 +259,7 @@ func TestRemoveCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
 	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("remove error = %v, want post-commit remote cleanup failure", err)
 	}
@@ -318,6 +318,7 @@ func (f *fakeRemoveGit) IsInsideWorkTree(context.Context) (bool, error) {
 	return true, nil
 }
 func (f *fakeRemoveGit) RelativeWorkingDir(context.Context) (string, error) { return "", nil }
+func (f *fakeRemoveGit) WorkTreeRoot(context.Context) (string, error)       { return ".", nil }
 func (f *fakeRemoveGit) RemoteURL(context.Context, string) (string, bool, error) {
 	return "https://example.invalid/upstream.git", f.remoteExists, f.remoteURLErr
 }

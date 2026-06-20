@@ -24,33 +24,56 @@ type scopedCleanGit interface {
 	BlockingOperation(context.Context) (string, bool, error)
 }
 
+type repoPathGit interface {
+	RepoFilePath(context.Context, string) (string, error)
+}
+
 func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandUpdate, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandUpdate, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.updateGit(inv, stderr)
+	git := h.updateGit(repo, inv, stderr)
+	processGit := h.processRepoPathGit(repo, inv, stderr)
 	cache, err := runtimeCache(inv.Global)
 	if err != nil {
 		return err
 	}
 
 	if inv.Update.LocalPath != "" {
-		return h.updateOne(ctx, git, cache, inv.Update.LocalPath, inv.Update, inv.Global.Verbose, stdout, stderr)
+		localPath, err := normalizeLocalPath(repo, inv.Update.LocalPath)
+		if err != nil {
+			return err
+		}
+		return h.updateOne(ctx, repo, git, processGit, cache, localPath, inv.Update, inv.Global.Verbose, stdout, stderr)
 	}
-	return h.updateAll(ctx, git, cache, inv.Update, inv.Global.Verbose, stdout, stderr)
+	return h.updateAll(ctx, repo, git, processGit, cache, inv.Update, inv.Global.Verbose, stdout, stderr)
 }
 
-func (h UpdateHandler) updateGit(inv cli.Invocation, trace io.Writer) UpdateGit {
+func (h UpdateHandler) updateGit(repo RepoContext, inv cli.Invocation, trace io.Writer) UpdateGit {
 	if git, ok := h.Options.Git.(UpdateGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(UpdateGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache CacheConfig, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
-	cfg, err := config.Load(configRoot(h.Options))
+func (h UpdateHandler) processRepoPathGit(repo RepoContext, inv cli.Invocation, trace io.Writer) repoPathGit {
+	if git, ok := h.Options.Git.(repoPathGit); ok {
+		return git
+	}
+	if git, ok := repo.processGit(inv, h.Options, trace).(repoPathGit); ok {
+		return git
+	}
+	return gitexec.New(repo.ProcessWorkDir, inv.Global.Verbose, trace)
+}
+
+func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -66,20 +89,20 @@ func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache Cache
 		}
 		targets = append(targets, localPath)
 	}
-	if err := h.ensureUpdateTargetsClean(ctx, git, cfg, targets); err != nil {
+	if err := h.ensureUpdateTargetsClean(ctx, repo, git, cfg, targets); err != nil {
 		return err
 	}
 
 	for _, localPath := range targets {
-		if err := h.updateOne(ctx, git, cache, localPath, options, verbose, stdout, trace); err != nil {
+		if err := h.updateOne(ctx, repo, git, processGit, cache, localPath, options, verbose, stdout, trace); err != nil {
 			return fmt.Errorf("update %s: %w", localPath, err)
 		}
 	}
 	return nil
 }
 
-func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
-	cfg, err := config.Load(configRoot(h.Options))
+func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose bool, stdout, trace io.Writer) error {
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -92,7 +115,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 	}
 	original := m
 	applyUpdateStrategy(&m, options)
-	if err := h.ensureUpdateTargetsClean(ctx, git, cfg, []string{localPath}); err != nil {
+	if err := h.ensureUpdateTargetsClean(ctx, repo, git, cfg, []string{localPath}); err != nil {
 		return err
 	}
 
@@ -164,7 +187,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 		_ = cleanupRemote()
 		return err
 	}
-	if err := cfg.WriteFile(filepath.Join(configRoot(h.Options), config.FileName)); err != nil {
+	if err := cfg.WriteFile(filepath.Join(configRoot(h.Options, repo), config.FileName)); err != nil {
 		_ = cleanupRemote()
 		return err
 	}
@@ -189,11 +212,11 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 			_ = cleanupRemote()
 			return err
 		}
-		if err := h.writeConflictInstructions(ctx, git, stdout, m); err != nil {
+		if err := h.writeConflictInstructions(ctx, git, processGit, stdout, m); err != nil {
 			_ = cleanupRemote()
 			return err
 		}
-		return h.writeMergeMessage(ctx, git, subject)
+		return h.writeMergeMessage(ctx, repo, processGit, subject)
 	}
 
 	finalTree, err := git.MakeTreeWithItemIn(ctx, mergedTree.Tree, config.FileName, configItem)
@@ -260,19 +283,19 @@ func updateCommitSubject(m mirror.Mirror) string {
 	return fmt.Sprintf("Braid: Update mirror '%s' to '%s'", m.Path, shortRevision(m.Revision))
 }
 
-func (h UpdateHandler) writeMergeMessage(ctx context.Context, git UpdateGit, subject string) error {
+func (h UpdateHandler) writeMergeMessage(ctx context.Context, repo RepoContext, git repoPathGit, subject string) error {
 	mergeMsgPath, err := git.RepoFilePath(ctx, "MERGE_MSG")
 	if err != nil {
 		return err
 	}
-	mergeMsgPath, err = gitRepoOSPath(mergeMsgPath, workDir(h.Options.WorkDir))
+	mergeMsgPath, err = gitRepoOSPath(mergeMsgPath, repo.ProcessWorkDir)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(mergeMsgPath, []byte(subject+"\n"), 0o644)
 }
 
-func (h UpdateHandler) writeConflictInstructions(ctx context.Context, git UpdateGit, stdout io.Writer, m mirror.Mirror) error {
+func (h UpdateHandler) writeConflictInstructions(ctx context.Context, git UpdateGit, processGit repoPathGit, stdout io.Writer, m mirror.Mirror) error {
 	staged, err := hasUnrelatedStagedEntries(ctx, git, m.Path)
 	if err != nil {
 		return err
@@ -282,8 +305,16 @@ func (h UpdateHandler) writeConflictInstructions(ctx context.Context, git Update
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(stdout, "Braid: conflicts written to %s. Resolve them, then run:\n  git add -- %s %s\n  git commit -F .git/MERGE_MSG\n", m.Path, m.Path, config.FileName)
+	mergeMsgPath, err := processGit.RepoFilePath(ctx, "MERGE_MSG")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "Braid: conflicts written to %s. Resolve them, then run:\n  git add -- %s %s\n  git commit -F %s\n", m.Path, shellQuote(":(top)"+m.Path), shellQuote(":(top)"+config.FileName), shellQuote(mergeMsgPath))
 	return err
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func hasUnrelatedStagedEntries(ctx context.Context, git UpdateGit, mirrorPath string) (bool, error) {
@@ -307,7 +338,7 @@ func pathWithin(path, scope string) bool {
 	return cleanPath == cleanScope || strings.HasPrefix(cleanPath, cleanScope+"/")
 }
 
-func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, git UpdateGit, cfg config.Config, localPaths []string) error {
+func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, repo RepoContext, git UpdateGit, cfg config.Config, localPaths []string) error {
 	var paths []string
 	for _, localPath := range localPaths {
 		m, err := cfg.GetRequired(localPath)
@@ -319,7 +350,7 @@ func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, git UpdateG
 		}
 		paths = append(paths, m.Path)
 	}
-	return ensureCommandScopesClean(ctx, git, configRoot(h.Options), true, paths...)
+	return ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, paths...)
 }
 
 func ensureCommandScopesClean(ctx context.Context, git scopedCleanGit, root string, requireConfig bool, paths ...string) error {

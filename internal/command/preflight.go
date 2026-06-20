@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"braid/internal/cli"
 	"braid/internal/config"
@@ -17,6 +18,7 @@ type Git interface {
 	RequireVersion(context.Context, string) error
 	IsInsideWorkTree(context.Context) (bool, error)
 	RelativeWorkingDir(context.Context) (string, error)
+	WorkTreeRoot(context.Context) (string, error)
 }
 
 type RemoteGit interface {
@@ -105,6 +107,15 @@ type Handler struct {
 	Options Options
 }
 
+type RepoContext struct {
+	ProcessWorkDir      string
+	GitWorkTreeRoot     string
+	LogicalWorkTreeRoot string
+	WorkTreePrefix      string
+	RootGit             Git
+	ProcessGit          Git
+}
+
 var ErrNotImplemented = errors.New("command is not implemented yet")
 
 func NewApp() cli.App {
@@ -126,54 +137,200 @@ func NewAppWithOptions(options Options) cli.App {
 }
 
 func (h Handler) Run(inv cli.Invocation, _, stderr io.Writer) error {
-	if err := Preflight(context.Background(), h.Command, inv, h.Options, stderr); err != nil {
+	if _, err := Preflight(context.Background(), h.Command, inv, h.Options, stderr); err != nil {
 		return err
 	}
 	return fmt.Errorf("%s %w", h.Command, ErrNotImplemented)
 }
 
-func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, options Options, trace io.Writer) error {
+func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, options Options, trace io.Writer) (RepoContext, error) {
 	requirements := RequirementsFor(command)
 	if !requirements.Git {
-		return nil
+		repo, err := repoContextWithoutGit(options)
+		return repo, err
 	}
 
-	git := options.Git
-	if git == nil {
-		git = gitexec.New(workDir(options.WorkDir), inv.Global.Verbose, trace)
+	repo, git, err := ResolveRepoContext(ctx, inv, options, trace)
+	if err != nil {
+		return RepoContext{}, err
 	}
 
 	if err := git.RequireVersion(ctx, gitexec.MinimumGitVersion); err != nil {
-		return err
+		return RepoContext{}, err
 	}
 	if requirements.Root {
 		inside, err := git.IsInsideWorkTree(ctx)
 		if err != nil {
-			return err
+			return RepoContext{}, errors.New("braid must run inside a git working tree")
 		}
 		if !inside {
-			return errors.New("braid must run inside a git working tree")
+			return RepoContext{}, errors.New("braid must run inside a git working tree")
 		}
-		prefix, err := git.RelativeWorkingDir(ctx)
-		if err != nil {
-			return err
+		if repo.WorkTreePrefix == "" {
+			prefix, err := git.RelativeWorkingDir(ctx)
+			if err != nil {
+				return RepoContext{}, err
+			}
+			repo.WorkTreePrefix = cleanWorkTreePrefix(prefix)
 		}
-		if prefix != "" {
-			return errors.New("braid v1 must run from the git working tree root")
+		if repo.GitWorkTreeRoot == "" {
+			root, err := git.WorkTreeRoot(ctx)
+			if err != nil {
+				return RepoContext{}, err
+			}
+			repo.GitWorkTreeRoot = root
+		}
+		repo.LogicalWorkTreeRoot = logicalWorkTreeRoot(repo.ProcessWorkDir, repo.WorkTreePrefix)
+		if repo.RootGit == nil && options.Git == nil {
+			repo.RootGit = gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
+		} else if repo.RootGit == nil {
+			repo.RootGit = options.Git
+		}
+		if repo.ProcessGit == nil {
+			repo.ProcessGit = git
 		}
 	}
 
-	root := configRoot(options)
+	root := configRoot(options, repo)
 	if requirements.Config {
 		if err := requireConfigFile(root); err != nil {
-			return err
+			return RepoContext{}, err
 		}
 	}
 	if _, err := config.Load(root); err != nil {
-		return err
+		return RepoContext{}, err
 	}
 
-	return nil
+	return repo, nil
+}
+
+func ResolveRepoContext(ctx context.Context, inv cli.Invocation, options Options, trace io.Writer) (RepoContext, Git, error) {
+	processWorkDir, err := absoluteWorkDir(options.WorkDir)
+	if err != nil {
+		return RepoContext{}, nil, err
+	}
+
+	processGit := options.Git
+	if processGit == nil {
+		processGit = gitexec.New(processWorkDir, inv.Global.Verbose, trace)
+	}
+
+	repo := RepoContext{
+		ProcessWorkDir: processWorkDir,
+		ProcessGit:     processGit,
+	}
+
+	inside, err := processGit.IsInsideWorkTree(ctx)
+	if err != nil {
+		return repo, processGit, nil
+	}
+	if !inside {
+		return repo, processGit, nil
+	}
+	prefix, err := processGit.RelativeWorkingDir(ctx)
+	if err != nil {
+		return repo, processGit, nil
+	}
+	root, err := processGit.WorkTreeRoot(ctx)
+	if err != nil {
+		return repo, processGit, nil
+	}
+	repo.GitWorkTreeRoot = root
+	repo.WorkTreePrefix = cleanWorkTreePrefix(prefix)
+	repo.LogicalWorkTreeRoot = logicalWorkTreeRoot(processWorkDir, repo.WorkTreePrefix)
+	if options.Git != nil {
+		repo.RootGit = options.Git
+	} else {
+		repo.RootGit = gitexec.New(root, inv.Global.Verbose, trace)
+	}
+	return repo, processGit, nil
+}
+
+func repoContextWithoutGit(options Options) (RepoContext, error) {
+	processWorkDir, err := absoluteWorkDir(options.WorkDir)
+	if err != nil {
+		return RepoContext{}, err
+	}
+	return RepoContext{ProcessWorkDir: processWorkDir}, nil
+}
+
+func absoluteWorkDir(value string) (string, error) {
+	if value == "" {
+		return currentLogicalWorkDir()
+	}
+	dir := workDir(value)
+	if filepath.IsAbs(dir) {
+		return filepath.Clean(dir), nil
+	}
+	return filepath.Abs(dir)
+}
+
+func currentLogicalWorkDir() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if pwd := os.Getenv("PWD"); pwd != "" && filepath.IsAbs(pwd) {
+		if sameDirectory(pwd, cwd) {
+			return filepath.Clean(pwd), nil
+		}
+	}
+	return cwd, nil
+}
+
+func sameDirectory(left, right string) bool {
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
+}
+
+func cleanWorkTreePrefix(prefix string) string {
+	prefix = strings.ReplaceAll(prefix, `\`, "/")
+	return strings.Trim(strings.TrimRight(prefix, "/"), "/")
+}
+
+func logicalWorkTreeRoot(processWorkDir, prefix string) string {
+	processWorkDir = filepath.Clean(processWorkDir)
+	prefix = cleanWorkTreePrefix(prefix)
+	if prefix == "" {
+		return processWorkDir
+	}
+	root := processWorkDir
+	parts := strings.Split(prefix, "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] == "" || parts[i] == "." {
+			continue
+		}
+		if filepath.Base(root) != filepath.FromSlash(parts[i]) {
+			return ""
+		}
+		next := filepath.Dir(root)
+		if next == root {
+			return ""
+		}
+		root = next
+	}
+	return root
+}
+
+func (r RepoContext) rootGit(inv cli.Invocation, options Options, trace io.Writer) Git {
+	if options.Git != nil {
+		return options.Git
+	}
+	if r.RootGit != nil {
+		return r.RootGit
+	}
+	return gitexec.New(r.GitWorkTreeRoot, inv.Global.Verbose, trace)
+}
+
+func (r RepoContext) processGit(inv cli.Invocation, options Options, trace io.Writer) Git {
+	if options.Git != nil {
+		return options.Git
+	}
+	if r.ProcessGit != nil {
+		return r.ProcessGit
+	}
+	return gitexec.New(r.ProcessWorkDir, inv.Global.Verbose, trace)
 }
 
 func RequirementsFor(command cli.Command) Requirements {
@@ -205,9 +362,12 @@ func requireConfigFile(root string) error {
 	return nil
 }
 
-func configRoot(options Options) string {
+func configRoot(options Options, repo RepoContext) string {
 	if options.ConfigRoot != "" {
 		return options.ConfigRoot
+	}
+	if repo.GitWorkTreeRoot != "" {
+		return repo.GitWorkTreeRoot
 	}
 	return workDir(options.WorkDir)
 }

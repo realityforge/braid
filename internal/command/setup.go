@@ -16,12 +16,14 @@ type SetupHandler struct {
 }
 
 func (h SetupHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
-	if err := Preflight(context.Background(), cli.CommandSetup, inv, h.Options, stderr); err != nil {
+	ctx := context.Background()
+	repo, err := Preflight(ctx, cli.CommandSetup, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.remoteGit(inv, stderr)
-	cfg, err := config.Load(configRoot(h.Options))
+	git := h.remoteGit(repo, inv, stderr)
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -34,26 +36,33 @@ func (h SetupHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if inv.Setup.LocalPath != "" {
-		m, err := cfg.GetRequired(inv.Setup.LocalPath)
+		localPath, err := normalizeLocalPath(repo, inv.Setup.LocalPath)
 		if err != nil {
 			return err
 		}
-		return setupOne(context.Background(), git, m, inv.Setup.Force, cache)
+		m, err := cfg.GetRequired(localPath)
+		if err != nil {
+			return err
+		}
+		return setupOne(ctx, git, m, inv.Setup.Force, cache)
 	}
 
 	for _, localPath := range cfg.Paths() {
-		if err := setupOne(context.Background(), git, cfg.Mirrors[localPath], inv.Setup.Force, cache); err != nil {
+		if err := setupOne(ctx, git, cfg.Mirrors[localPath], inv.Setup.Force, cache); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h SetupHandler) remoteGit(inv cli.Invocation, trace io.Writer) RemoteGit {
+func (h SetupHandler) remoteGit(repo RepoContext, inv cli.Invocation, trace io.Writer) RemoteGit {
 	if git, ok := h.Options.Git.(RemoteGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(RemoteGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
 func setupOne(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig) error {

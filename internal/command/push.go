@@ -19,33 +19,41 @@ type PushHandler struct {
 
 func (h PushHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandPush, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandPush, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.pushGit(inv, stderr)
-	cfg, err := config.Load(configRoot(h.Options))
+	git := h.pushGit(repo, inv, stderr)
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	m, err := cfg.GetRequired(inv.Push.LocalPath)
+	localPath, err := normalizeLocalPath(repo, inv.Push.LocalPath)
 	if err != nil {
 		return err
 	}
-	return h.push(ctx, git, m, inv, stdout, stderr)
+	m, err := cfg.GetRequired(localPath)
+	if err != nil {
+		return err
+	}
+	return h.push(ctx, repo, git, m, inv, stdout, stderr)
 }
 
-func (h PushHandler) pushGit(inv cli.Invocation, trace io.Writer) PushGit {
+func (h PushHandler) pushGit(repo RepoContext, inv cli.Invocation, trace io.Writer) PushGit {
 	if git, ok := h.Options.Git.(PushGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(PushGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, stderr io.Writer) (err error) {
+func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m mirror.Mirror, inv cli.Invocation, stdout, stderr io.Writer) (err error) {
 	branch := inv.Push.Branch
 	if branch == "" {
 		branch = m.Branch
@@ -112,10 +120,10 @@ func (h PushHandler) push(ctx context.Context, git PushGit, m mirror.Mirror, inv
 		return nil
 	}
 
-	return h.pushViaTempRepo(ctx, git, m, branch, baseRevision, newTree, inv.Global.Verbose, h.stdin(), stdout, stderr)
+	return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, inv.Global.Verbose, h.stdin(), stdout, stderr)
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	tempDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -133,7 +141,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, source PushGit, m mirr
 		return err
 	}
 	// Alternates let the temporary repository reuse already-fetched objects without copying packs.
-	if err := writeAlternates(ctx, source, tempDir, workDir(h.Options.WorkDir)); err != nil {
+	if err := writeAlternates(ctx, source, tempDir, repo.GitWorkTreeRoot); err != nil {
 		return err
 	}
 	if err := tempGit.UpdateRef(ctx, "--no-deref", "HEAD", baseRevision); err != nil {

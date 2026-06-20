@@ -18,12 +18,14 @@ type DiffHandler struct {
 
 func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandDiff, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandDiff, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.diffGit(inv, stderr)
-	cfg, err := config.Load(configRoot(h.Options))
+	git := h.diffGit(repo, inv, stderr)
+	processGit := h.processDiffGit(repo, inv, stderr)
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -36,32 +38,49 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if inv.Diff.LocalPath != "" {
-		m, err := cfg.GetRequired(inv.Diff.LocalPath)
+		localPath, err := normalizeLocalPath(repo, inv.Diff.LocalPath)
 		if err != nil {
 			return err
 		}
-		return h.diffOne(ctx, git, cache, m, inv.Diff, inv.Global.Verbose, stdout, stderr)
+		m, err := cfg.GetRequired(localPath)
+		if err != nil {
+			return err
+		}
+		return h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, stdout, stderr)
 	}
 
 	for _, localPath := range cfg.Paths() {
 		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing %s\n=======================================================\n", localPath); err != nil {
 			return err
 		}
-		if err := h.diffOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Diff, inv.Global.Verbose, stdout, stderr); err != nil {
+		if err := h.diffOne(ctx, git, processGit, cache, cfg.Mirrors[localPath], inv.Diff, inv.Global.Verbose, stdout, stderr); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h DiffHandler) diffGit(inv cli.Invocation, trace io.Writer) DiffGit {
+func (h DiffHandler) diffGit(repo RepoContext, inv cli.Invocation, trace io.Writer) DiffGit {
 	if git, ok := h.Options.Git.(DiffGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(DiffGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h DiffHandler) diffOne(ctx context.Context, git DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, stdout, trace io.Writer) (err error) {
+func (h DiffHandler) processDiffGit(repo RepoContext, inv cli.Invocation, trace io.Writer) DiffGit {
+	if git, ok := h.Options.Git.(DiffGit); ok {
+		return git
+	}
+	if git, ok := repo.processGit(inv, h.Options, trace).(DiffGit); ok {
+		return git
+	}
+	return gitexec.New(repo.ProcessWorkDir, inv.Global.Verbose, trace)
+}
+
+func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, stdout, trace io.Writer) (err error) {
 	if err := setupOne(ctx, git, m, true, cache); err != nil {
 		return err
 	}
@@ -81,7 +100,7 @@ func (h DiffHandler) diffOne(ctx context.Context, git DiffGit, cache CacheConfig
 	if err != nil {
 		return err
 	}
-	out, err := git.Diff(ctx, args...)
+	out, err := processGit.Diff(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -119,7 +138,7 @@ func buildDiffArgs(ctx context.Context, git DiffGit, m mirror.Mirror, userArgs [
 			baseTree,
 		}
 		args = append(args, userArgs...)
-		return append(args, m.Path), nil
+		return append(args, ":(top)"+m.Path), nil
 	}
 
 	args := []string{"--relative=" + m.Path + "/", baseTree}

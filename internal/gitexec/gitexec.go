@@ -143,6 +143,10 @@ func (g Git) RelativeWorkingDir(ctx context.Context) (string, error) {
 	return g.Output(ctx, "rev-parse", "--show-prefix")
 }
 
+func (g Git) WorkTreeRoot(ctx context.Context) (string, error) {
+	return g.Output(ctx, "rev-parse", "--show-toplevel")
+}
+
 func (g Git) RepoFilePath(ctx context.Context, path string) (string, error) {
 	return g.Output(ctx, "rev-parse", "--git-path", path)
 }

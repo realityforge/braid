@@ -83,6 +83,37 @@ func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
 	}
 }
 
+func TestAddCommandFromSubdirectoryNormalizesLocalPaths(t *testing.T) {
+	upstreamExplicit := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamExplicit, "README.md", "explicit\n")
+	explicitRevision := testutil.CommitAll(t, upstreamExplicit, "explicit")
+	upstreamDefault := filepath.Join(t.TempDir(), "default-upstream")
+	testutil.Git(t, filepath.Dir(upstreamDefault), "init", "--initial-branch=main", upstreamDefault)
+	testutil.Git(t, upstreamDefault, "config", "--local", "user.name", testutil.DefaultName)
+	testutil.Git(t, upstreamDefault, "config", "--local", "user.email", testutil.DefaultEmail)
+	testutil.Git(t, upstreamDefault, "config", "--local", "commit.gpgsign", "false")
+	testutil.WriteFile(t, upstreamDefault, "README.md", "default\n")
+	defaultRevision := testutil.CommitAll(t, upstreamDefault, "default")
+
+	repo := initDownstream(t)
+	workDir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("create workdir: %v", err)
+	}
+
+	runCommandOKInDir(t, repo, workDir, []string{"add", upstreamExplicit, "vendor/basic"})
+	runCommandOKInDir(t, repo, workDir, []string{"add", upstreamDefault})
+
+	assertFile(t, repo, "apps/web/vendor/basic/README.md", "explicit\n")
+	assertFile(t, repo, "apps/web/default-upstream/README.md", "default\n")
+	if got := loadMirror(t, repo, "apps/web/vendor/basic").Revision; got != explicitRevision {
+		t.Fatalf("explicit revision = %q, want %q", got, explicitRevision)
+	}
+	if got := loadMirror(t, repo, "apps/web/default-upstream").Revision; got != defaultRevision {
+		t.Fatalf("default revision = %q, want %q", got, defaultRevision)
+	}
+}
+
 func TestAddCommandGlobalVerboseTracesWorktreeAndCacheGit(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "trace\n")
@@ -421,6 +452,7 @@ func TestAddCommandReportsPostCommitRestoreFailure(t *testing.T) {
 	git := &fakeAddGit{restoreErr: errors.New("restore failed")}
 	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
 		context.Background(),
+		testRepoContext(repo, git),
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
@@ -441,6 +473,7 @@ func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 	git := &fakeAddGit{remoteRemoveErr: errors.New("remove remote failed")}
 	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
 		context.Background(),
+		testRepoContext(repo, git),
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
@@ -466,11 +499,16 @@ func initDownstream(t *testing.T) string {
 
 func runCommandOK(t *testing.T, repo string, args []string) string {
 	t.Helper()
+	return runCommandOKInDir(t, repo, repo, args)
+}
+
+func runCommandOKInDir(t *testing.T, repo, dir string, args []string) string {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
-	t.Chdir(repo)
+	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run(args, &stdout, &stderr)
+	code := NewAppWithOptions(Options{WorkDir: dir}).Run(args, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("braid %v exit = %d, stderr = %q", args, code, stderr.String())
 	}
@@ -479,15 +517,30 @@ func runCommandOK(t *testing.T, repo string, args []string) string {
 
 func runCommandError(t *testing.T, repo string, args []string) string {
 	t.Helper()
+	return runCommandErrorInDir(t, repo, repo, args)
+}
+
+func runCommandErrorInDir(t *testing.T, repo, dir string, args []string) string {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
-	t.Chdir(repo)
+	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run(args, &stdout, &stderr)
+	code := NewAppWithOptions(Options{WorkDir: dir}).Run(args, &stdout, &stderr)
 	if code == 0 {
 		t.Fatalf("braid %v succeeded unexpectedly, stdout = %q", args, stdout.String())
 	}
 	return stderr.String()
+}
+
+func testRepoContext(repo string, git Git) RepoContext {
+	return RepoContext{
+		ProcessWorkDir:      repo,
+		GitWorkTreeRoot:     repo,
+		LogicalWorkTreeRoot: repo,
+		RootGit:             git,
+		ProcessGit:          git,
+	}
 }
 
 func loadMirror(t *testing.T, repo, localPath string) mirror.Mirror {
@@ -575,6 +628,7 @@ func (f *fakeAddGit) IsInsideWorkTree(context.Context) (bool, error) {
 	return true, nil
 }
 func (f *fakeAddGit) RelativeWorkingDir(context.Context) (string, error) { return "", nil }
+func (f *fakeAddGit) WorkTreeRoot(context.Context) (string, error)       { return ".", nil }
 func (f *fakeAddGit) RemoteURL(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }

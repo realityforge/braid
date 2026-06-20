@@ -217,12 +217,41 @@ func TestGitPreflightWrappers(t *testing.T) {
 		t.Fatalf("RelativeWorkingDir = %q, want sub/", prefix)
 	}
 
+	root, err := git.WorkTreeRoot(context.Background())
+	if err != nil {
+		t.Fatalf("WorkTreeRoot returned error: %v", err)
+	}
+	if root != "/repo" {
+		t.Fatalf("WorkTreeRoot = %q, want /repo", root)
+	}
+
 	path, err := git.RepoFilePath(context.Background(), "MERGE_MSG")
 	if err != nil {
 		t.Fatalf("RepoFilePath returned error: %v", err)
 	}
 	if path != ".git/MERGE_MSG" {
 		t.Fatalf("RepoFilePath = %q, want .git/MERGE_MSG", path)
+	}
+}
+
+func TestWorkTreeRootFromRootAndSubdirectory(t *testing.T) {
+	repo := initRealRepo(t)
+	subdir := filepath.Join(repo, "nested", "dir")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("create subdir: %v", err)
+	}
+
+	want := realGitOutput(t, repo, "rev-parse", "--show-toplevel")
+	for _, workDir := range []string{repo, subdir} {
+		t.Run(workDir, func(t *testing.T) {
+			got, err := New(workDir, false, nil).WorkTreeRoot(context.Background())
+			if err != nil {
+				t.Fatalf("WorkTreeRoot returned error: %v", err)
+			}
+			if got != want {
+				t.Fatalf("WorkTreeRoot = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -655,6 +684,8 @@ func helperRevParse(args []string) {
 		helperFprintln(os.Stdout, "true")
 	case "--show-prefix":
 		helperFprintln(os.Stdout, "sub/")
+	case "--show-toplevel":
+		helperFprintln(os.Stdout, "/repo")
 	case "--git-path":
 		if len(args) != 2 {
 			helperFprintln(os.Stderr, "--git-path requires path")

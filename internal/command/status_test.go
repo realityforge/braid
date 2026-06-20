@@ -1,6 +1,7 @@
 package command
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,6 +75,22 @@ func TestStatusCommandNormalizesNativeLocalPathSelector(t *testing.T) {
 
 	out := runCommandOK(t, repo, []string{"status", `vendor\basic`})
 	assertContains(t, out, "vendor/basic (")
+}
+
+func TestStatusCommandFromSubdirectoryRequiresExactMirrorSelector(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "nested/file.txt", "base\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	mirrorDir := filepath.Join(repo, "vendor", "basic")
+	out := runCommandOKInDir(t, repo, mirrorDir, []string{"status", "."})
+	assertContains(t, out, "vendor/basic (")
+
+	nestedDir := filepath.Join(mirrorDir, "nested")
+	stderr := runCommandErrorInDir(t, repo, nestedDir, []string{"status", "."})
+	assertContains(t, stderr, "mirror does not exist: vendor/basic/nested")
 }
 
 func TestStatusCommandMirrorModes(t *testing.T) {

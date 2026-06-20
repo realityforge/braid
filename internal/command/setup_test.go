@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -176,6 +177,30 @@ func TestSetupCommandHonorsNoCacheAndCacheDir(t *testing.T) {
 	}
 	if !strings.HasPrefix(cacheURL, filepath.Join(canonicalRepo, "local-cache")) {
 		t.Fatalf("cache URL = %q, want under relative cache dir", cacheURL)
+	}
+}
+
+func TestSetupCommandFromSubdirectoryUsesProcessRelativeCacheDir(t *testing.T) {
+	repo := setupRepoWithConfig(t)
+	workDir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("create workdir: %v", err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(workDir)
+
+	var stdout, stderr bytes.Buffer
+	if code := NewAppWithOptions(Options{WorkDir: workDir}).Run([]string{"--cache-dir", "local-cache", "setup", "../../vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("setup from subdir exit = %d, stderr = %q", code, stderr.String())
+	}
+	remote := "main_braid_vendor_repo"
+	cacheURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
+	canonicalWorkDir, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		t.Fatalf("canonicalize workdir: %v", err)
+	}
+	if !strings.HasPrefix(cacheURL, filepath.Join(canonicalWorkDir, "local-cache")) {
+		t.Fatalf("cache URL = %q, want under process-relative cache dir", cacheURL)
 	}
 }
 

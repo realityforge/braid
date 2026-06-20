@@ -513,7 +513,8 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	out := runCommandOK(t, repo, []string{"update", "vendor/basic"})
 	assertContains(t, out, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
 	assertContains(t, out, "Braid: warning: unrelated staged changes are present")
-	assertContains(t, out, "git commit -F .git/MERGE_MSG")
+	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
+	assertContains(t, out, "git commit -F '.git/MERGE_MSG'")
 
 	data, err := os.ReadFile(filepath.Join(repo, "vendor", "basic", "README.md"))
 	if err != nil {
@@ -540,6 +541,34 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
 		t.Fatalf("staged blob = %q, want staged content", got)
 	}
+}
+
+func TestUpdateCommandConflictInstructionsFromSubdirectory(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
+	testutil.CommitAll(t, repo, "local change")
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	revision := testutil.CommitAll(t, upstream, "remote change")
+	workDir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("create workdir: %v", err)
+	}
+
+	out := runCommandOKInDir(t, repo, workDir, []string{"update", "../../vendor/basic"})
+	assertContains(t, out, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
+	assertContains(t, out, "git commit -F '../../.git/MERGE_MSG'")
+
+	mergeMsg, err := os.ReadFile(filepath.Join(repo, ".git", "MERGE_MSG"))
+	if err != nil {
+		t.Fatalf("read MERGE_MSG: %v", err)
+	}
+	assertContains(t, string(mergeMsg), "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
 }
 
 func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {

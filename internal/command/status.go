@@ -18,12 +18,13 @@ type StatusHandler struct {
 
 func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandStatus, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandStatus, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.statusGit(inv, stderr)
-	cfg, err := config.Load(configRoot(h.Options))
+	git := h.statusGit(repo, inv, stderr)
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,11 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if inv.Status.LocalPath != "" {
-		m, err := cfg.GetRequired(inv.Status.LocalPath)
+		localPath, err := normalizeLocalPath(repo, inv.Status.LocalPath)
+		if err != nil {
+			return err
+		}
+		m, err := cfg.GetRequired(localPath)
 		if err != nil {
 			return err
 		}
@@ -51,11 +56,14 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func (h StatusHandler) statusGit(inv cli.Invocation, trace io.Writer) StatusGit {
+func (h StatusHandler) statusGit(repo RepoContext, inv cli.Invocation, trace io.Writer) StatusGit {
 	if git, ok := h.Options.Git.(StatusGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(StatusGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
 func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, verbose bool, stdout, trace io.Writer) (err error) {

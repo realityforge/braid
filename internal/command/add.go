@@ -22,23 +22,27 @@ type AddHandler struct {
 
 func (h AddHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandAdd, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandAdd, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.addGit(inv, stderr)
-	return h.add(ctx, git, inv, stderr)
+	git := h.addGit(repo, inv, stderr)
+	return h.add(ctx, repo, git, inv, stderr)
 }
 
-func (h AddHandler) addGit(inv cli.Invocation, trace io.Writer) AddGit {
+func (h AddHandler) addGit(repo RepoContext, inv cli.Invocation, trace io.Writer) AddGit {
 	if git, ok := h.Options.Git.(AddGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(AddGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, trace io.Writer) error {
-	cfg, err := config.Load(configRoot(h.Options))
+func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv cli.Invocation, trace io.Writer) error {
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
@@ -61,16 +65,20 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 	if err != nil {
 		return err
 	}
+	m.Path, err = normalizeLocalPath(repo, m.Path)
+	if err != nil {
+		return err
+	}
 	if err := validateNewMirrorPath(cfg, m); err != nil {
 		return err
 	}
 	if mirrorOverlapsConfig(m.Path) {
 		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
 	}
-	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options), false, m.Path); err != nil {
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), false, m.Path); err != nil {
 		return err
 	}
-	if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options), m.Path); err != nil {
+	if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options, repo), m.Path); err != nil {
 		return err
 	}
 

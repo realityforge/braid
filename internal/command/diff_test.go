@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,6 +38,29 @@ func TestDiffCommandShowsStagedUnstagedReverseAndPathLimited(t *testing.T) {
 	limitedDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "vendor/basic/b.txt"})
 	assertContains(t, limitedDiff, "diff --git a/b.txt b/b.txt")
 	assertNotContains(t, limitedDiff, "diff --git a/a.txt b/a.txt")
+}
+
+func TestDiffCommandFromSubdirectoryPreservesRawPassthroughPathspecs(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "a.txt", "base a\n")
+	testutil.WriteFile(t, upstream, "b.txt", "base b\n")
+	testutil.CommitAll(t, upstream, "upstream")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/a.txt", "changed a\n")
+	testutil.WriteFile(t, repo, "vendor/basic/b.txt", "changed b\n")
+	workDir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("create workdir: %v", err)
+	}
+
+	rawMatch := runCommandOKInDir(t, repo, workDir, []string{"diff", "../../vendor/basic", "--", "../../vendor/basic/b.txt"})
+	assertContains(t, rawMatch, "diff --git a/b.txt b/b.txt")
+	assertNotContains(t, rawMatch, "diff --git a/a.txt b/a.txt")
+
+	rawMiss := runCommandErrorInDir(t, repo, workDir, []string{"diff", "../../vendor/basic", "--", "vendor/basic/b.txt"})
+	assertContains(t, rawMiss, "ambiguous argument 'vendor/basic/b.txt'")
 }
 
 func TestDiffCommandAllMirrors(t *testing.T) {
@@ -149,6 +173,24 @@ func TestDiffCommandSingleFilePrefixes(t *testing.T) {
 	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "changed license\n")
 
 	out := runCommandOK(t, repo, []string{"diff", "licenses/THIRD_PARTY.txt"})
+	assertContains(t, out, "diff --git a/LICENSE.txt b/THIRD_PARTY.txt")
+	assertContains(t, out, "changed license")
+}
+
+func TestDiffCommandSingleFileFromSubdirectoryUsesTopAnchoredLimiter(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "LICENSE.txt", "license\n")
+	testutil.CommitAll(t, upstream, "single file")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"})
+	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "changed license\n")
+	workDir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("create workdir: %v", err)
+	}
+
+	out := runCommandOKInDir(t, repo, workDir, []string{"diff", "../../licenses/THIRD_PARTY.txt"})
 	assertContains(t, out, "diff --git a/LICENSE.txt b/THIRD_PARTY.txt")
 	assertContains(t, out, "changed license")
 }

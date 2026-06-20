@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,52 +53,62 @@ func TestVersionHelpAndUsageDoNotRunPreflight(t *testing.T) {
 	}
 }
 
-func TestRepositoryCommandsRequireWorktreeRoot(t *testing.T) {
+func TestRepositoryCommandsRequireWorktreeAndResolveSubdirectoryContext(t *testing.T) {
 	root := configRootWithModernConfig(t)
-
-	tests := []struct {
-		name string
-		git  *fakeGit
-		want string
-	}{
-		{name: "outside worktree", git: &fakeGit{inside: false}, want: "inside a git working tree"},
-		{name: "subdirectory", git: &fakeGit{inside: true, prefix: "sub/"}, want: "working tree root"},
+	subdir := filepath.Join(root, "nested", "dir")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("create subdir: %v", err)
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			app := NewAppWithOptions(Options{Git: test.git, ConfigRoot: root})
-			var stdout, stderr bytes.Buffer
-			code := app.Run([]string{"status"}, &stdout, &stderr)
-			if code != 1 {
-				t.Fatalf("exit = %d, want 1; stderr = %q", code, stderr.String())
-			}
-			if !strings.Contains(stderr.String(), test.want) {
-				t.Fatalf("stderr = %q, want containing %q", stderr.String(), test.want)
-			}
-		})
+	_, err := Preflight(context.Background(), cli.CommandStatus, cli.Invocation{}, Options{
+		Git:        &fakeGit{inside: false, root: root},
+		WorkDir:    subdir,
+		ConfigRoot: root,
+	}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "inside a git working tree") {
+		t.Fatalf("outside-worktree Preflight error = %v, want inside-worktree diagnostic", err)
+	}
+
+	repo, err := Preflight(context.Background(), cli.CommandStatus, cli.Invocation{}, Options{
+		Git:        &fakeGit{inside: true, prefix: "nested/dir/", root: root},
+		WorkDir:    subdir,
+		ConfigRoot: root,
+	}, io.Discard)
+	if err != nil {
+		t.Fatalf("subdirectory Preflight returned error: %v", err)
+	}
+	if repo.ProcessWorkDir != subdir {
+		t.Fatalf("ProcessWorkDir = %q, want %q", repo.ProcessWorkDir, subdir)
+	}
+	if repo.GitWorkTreeRoot != root {
+		t.Fatalf("GitWorkTreeRoot = %q, want %q", repo.GitWorkTreeRoot, root)
+	}
+	if repo.WorkTreePrefix != "nested/dir" {
+		t.Fatalf("WorkTreePrefix = %q, want nested/dir", repo.WorkTreePrefix)
+	}
+	if repo.LogicalWorkTreeRoot != root {
+		t.Fatalf("LogicalWorkTreeRoot = %q, want %q", repo.LogicalWorkTreeRoot, root)
 	}
 }
 
 func TestConfigRequirements(t *testing.T) {
 	root := t.TempDir()
-	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true}, ConfigRoot: root})
-	var stdout, stderr bytes.Buffer
+	_, err := Preflight(context.Background(), cli.CommandStatus, cli.Invocation{}, Options{
+		Git:        &fakeGit{inside: true, root: root},
+		WorkDir:    root,
+		ConfigRoot: root,
+	}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "missing .braids.json") {
+		t.Fatalf("status Preflight error = %v, want missing config", err)
+	}
 
-	if code := app.Run([]string{"status"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("status exit = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "missing .braids.json") {
-		t.Fatalf("status stderr = %q", stderr.String())
-	}
-
-	stdout.Reset()
-	stderr.Reset()
-	if code := app.Run([]string{"add", "https://example.test/repo.git"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("add exit = %d, want 1", code)
-	}
-	if strings.Contains(stderr.String(), "missing .braids.json") {
-		t.Fatalf("add incorrectly required config: %q", stderr.String())
+	_, err = Preflight(context.Background(), cli.CommandAdd, cli.Invocation{}, Options{
+		Git:        &fakeGit{inside: true, root: root},
+		WorkDir:    root,
+		ConfigRoot: root,
+	}, io.Discard)
+	if err != nil && strings.Contains(err.Error(), "missing .braids.json") {
+		t.Fatalf("add incorrectly required config: %v", err)
 	}
 }
 
@@ -107,7 +118,7 @@ func TestLegacyConfigRejectedEvenWhenCommandDoesNotRequireConfig(t *testing.T) {
 		t.Fatalf("write legacy config: %v", err)
 	}
 
-	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true}, ConfigRoot: root})
+	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true, root: root}, ConfigRoot: root})
 	var stdout, stderr bytes.Buffer
 	code := app.Run([]string{"add", "https://example.test/repo.git"}, &stdout, &stderr)
 	if code != 1 {
@@ -124,7 +135,7 @@ func TestLegacyConfigRejectedForConfigRequiredCommand(t *testing.T) {
 		t.Fatalf("write legacy config: %v", err)
 	}
 
-	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true}, ConfigRoot: root})
+	app := NewAppWithOptions(Options{Git: &fakeGit{inside: true, root: root}, ConfigRoot: root})
 	var stdout, stderr bytes.Buffer
 	code := app.Run([]string{"status"}, &stdout, &stderr)
 	if code != 1 {
@@ -148,6 +159,7 @@ func configRootWithModernConfig(t *testing.T) string {
 type fakeGit struct {
 	inside     bool
 	prefix     string
+	root       string
 	versionErr error
 	calls      []string
 }
@@ -165,6 +177,11 @@ func (f *fakeGit) IsInsideWorkTree(context.Context) (bool, error) {
 func (f *fakeGit) RelativeWorkingDir(context.Context) (string, error) {
 	f.calls = append(f.calls, "prefix")
 	return f.prefix, nil
+}
+
+func (f *fakeGit) WorkTreeRoot(context.Context) (string, error) {
+	f.calls = append(f.calls, "root")
+	return f.root, nil
 }
 
 var _ Git = (*fakeGit)(nil)

@@ -18,37 +18,45 @@ type RemoveHandler struct {
 
 func (h RemoveHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	if err := Preflight(ctx, cli.CommandRemove, inv, h.Options, stderr); err != nil {
+	repo, err := Preflight(ctx, cli.CommandRemove, inv, h.Options, stderr)
+	if err != nil {
 		return err
 	}
 
-	git := h.removeGit(inv, stderr)
-	return h.remove(ctx, git, inv.Remove)
+	git := h.removeGit(repo, inv, stderr)
+	return h.remove(ctx, repo, git, inv.Remove)
 }
 
-func (h RemoveHandler) removeGit(inv cli.Invocation, trace io.Writer) RemoveGit {
+func (h RemoveHandler) removeGit(repo RepoContext, inv cli.Invocation, trace io.Writer) RemoveGit {
 	if git, ok := h.Options.Git.(RemoveGit); ok {
 		return git
 	}
-	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
+	if git, ok := repo.rootGit(inv, h.Options, trace).(RemoveGit); ok {
+		return git
+	}
+	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h RemoveHandler) remove(ctx context.Context, git RemoveGit, options cli.RemoveOptions) error {
-	cfg, err := config.Load(configRoot(h.Options))
+func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveGit, options cli.RemoveOptions) error {
+	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
 	}
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	m, err := cfg.GetRequired(options.LocalPath)
+	localPath, err := normalizeLocalPath(repo, options.LocalPath)
+	if err != nil {
+		return err
+	}
+	m, err := cfg.GetRequired(localPath)
 	if err != nil {
 		return err
 	}
 	if mirrorOverlapsConfig(m.Path) {
 		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
 	}
-	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options), true, m.Path); err != nil {
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, m.Path); err != nil {
 		return err
 	}
 
