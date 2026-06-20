@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T01
+current_focus: T02
 
 tasks:
   - id: PLAN-APPROVAL
@@ -39,12 +39,12 @@ tasks:
       - command: git status --short
         result: pass
     commit:
-      hash: pending
+      hash: 95e0db2
       message: "docs(plan): accept scoped add/remove cleanliness plan"
 
   - id: T01
     title: Add Git plumbing helpers for synthetic add/remove commits
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -55,14 +55,16 @@ tasks:
     files_touched:
       - internal/gitexec/gitexec.go
       - internal/gitexec/gitexec_test.go
-    evidence: []
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/gitexec:gitexec_test
+        result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 7741650
+      message: "feat(gitexec): add synthetic tree plumbing helpers"
 
   - id: T02
     title: Generalize scoped cleanliness helpers
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -75,7 +77,9 @@ tasks:
       - internal/command/preflight_test.go
       - internal/command/update.go
       - internal/command/update_test.go
-    evidence: []
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -202,5 +206,9 @@ history:
     note: Round 2 iterative plan review reported no remaining actionable findings.
   - timestamp: 2026-06-20
     task: PLAN-APPROVAL
-    commit: pending
+    commit: 95e0db2
     note: User approval recorded; plan marked accepted and implementation started.
+  - timestamp: 2026-06-20
+    task: T01
+    commit: 7741650
+    note: Added gitexec helpers for in-memory blobs and path removal trees; targeted gitexec test passed.

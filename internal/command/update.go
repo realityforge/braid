@@ -19,6 +19,11 @@ type UpdateHandler struct {
 	Options Options
 }
 
+type scopedCleanGit interface {
+	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
+	BlockingOperation(context.Context) (string, bool, error)
+}
+
 func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 	if err := Preflight(ctx, cli.CommandUpdate, inv, h.Options, stderr); err != nil {
@@ -299,14 +304,7 @@ func pathWithin(path, scope string) bool {
 }
 
 func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, git UpdateGit, cfg config.Config, localPaths []string) error {
-	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
-		return err
-	} else if blocked {
-		return fmt.Errorf("unresolved git operation state is present: %s", state)
-	}
-	if err := ensureScopedClean(ctx, git, config.FileName); err != nil {
-		return err
-	}
+	var paths []string
 	for _, localPath := range localPaths {
 		m, err := cfg.GetRequired(localPath)
 		if err != nil {
@@ -315,14 +313,40 @@ func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, git UpdateG
 		if mirrorOverlapsConfig(m.Path) {
 			return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
 		}
-		if err := ensureScopedClean(ctx, git, m.Path); err != nil {
+		paths = append(paths, m.Path)
+	}
+	return ensureCommandScopesClean(ctx, git, configRoot(h.Options), true, paths...)
+}
+
+func ensureCommandScopesClean(ctx context.Context, git scopedCleanGit, root string, requireConfig bool, paths ...string) error {
+	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
+		return err
+	} else if blocked {
+		return fmt.Errorf("unresolved git operation state is present: %s", state)
+	}
+	if err := ensureConfigClean(ctx, git, root, requireConfig); err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if err := ensureScopedClean(ctx, git, path); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func ensureScopedClean(ctx context.Context, git UpdateGit, path string) error {
+func ensureConfigClean(ctx context.Context, git scopedCleanGit, root string, required bool) error {
+	if !required {
+		if _, err := os.Stat(filepath.Join(root, config.FileName)); errors.Is(err, os.ErrNotExist) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
+	return ensureScopedClean(ctx, git, config.FileName)
+}
+
+func ensureScopedClean(ctx context.Context, git scopedCleanGit, path string) error {
 	status, err := git.StatusPorcelainPathspecs(ctx, path)
 	if err != nil {
 		return err
