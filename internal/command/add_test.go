@@ -32,6 +32,38 @@ func TestAddCommandDefaultBranchCommitsAndRemovesRemote(t *testing.T) {
 	assertClean(t, repo)
 }
 
+func TestAddCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "hello from upstream\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked base\n")
+	testutil.Git(t, repo, "add", "tracked.txt")
+	testutil.Git(t, repo, "commit", "-m", "add unrelated tracked file")
+
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked dirty\n")
+	testutil.WriteFile(t, repo, "untracked.txt", "untracked content\n")
+
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+	wantChanged := []string{".braids.json", "vendor/basic/README.md"}
+	if strings.Join(changed, "\n") != strings.Join(wantChanged, "\n") {
+		t.Fatalf("Braid commit changed %#v, want %#v", changed, wantChanged)
+	}
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+	assertFile(t, repo, "tracked.txt", "tracked dirty\n")
+	assertFile(t, repo, "untracked.txt", "untracked content\n")
+	status := testutil.Git(t, repo, "status", "--porcelain").Stdout
+	assertContains(t, status, "A  staged.txt")
+	assertContains(t, status, " M tracked.txt")
+	assertContains(t, status, "?? untracked.txt")
+}
+
 func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "native path\n")
@@ -180,6 +212,114 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 			assertClean(t, repo)
 		})
 	}
+}
+
+func TestAddCommandScopedPrecheckBlocksDirtyConfig(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "hello\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	cfg := config.Empty()
+	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	testutil.Git(t, repo, "add", config.FileName)
+	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":1,\"mirrors\":{}}\n")
+
+	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
+	assertContains(t, stderr, "local changes are present in .braids.json")
+}
+
+func TestAddCommandScopedPrecheckBlocksUnavailableTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T, repo string)
+		wantErr string
+	}{
+		{
+			name: "clean tracked target file",
+			prepare: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic", "tracked\n")
+				testutil.Git(t, repo, "add", "vendor/basic")
+				testutil.Git(t, repo, "commit", "-m", "tracked target")
+			},
+			wantErr: `add target path "vendor/basic" already exists in git index`,
+		},
+		{
+			name: "clean tracked descendant",
+			prepare: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/existing.txt", "tracked\n")
+				testutil.Git(t, repo, "add", "vendor/basic/existing.txt")
+				testutil.Git(t, repo, "commit", "-m", "tracked descendant")
+			},
+			wantErr: `add target path "vendor/basic" already exists in git index`,
+		},
+		{
+			name: "clean tracked ancestor file",
+			prepare: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor", "tracked\n")
+				testutil.Git(t, repo, "add", "vendor")
+				testutil.Git(t, repo, "commit", "-m", "tracked ancestor")
+			},
+			wantErr: `add target path "vendor/basic" is blocked by existing git index path "vendor"`,
+		},
+		{
+			name: "untracked target content",
+			prepare: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/untracked.txt", "untracked\n")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "untracked ancestor file",
+			prepare: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor", "untracked\n")
+			},
+			wantErr: `add target path "vendor/basic" is blocked by worktree path "vendor"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, "README.md", "hello\n")
+			testutil.CommitAll(t, upstream, "upstream")
+			repo := initDownstream(t)
+			test.prepare(t, repo)
+
+			stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
+			assertContains(t, stderr, test.wantErr)
+		})
+	}
+}
+
+func TestAddCommandRejectsMirrorPathOverlappingConfig(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "hello\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+
+	stderr := runCommandError(t, repo, []string{"add", upstream, ".braids.json"})
+	assertContains(t, stderr, `mirror path ".braids.json" overlaps .braids.json`)
+}
+
+func TestAddCommandBlocksUnresolvedGitOperationBeforeScopedStatus(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "hello\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	if err := os.WriteFile(filepath.Join(repo, ".git", "MERGE_HEAD"), []byte("abc123\n"), 0o644); err != nil {
+		t.Fatalf("write MERGE_HEAD: %v", err)
+	}
+
+	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
+	assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
 }
 
 func TestAddCommandNoCacheTags(t *testing.T) {

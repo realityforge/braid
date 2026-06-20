@@ -245,7 +245,11 @@ func updateSwitchesTracking(original, next mirror.Mirror, options cli.UpdateOpti
 	return options.Revision != "" && original.Revision != newRevision
 }
 
-func itemAtRevision(ctx context.Context, git DiffGit, m mirror.Mirror, revision string) (gitexec.TreeItem, error) {
+type treeItemGit interface {
+	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
+}
+
+func itemAtRevision(ctx context.Context, git treeItemGit, m mirror.Mirror, revision string) (gitexec.TreeItem, error) {
 	if m.RemotePath == "" {
 		return gitexec.TreeItem{Type: "tree", Hash: revision}, nil
 	}

@@ -14,7 +14,7 @@ meta:
     - completed
     - cancelled
 
-current_focus: T02
+current_focus: T03
 
 tasks:
   - id: PLAN-APPROVAL
@@ -64,7 +64,7 @@ tasks:
 
   - id: T02
     title: Generalize scoped cleanliness helpers
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -81,12 +81,12 @@ tasks:
       - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: 2ec6d86
+      message: "refactor(command): share scoped cleanliness helpers"
 
   - id: T03
     title: Implement scoped unrelated-work preservation for braid add
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T01
@@ -100,10 +100,17 @@ tasks:
       - Add no longer requires global clean preflight after its scoped replacement flow is implemented.
       - Add no longer uses broad hard reset rollback.
     files_touched:
+      - internal/gitexec/gitexec.go
       - internal/command/add.go
       - internal/command/add_test.go
       - internal/command/preflight.go
-    evidence: []
+      - internal/command/preflight_test.go
+      - internal/command/update.go
+    evidence:
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/command:command_test
+        result: pass
+      - command: bazel --output_user_root=/Users/peter/Code/braid2/.tmp-bazel-output test --repo_contents_cache= //internal/gitexec:gitexec_test
+        result: pass
     commit:
       hash: pending
       message: pending
@@ -212,3 +219,7 @@ history:
     task: T01
     commit: 7741650
     note: Added gitexec helpers for in-memory blobs and path removal trees; targeted gitexec test passed.
+  - timestamp: 2026-06-20
+    task: T02
+    commit: 2ec6d86
+    note: Extracted shared scoped cleanliness helpers; targeted command test passed.

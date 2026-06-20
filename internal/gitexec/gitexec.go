@@ -301,6 +301,11 @@ func (g Git) RemoveCachedRecursive(ctx context.Context, path string) error {
 	return err
 }
 
+func (g Git) RemoveCachedRecursiveIfExists(ctx context.Context, path string) error {
+	_, err := g.RunOK(ctx, "rm", "-r", "--cached", "--ignore-unmatch", "--", path)
+	return err
+}
+
 func (g Git) RemoveRecursive(ctx context.Context, path string) error {
 	_, err := g.RunOK(ctx, "rm", "-r", "--", path)
 	return err
@@ -464,7 +469,7 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 		if err := tempGit.ReadTreeIndexMerge(ctx, mainContent); err != nil {
 			return "", err
 		}
-		if err := tempGit.RemoveCachedRecursive(ctx, itemPath); err != nil {
+		if err := tempGit.RemoveCachedRecursiveIfExists(ctx, itemPath); err != nil {
 			return "", err
 		}
 	}

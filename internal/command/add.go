@@ -20,11 +20,6 @@ type AddHandler struct {
 	Options Options
 }
 
-type indexItem struct {
-	treeish string
-	blob    *gitexec.TreeItem
-}
-
 func (h AddHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 	if err := Preflight(ctx, cli.CommandAdd, inv, h.Options, stderr); err != nil {
@@ -32,22 +27,7 @@ func (h AddHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.addGit(inv, stderr)
-	head, err := git.Head(ctx)
-	if err != nil {
-		return err
-	}
-
-	remoteAdded, err := h.add(ctx, git, inv, stderr)
-	if err != nil {
-		if remoteAdded != "" {
-			_ = git.RemoteRemove(ctx, remoteAdded)
-		}
-		return resetOnError(ctx, git, head, err)
-	}
-	if remoteAdded != "" {
-		return git.RemoteRemove(ctx, remoteAdded)
-	}
-	return nil
+	return h.add(ctx, git, inv, stderr)
 }
 
 func (h AddHandler) addGit(inv cli.Invocation, trace io.Writer) AddGit {
@@ -57,20 +37,20 @@ func (h AddHandler) addGit(inv cli.Invocation, trace io.Writer) AddGit {
 	return gitexec.New(workDir(h.Options.WorkDir), inv.Global.Verbose, trace)
 }
 
-func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, trace io.Writer) (string, error) {
+func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options))
 	if err != nil {
-		return "", err
+		return err
 	}
 	if err := validateConfigPaths(cfg); err != nil {
-		return "", err
+		return err
 	}
 
 	addOptions := inv.Add
 	if addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
 		branch, err := defaultBranch(ctx, git, addOptions.URL)
 		if err != nil {
-			return "", err
+			return err
 		}
 		addOptions.Branch = branch
 	}
@@ -86,67 +66,90 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 		RemotePath: addOptions.RemotePath,
 	})
 	if err != nil {
-		return "", err
+		return err
 	}
 	if err := validateNewMirror(cfg, m); err != nil {
-		return "", err
+		return err
+	}
+	if mirrorOverlapsConfig(m.Path) {
+		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
+	}
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options), false, m.Path); err != nil {
+		return err
+	}
+	if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options), m.Path); err != nil {
+		return err
 	}
 
 	cache, err := runtimeCache(inv.Global)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if cache.Enabled {
 		if err := fetchCache(ctx, cache, m.URL, inv.Global.Verbose, trace); err != nil {
-			return "", err
+			return err
 		}
 	}
 
 	if err := setupOne(ctx, git, m, true, cache); err != nil {
-		return "", err
+		return err
 	}
 	remote := m.Remote()
+	cleanupRemote := func(cause error) error {
+		if err := git.RemoteRemove(ctx, remote); err != nil {
+			if cause != nil {
+				return fmt.Errorf("%w; failed to remove temporary remote %q: %w", cause, remote, err)
+			}
+			return fmt.Errorf("add committed but failed to remove temporary remote %q: %w", remote, err)
+		}
+		return cause
+	}
+
 	if err := fetchMirror(ctx, git, m); err != nil {
-		return remote, err
+		return cleanupRemote(err)
 	}
 
 	revision, err := resolveAddRevision(ctx, git, m, addOptions.Revision)
 	if err != nil {
-		return remote, err
+		return cleanupRemote(err)
 	}
-	item, err := upstreamIndexItem(ctx, git, m, revision)
+	item, err := itemAtRevision(ctx, git, m, revision)
 	if err != nil {
-		return remote, err
-	}
-	if err := addItemToIndex(ctx, git, item, m.Path); err != nil {
-		return remote, err
+		return cleanupRemote(err)
 	}
 
 	m.Revision = revision
 	if err := cfg.Add(m); err != nil {
-		return remote, err
+		return cleanupRemote(err)
 	}
-	if err := cfg.WriteFile(filepath.Join(configRoot(h.Options), config.FileName)); err != nil {
-		return remote, err
-	}
-	if err := git.Add(ctx, config.FileName); err != nil {
-		return remote, err
-	}
-	committed, err := git.CommitMessage(ctx, addCommitSubject(m))
+	configData, err := cfg.MarshalJSON()
 	if err != nil {
-		return remote, err
+		return cleanupRemote(err)
+	}
+	configItem, err := git.HashBytes(ctx, configData)
+	if err != nil {
+		return cleanupRemote(err)
+	}
+
+	mirrorTree, err := git.MakeTreeWithItemIn(ctx, "HEAD", m.Path, item)
+	if err != nil {
+		return cleanupRemote(err)
+	}
+	finalTree, err := git.MakeTreeWithItemIn(ctx, mirrorTree, config.FileName, configItem)
+	if err != nil {
+		return cleanupRemote(err)
+	}
+	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, addCommitSubject(m))
+	if err != nil {
+		return cleanupRemote(err)
 	}
 	if !committed {
-		return remote, errors.New("add produced no commit")
+		return cleanupRemote(errors.New("add produced no commit"))
 	}
-	return remote, nil
-}
-
-func resetOnError(ctx context.Context, git AddGit, head string, cause error) error {
-	if resetErr := git.ResetHard(ctx, head); resetErr != nil {
-		return fmt.Errorf("%w; failed to reset to %s: %w", cause, shortRevision(head), resetErr)
+	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
+		return cleanupRemote(err)
 	}
-	return cause
+	return cleanupRemote(nil)
 }
 
 func defaultBranch(ctx context.Context, git AddGit, url string) (string, error) {
@@ -186,6 +189,61 @@ func validateNewMirror(cfg config.Config, candidate mirror.Mirror) error {
 	return pathcheck.CheckRemoteCollision(candidate, existing)
 }
 
+func ensureAddTargetAvailable(ctx context.Context, git AddGit, root, target string) error {
+	tracked, err := git.LsFiles(ctx, target)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(tracked) != "" {
+		return fmt.Errorf("add target path %q already exists in git index", target)
+	}
+
+	for _, ancestor := range pathAncestors(target) {
+		tracked, err := git.LsFiles(ctx, ancestor)
+		if err != nil {
+			return err
+		}
+		if lsFilesContainsExactPath(tracked, ancestor) {
+			return fmt.Errorf("add target path %q is blocked by existing git index path %q", target, ancestor)
+		}
+	}
+
+	for _, path := range append(pathAncestors(target), target) {
+		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if path == target {
+				return fmt.Errorf("add target path %q already exists in worktree", target)
+			}
+			return fmt.Errorf("add target path %q is blocked by worktree path %q", target, path)
+		}
+	}
+	return nil
+}
+
+func pathAncestors(path string) []string {
+	parts := strings.Split(strings.TrimRight(path, "/"), "/")
+	ancestors := make([]string, 0, len(parts)-1)
+	for i := 1; i < len(parts); i++ {
+		ancestors = append(ancestors, strings.Join(parts[:i], "/"))
+	}
+	return ancestors
+}
+
+func lsFilesContainsExactPath(output, path string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSuffix(line, "\r") == path {
+			return true
+		}
+	}
+	return false
+}
+
 func fetchCache(ctx context.Context, cache CacheConfig, url string, verbose bool, trace io.Writer) error {
 	cachePath := CachePath(cache.Dir, url)
 	if _, err := os.Stat(filepath.Join(cachePath, ".git")); err == nil {
@@ -208,7 +266,11 @@ func fetchCache(ctx context.Context, cache CacheConfig, url string, verbose bool
 	return gitexec.New(".", verbose, trace).CloneMirror(ctx, url, cachePath)
 }
 
-func fetchMirror(ctx context.Context, git AddGit, m mirror.Mirror) error {
+type fetchGit interface {
+	Fetch(context.Context, ...string) error
+}
+
+func fetchMirror(ctx context.Context, git fetchGit, m mirror.Mirror) error {
 	if err := git.Fetch(ctx, "-n", m.Remote()); err != nil {
 		return err
 	}
@@ -218,35 +280,15 @@ func fetchMirror(ctx context.Context, git AddGit, m mirror.Mirror) error {
 	return nil
 }
 
-func resolveAddRevision(ctx context.Context, git AddGit, m mirror.Mirror, requested string) (string, error) {
+type revParseGit interface {
+	RevParse(context.Context, string) (string, error)
+}
+
+func resolveAddRevision(ctx context.Context, git revParseGit, m mirror.Mirror, requested string) (string, error) {
 	if requested != "" {
 		return git.RevParse(ctx, requested+"^{commit}")
 	}
 	return git.RevParse(ctx, m.LocalRef()+"^{commit}")
-}
-
-func upstreamIndexItem(ctx context.Context, git AddGit, m mirror.Mirror, revision string) (indexItem, error) {
-	if m.RemotePath == "" {
-		return indexItem{treeish: revision}, nil
-	}
-	item, err := git.LsTreeItem(ctx, revision, m.RemotePath)
-	if err != nil {
-		return indexItem{}, err
-	}
-	if item.Type == "tree" {
-		return indexItem{treeish: item.Hash}, nil
-	}
-	return indexItem{blob: &item}, nil
-}
-
-func addItemToIndex(ctx context.Context, git AddGit, item indexItem, path string) error {
-	if item.blob != nil {
-		if err := git.UpdateIndexCacheInfo(ctx, item.blob.Mode, item.blob.Hash, path); err != nil {
-			return err
-		}
-		return git.CheckoutIndex(ctx, path)
-	}
-	return git.ReadTreePrefix(ctx, path, item.treeish, true)
 }
 
 func addCommitSubject(m mirror.Mirror) string {

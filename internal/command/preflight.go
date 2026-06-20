@@ -30,21 +30,24 @@ type RemoteGit interface {
 
 type AddGit interface {
 	RemoteGit
-	Head(context.Context) (string, error)
 	RevParse(context.Context, string) (string, error)
 	LsRemote(context.Context, ...string) (string, error)
 	Fetch(context.Context, ...string) error
 	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
-	ReadTreePrefix(context.Context, string, string, bool) error
-	UpdateIndexCacheInfo(context.Context, string, string, string) error
-	CheckoutIndex(context.Context, string) error
-	Add(context.Context, string) error
-	CommitMessage(context.Context, string) (bool, error)
-	ResetHard(context.Context, string) error
+	LsFiles(context.Context, string) (string, error)
+	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
+	BlockingOperation(context.Context) (string, bool, error)
+	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
+	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
+	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
+	RestorePathspecsFromHead(context.Context, ...string) error
 }
 
 type DiffGit interface {
-	AddGit
+	RemoteGit
+	RevParse(context.Context, string) (string, error)
+	Fetch(context.Context, ...string) error
+	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
 	MakeTreeWithItem(context.Context, string, gitexec.TreeItem) (string, error)
 	Diff(context.Context, ...string) (string, error)
 }
@@ -62,6 +65,7 @@ type UpdateGit interface {
 	RepoFilePath(context.Context, string) (string, error)
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
+	Add(context.Context, string) error
 	HashFile(context.Context, string) (gitexec.TreeItem, error)
 	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
 	RestorePathspecsFromHead(context.Context, ...string) error
@@ -190,7 +194,7 @@ func RequirementsFor(command cli.Command) Requirements {
 	case cli.CommandSetup, cli.CommandStatus, cli.CommandDiff:
 		return Requirements{Git: true, Root: true, Config: true}
 	case cli.CommandAdd:
-		return Requirements{Git: true, Root: true, Clean: true, MayWrite: true}
+		return Requirements{Git: true, Root: true, MayWrite: true}
 	case cli.CommandUpdate:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandRemove:

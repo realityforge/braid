@@ -20,7 +20,7 @@ func TestRequirementsForPreflightMatrix(t *testing.T) {
 		{command: cli.CommandSetup, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandStatus, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandDiff, want: Requirements{Git: true, Root: true, Config: true}},
-		{command: cli.CommandAdd, want: Requirements{Git: true, Root: true, Clean: true, MayWrite: true}},
+		{command: cli.CommandAdd, want: Requirements{Git: true, Root: true, MayWrite: true}},
 		{command: cli.CommandUpdate, want: Requirements{Git: true, Root: true, Config: true, MayWrite: true}},
 		{command: cli.CommandRemove, want: Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}},
 		{command: cli.CommandPush, want: Requirements{Git: true, Root: true, Config: true}},
@@ -160,6 +160,15 @@ func TestCleanWorktreeRequirements(t *testing.T) {
 	}
 	if containsCall(git.calls, "status") {
 		t.Fatalf("diff should not require clean status: %#v", git.calls)
+	}
+
+	git.calls = nil
+	git.status = " M file\n"
+	if err := Preflight(context.Background(), cli.CommandAdd, cli.Invocation{Command: cli.CommandAdd}, Options{Git: git, ConfigRoot: root}, &stderr); err != nil {
+		t.Fatalf("add Preflight returned error: %v", err)
+	}
+	if containsCall(git.calls, "status") {
+		t.Fatalf("add should not require global clean status in preflight: %#v", git.calls)
 	}
 
 	git.calls = nil
