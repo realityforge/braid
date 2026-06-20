@@ -1,0 +1,206 @@
+meta:
+  project: scoped-add-remove-cleanliness
+  status: accepted
+  last_updated: 2026-06-20
+  required_full_gates:
+    - bazel test //...
+  targeted_gates:
+    - bazel test //internal/gitexec:gitexec_test
+    - bazel test //internal/command:command_test
+    - bazel test //integration:braid_integration_test
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: T01
+
+tasks:
+  - id: PLAN-APPROVAL
+    title: Review and accept scoped add/remove cleanliness plan
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - User review of the latest plan is explicitly requested.
+      - User feedback is incorporated into planning artifacts.
+      - Plan status is changed to accepted only after review outcome is recorded.
+    files_touched:
+      - plans/scoped-add-remove-cleanliness/00-requirements.md
+      - plans/scoped-add-remove-cleanliness/10-implementation-plan.md
+      - plans/scoped-add-remove-cleanliness/20-task-board.yaml
+      - plans/scoped-add-remove-cleanliness/40-test-strategy.md
+    evidence:
+      - command: cat /Users/peter/.codex/skills/structured-delivery-workflow/SKILL.md
+        result: pass
+      - command: find plans -maxdepth 2 -type f | sort
+        result: pass
+      - command: git status --short
+        result: pass
+    commit:
+      hash: pending
+      message: "docs(plan): accept scoped add/remove cleanliness plan"
+
+  - id: T01
+    title: Add Git plumbing helpers for synthetic add/remove commits
+    status: in_progress
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - Git wrapper can hash in-memory bytes into a blob without writing worktree files.
+      - Git wrapper can create a tree from a base tree with one path removed.
+      - Helper tests prove the real index and worktree are not modified.
+    files_touched:
+      - internal/gitexec/gitexec.go
+      - internal/gitexec/gitexec_test.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T02
+    title: Generalize scoped cleanliness helpers
+    status: pending
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - Shared scoped helper code exists without relaxing add/remove global clean preflight.
+      - Shared scoped helper blocks unresolved Git operations and dirty command-owned paths.
+      - Existing update scoped behavior remains covered by tests.
+    files_touched:
+      - internal/command/preflight.go
+      - internal/command/preflight_test.go
+      - internal/command/update.go
+      - internal/command/update_test.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T03
+    title: Implement scoped unrelated-work preservation for braid add
+    status: pending
+    priority: high
+    depends_on:
+      - T01
+      - T02
+    acceptance_criteria:
+      - Add succeeds with unrelated staged, unstaged tracked, and untracked work preserved.
+      - "Add commit includes only `.braids.json` and the mirror target."
+      - Add blocks dirty existing config, existing tracked target, untracked target, and config overlap.
+      - Add blocks target path-shape conflicts at the target, under the target, and at blocking ancestors.
+      - Add blocks unresolved Git operation state.
+      - Add no longer requires global clean preflight after its scoped replacement flow is implemented.
+      - Add no longer uses broad hard reset rollback.
+    files_touched:
+      - internal/command/add.go
+      - internal/command/add_test.go
+      - internal/command/preflight.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T04
+    title: Implement scoped unrelated-work preservation for braid remove
+    status: pending
+    priority: high
+    depends_on:
+      - T01
+      - T02
+      - T03
+    acceptance_criteria:
+      - Remove succeeds with unrelated staged, unstaged tracked, and untracked work preserved.
+      - "Remove commit includes only `.braids.json` and the removed mirror path."
+      - Remove blocks dirty config, dirty mirror path, missing tracked mirror content, and untracked files under the mirror path.
+      - Remove blocks unresolved Git operation state.
+      - Global `Clean` preflight surface is removed after remove has scoped replacement flow.
+      - Remove no longer uses broad hard reset rollback.
+    files_touched:
+      - internal/command/remove.go
+      - internal/command/remove_test.go
+      - internal/command/preflight.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T05
+    title: Add integration coverage for add/remove scoped preservation and blockers
+    status: pending
+    priority: high
+    depends_on:
+      - T03
+      - T04
+    acceptance_criteria:
+      - Integration test proves add preserves unrelated staged, unstaged tracked, and untracked work.
+      - Integration test proves remove preserves unrelated staged, unstaged tracked, and untracked work.
+      - Integration test covers representative scoped blockers for add and remove.
+    files_touched:
+      - integration/braid_integration_test.go
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T06
+    title: Update README and align planning artifacts with final behavior
+    status: pending
+    priority: medium
+    depends_on:
+      - T03
+      - T04
+      - T05
+    acceptance_criteria:
+      - README no longer claims add/remove require a fully clean worktree.
+      - README documents the shared scoped cleanliness rule and command-specific scopes succinctly.
+      - Plan and test strategy reflect any implementation-time scope changes.
+    files_touched:
+      - README.md
+      - plans/scoped-add-remove-cleanliness/00-requirements.md
+      - plans/scoped-add-remove-cleanliness/10-implementation-plan.md
+      - plans/scoped-add-remove-cleanliness/20-task-board.yaml
+      - plans/scoped-add-remove-cleanliness/40-test-strategy.md
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+  - id: T07
+    title: Run full validation and final audit
+    status: pending
+    priority: high
+    depends_on:
+      - T06
+    acceptance_criteria:
+      - Targeted gates pass with evidence recorded.
+      - "`bazel test //...` passes with evidence recorded."
+      - Working tree status is reviewed.
+      - Commit metadata is recorded for completed implementation tasks.
+    files_touched:
+      - plans/scoped-add-remove-cleanliness/20-task-board.yaml
+    evidence: []
+    commit:
+      hash: pending
+      message: pending
+
+history:
+  - timestamp: 2026-06-20
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Draft plan emitted for user review; implementation intentionally paused.
+  - timestamp: 2026-06-20
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Round 1 plan review findings applied for sequencing, remote cleanup ordering, failure-path validation, and add target availability.
+  - timestamp: 2026-06-20
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Round 2 iterative plan review reported no remaining actionable findings.
+  - timestamp: 2026-06-20
+    task: PLAN-APPROVAL
+    commit: pending
+    note: User approval recorded; plan marked accepted and implementation started.
