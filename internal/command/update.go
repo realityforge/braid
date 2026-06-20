@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -52,14 +53,19 @@ func (h UpdateHandler) updateAll(ctx context.Context, git UpdateGit, cache Cache
 		return err
 	}
 
+	var targets []string
 	for _, localPath := range cfg.Paths() {
 		m := cfg.Mirrors[localPath]
 		if m.Locked() {
 			continue
 		}
-		if err := ensureClean(ctx, git); err != nil {
-			return err
-		}
+		targets = append(targets, localPath)
+	}
+	if err := h.ensureUpdateTargetsClean(ctx, git, cfg, targets); err != nil {
+		return err
+	}
+
+	for _, localPath := range targets {
 		if err := h.updateOne(ctx, git, cache, localPath, options, verbose, stdout, trace); err != nil {
 			return fmt.Errorf("update %s: %w", localPath, err)
 		}
@@ -81,6 +87,9 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 	}
 	original := m
 	applyUpdateStrategy(&m, options)
+	if err := h.ensureUpdateTargetsClean(ctx, git, cfg, []string{localPath}); err != nil {
+		return err
+	}
 
 	if cache.Enabled {
 		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
@@ -143,10 +152,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 		return err
 	}
 
-	mergeOut, mergeErr := git.MergeTrees(ctx, map[string]string{
-		"GITHEAD_" + localHash:  "HEAD",
-		"GITHEAD_" + remoteTree: newRevision,
-	}, baseTree, localHash, remoteTree)
+	mergedTree, mergeErr := git.MergeTreeWrite(ctx, baseTree, localHash, remoteTree)
 
 	m.Revision = newRevision
 	if err := cfg.Update(m); err != nil {
@@ -157,20 +163,49 @@ func (h UpdateHandler) updateOne(ctx context.Context, git UpdateGit, cache Cache
 		_ = cleanupRemote()
 		return err
 	}
-	if err := git.Add(ctx, config.FileName); err != nil {
+	configItem, err := git.HashFile(ctx, config.FileName)
+	if err != nil {
 		_ = cleanupRemote()
 		return err
 	}
 
 	subject := updateCommitSubject(m)
 	if mergeErr != nil {
-		if _, err := io.WriteString(stdout, mergeOut); err != nil {
+		if _, err := io.WriteString(stdout, mergedTree.Details); err != nil {
+			return err
+		}
+		if mergedTree.Tree != "" {
+			if err := git.RestorePathspecsFromTree(ctx, mergedTree.Tree, false, true, m.Path); err != nil {
+				_ = cleanupRemote()
+				return err
+			}
+		}
+		if err := git.Add(ctx, config.FileName); err != nil {
+			_ = cleanupRemote()
+			return err
+		}
+		if err := h.writeConflictInstructions(ctx, git, stdout, m); err != nil {
+			_ = cleanupRemote()
 			return err
 		}
 		return h.writeMergeMessage(ctx, git, subject)
 	}
 
-	if _, err := git.CommitMessage(ctx, subject); err != nil {
+	finalTree, err := git.MakeTreeWithItemIn(ctx, mergedTree.Tree, config.FileName, configItem)
+	if err != nil {
+		_ = cleanupRemote()
+		return err
+	}
+	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, subject)
+	if err != nil {
+		_ = cleanupRemote()
+		return err
+	}
+	if !committed {
+		_ = cleanupRemote()
+		return errors.New("update produced no commit")
+	}
+	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
 		_ = cleanupRemote()
 		return err
 	}
@@ -226,6 +261,81 @@ func (h UpdateHandler) writeMergeMessage(ctx context.Context, git UpdateGit, sub
 		return err
 	}
 	return os.WriteFile(mergeMsgPath, []byte(subject+"\n"), 0o644)
+}
+
+func (h UpdateHandler) writeConflictInstructions(ctx context.Context, git UpdateGit, stdout io.Writer, m mirror.Mirror) error {
+	staged, err := hasUnrelatedStagedEntries(ctx, git, m.Path)
+	if err != nil {
+		return err
+	}
+	if staged {
+		if _, err := io.WriteString(stdout, "Braid: warning: unrelated staged changes are present; unstage them before the resolution commit if they should not be included.\n"); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(stdout, "Braid: conflicts written to %s. Resolve them, then run:\n  git add -- %s %s\n  git commit -F .git/MERGE_MSG\n", m.Path, m.Path, config.FileName)
+	return err
+}
+
+func hasUnrelatedStagedEntries(ctx context.Context, git UpdateGit, mirrorPath string) (bool, error) {
+	out, err := git.Diff(ctx, "--cached", "--name-only")
+	if err != nil {
+		return false, err
+	}
+	for _, path := range strings.Split(out, "\n") {
+		path = strings.TrimSpace(path)
+		if path == "" || path == config.FileName || pathWithin(path, mirrorPath) {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func pathWithin(path, scope string) bool {
+	cleanPath := strings.TrimRight(path, "/")
+	cleanScope := strings.TrimRight(scope, "/")
+	return cleanPath == cleanScope || strings.HasPrefix(cleanPath, cleanScope+"/")
+}
+
+func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, git UpdateGit, cfg config.Config, localPaths []string) error {
+	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
+		return err
+	} else if blocked {
+		return fmt.Errorf("unresolved git operation state is present: %s", state)
+	}
+	if err := ensureScopedClean(ctx, git, config.FileName); err != nil {
+		return err
+	}
+	for _, localPath := range localPaths {
+		m, err := cfg.GetRequired(localPath)
+		if err != nil {
+			return err
+		}
+		if mirrorOverlapsConfig(m.Path) {
+			return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
+		}
+		if err := ensureScopedClean(ctx, git, m.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureScopedClean(ctx context.Context, git UpdateGit, path string) error {
+	status, err := git.StatusPorcelainPathspecs(ctx, path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(status) != "" {
+		return fmt.Errorf("local changes are present in %s", path)
+	}
+	return nil
+}
+
+func mirrorOverlapsConfig(path string) bool {
+	clean := strings.TrimRight(path, "/")
+	return clean == config.FileName || strings.HasPrefix(clean, config.FileName+"/")
 }
 
 func ensureClean(ctx context.Context, git Git) error {

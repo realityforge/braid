@@ -63,10 +63,12 @@ bazel run //cmd/braid:braid -- version
 
 ## Usage
 
-Braid commands run from the root of a Git working tree. `add`, `update`, and
-`remove` write commits and require a clean working tree. `status`, `diff`, and
-`push` are the usual commands for deciding whether to update, prepare a patch, or
-send local mirror changes upstream.
+Braid commands run from the root of a Git working tree. `add` and `remove` write
+commits and require a clean working tree. `update` requires `.braids.json` and
+the target mirror path or paths to be clean, but preserves unrelated staged,
+unstaged, and untracked work. `status`, `diff`, and `push` are the usual
+commands for deciding whether to update, prepare a patch, or send local mirror
+changes upstream.
 
 - [Command form](#command-form)
 - [Quick start](#quick-start)
@@ -225,10 +227,27 @@ braid update vendor/rails --branch main
 braid update vendor/rails --tag <tag>
 ```
 
+Before updating, Braid checks for unresolved Git operations such as merges,
+rebases, cherry-picks, reverts, or unmerged index entries. It also requires
+`.braids.json` and the mirror path being updated to be clean in both the index
+and working tree. For `braid update` without a path, that scoped cleanliness
+check covers every eligible branch or tag mirror before any mirror is fetched or
+updated. Dirty paths outside those scopes are left alone and are not included in
+Braid's automatic update commits.
+
 If an update conflicts with local mirror changes, Braid leaves conflict markers
-in the working tree and writes a prepared `.git/MERGE_MSG`. Resolve the
-conflicts, stage the resolved files and `.braids.json`, then commit. To abandon
-the conflicted update, reset the working tree and index with `git reset --hard`.
+in the mirror working tree, stages the updated `.braids.json`, and writes a
+prepared `.git/MERGE_MSG`. Resolve the conflicts, stage the resolved mirror path
+and `.braids.json`, then commit with:
+
+```bash
+git commit -F .git/MERGE_MSG
+```
+
+If unrelated files were staged before the conflicted update, they remain staged
+and may be included in that manual commit unless you unstage them first. To
+abandon a conflicted update while preserving unrelated work, restore only the
+mirror path and `.braids.json` from `HEAD`, then remove `.git/MERGE_MSG`.
 
 ### Pushing Local Changes Upstream
 

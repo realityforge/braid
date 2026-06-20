@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"braid/internal/config"
+	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
 
@@ -18,6 +19,7 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 	writeFailingPreCommitHook(t, repo)
+	writePostCommitHook(t, repo)
 
 	testutil.WriteFile(t, upstream, "README.md", "updated\n")
 	revision := testutil.CommitAll(t, upstream, "updated")
@@ -29,6 +31,7 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 		t.Fatalf("revision = %q, want %q", m.Revision, revision)
 	}
 	assertCommitSubject(t, repo, "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
+	assertFile(t, repo, "post-commit-ran", "ran\n")
 
 	head := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
 	runCommandOK(t, repo, []string{"update", "vendor/basic"})
@@ -36,6 +39,229 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	if gotHead != head {
 		t.Fatalf("up-to-date update created commit %s, want HEAD %s", gotHead, head)
 	}
+}
+
+func TestUpdateCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked base\n")
+	testutil.Git(t, repo, "add", "tracked.txt")
+	testutil.Git(t, repo, "commit", "-m", "add unrelated tracked file")
+
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked dirty\n")
+	testutil.WriteFile(t, repo, "untracked.txt", "untracked content\n")
+
+	testutil.WriteFile(t, upstream, "README.md", "updated\n")
+	testutil.CommitAll(t, upstream, "updated")
+	runCommandOK(t, repo, []string{"update", "vendor/basic"})
+
+	changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+	wantChanged := []string{".braids.json", "vendor/basic/README.md"}
+	if strings.Join(changed, "\n") != strings.Join(wantChanged, "\n") {
+		t.Fatalf("Braid commit changed %#v, want %#v", changed, wantChanged)
+	}
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+	assertFile(t, repo, "tracked.txt", "tracked dirty\n")
+	assertFile(t, repo, "untracked.txt", "untracked content\n")
+	status := testutil.Git(t, repo, "status", "--porcelain").Stdout
+	assertContains(t, status, "A  staged.txt")
+	assertContains(t, status, " M tracked.txt")
+	assertContains(t, status, "?? untracked.txt")
+}
+
+func TestUpdateCommandRepresentsMirrorDeletesAndRenames(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "keep.txt", "keep\n")
+	testutil.WriteFile(t, upstream, "remove.txt", "remove\n")
+	testutil.WriteFile(t, upstream, "old.txt", "old\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	if err := os.Remove(filepath.Join(upstream, "remove.txt")); err != nil {
+		t.Fatalf("remove upstream file: %v", err)
+	}
+	if err := os.Rename(filepath.Join(upstream, "old.txt"), filepath.Join(upstream, "new.txt")); err != nil {
+		t.Fatalf("rename upstream file: %v", err)
+	}
+	testutil.CommitAll(t, upstream, "delete and rename")
+	runCommandOK(t, repo, []string{"update", "vendor/basic"})
+
+	if _, err := os.Stat(filepath.Join(repo, "vendor/basic/remove.txt")); !os.IsNotExist(err) {
+		t.Fatalf("remove.txt stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "vendor/basic/old.txt")); !os.IsNotExist(err) {
+		t.Fatalf("old.txt stat error = %v, want not exist", err)
+	}
+	assertFile(t, repo, "vendor/basic/new.txt", "old\n")
+	assertFile(t, repo, "vendor/basic/keep.txt", "keep\n")
+}
+
+func TestUpdateCommandScopedPrecheckBlocksDirtyConfigAndTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		dirty   func(t *testing.T, repo string)
+		wantErr string
+	}{
+		{
+			name: "config",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				path := filepath.Join(repo, config.FileName)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatalf("read config: %v", err)
+				}
+				if err := os.WriteFile(path, append(data, []byte(" \n")...), 0o644); err != nil {
+					t.Fatalf("dirty config: %v", err)
+				}
+			},
+			wantErr: "local changes are present in .braids.json",
+		},
+		{
+			name: "staged mirror change",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/README.md", "staged\n")
+				testutil.Git(t, repo, "add", "vendor/basic/README.md")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "unstaged mirror change",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/README.md", "unstaged\n")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+		{
+			name: "untracked mirror change",
+			dirty: func(t *testing.T, repo string) {
+				t.Helper()
+				testutil.WriteFile(t, repo, "vendor/basic/untracked.txt", "untracked\n")
+			},
+			wantErr: "local changes are present in vendor/basic",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, "README.md", "base\n")
+			testutil.CommitAll(t, upstream, "base")
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+			test.dirty(t, repo)
+			stderr := runCommandError(t, repo, []string{"update", "vendor/basic"})
+			assertContains(t, stderr, test.wantErr)
+		})
+	}
+}
+
+func TestUpdateCommandBlocksUnresolvedGitOperationBeforeScopedStatus(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	if err := os.WriteFile(filepath.Join(repo, ".git", "MERGE_HEAD"), []byte("abc123\n"), 0o644); err != nil {
+		t.Fatalf("write MERGE_HEAD: %v", err)
+	}
+
+	stderr := runCommandError(t, repo, []string{"update", "vendor/basic"})
+	assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
+}
+
+func TestUpdateCommandIgnoresDirtyNonTargetMirrorForNoOpPathUpdate(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	testutil.CommitAll(t, upstreamB, "b base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "dirty other mirror\n")
+
+	runCommandOK(t, repo, []string{"update", "vendor/a"})
+	assertFile(t, repo, "vendor/b/README.md", "dirty other mirror\n")
+}
+
+func TestUpdateCommandAllPrechecksEligibleMirrorsBeforeUpdating(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	aBase := testutil.CommitAll(t, upstreamA, "a base")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	bBase := testutil.CommitAll(t, upstreamB, "b base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, upstreamA, "README.md", "a updated\n")
+	testutil.CommitAll(t, upstreamA, "a updated")
+	testutil.WriteFile(t, upstreamB, "README.md", "b updated\n")
+	testutil.CommitAll(t, upstreamB, "b updated")
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "dirty b\n")
+
+	stderr := runCommandError(t, repo, []string{"update"})
+	assertContains(t, stderr, "local changes are present in vendor/b")
+	if got := loadMirror(t, repo, "vendor/a").Revision; got != aBase {
+		t.Fatalf("vendor/a revision = %q, want unchanged %q", got, aBase)
+	}
+	if got := loadMirror(t, repo, "vendor/b").Revision; got != bBase {
+		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
+	}
+	if remotes := strings.TrimSpace(testutil.Git(t, repo, "remote").Stdout); remotes != "" {
+		t.Fatalf("remotes = %q, want no setup side effects", remotes)
+	}
+}
+
+func TestUpdateCommandAllSkipsLockedMirrorsBeforeScopedPrecheck(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	upstreamLocked := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamLocked, "README.md", "locked base\n")
+	lockedRevision := testutil.CommitAll(t, upstreamLocked, "locked base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamLocked, "vendor/locked", "--revision", lockedRevision})
+	testutil.WriteFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
+
+	runCommandOK(t, repo, []string{"update"})
+	assertFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
+}
+
+func TestUpdateCommandRejectsMirrorPathOverlappingConfig(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	revision := testutil.CommitAll(t, upstream, "base")
+	repo := testutil.InitRepo(t)
+	cfg := config.Empty()
+	if err := cfg.Add(mirror.Mirror{Path: ".braids.json", URL: upstream, Branch: "main", Revision: revision}); err != nil {
+		t.Fatalf("add mirror config: %v", err)
+	}
+	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	testutil.Git(t, repo, "add", config.FileName)
+	testutil.Git(t, repo, "commit", "-m", "config")
+
+	stderr := runCommandError(t, repo, []string{"update", ".braids.json"})
+	assertContains(t, stderr, `mirror path ".braids.json" overlaps .braids.json`)
 }
 
 func TestUpdateCommandMirrorVariants(t *testing.T) {
@@ -279,10 +505,15 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
 	testutil.CommitAll(t, repo, "local change")
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
 
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote change")
-	runCommandOK(t, repo, []string{"update", "vendor/basic"})
+	out := runCommandOK(t, repo, []string{"update", "vendor/basic"})
+	assertContains(t, out, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, out, "Braid: warning: unrelated staged changes are present")
+	assertContains(t, out, "git commit -F .git/MERGE_MSG")
 
 	data, err := os.ReadFile(filepath.Join(repo, "vendor", "basic", "README.md"))
 	if err != nil {
@@ -297,6 +528,18 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 		t.Fatalf("read MERGE_MSG: %v", err)
 	}
 	assertContains(t, string(mergeMsg), "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
+	if unmerged := strings.TrimSpace(testutil.Git(t, repo, "ls-files", "-u").Stdout); unmerged != "" {
+		t.Fatalf("unmerged entries = %q, want none for marker fallback", unmerged)
+	}
+	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt" {
+		t.Fatalf("cached names = %#v, want .braids.json and staged.txt", cached)
+	}
+	if unstaged := strings.TrimSpace(testutil.Git(t, repo, "diff", "--name-only", "--", "vendor/basic").Stdout); unstaged != "vendor/basic/README.md" {
+		t.Fatalf("unstaged mirror diff = %q, want conflicted README", unstaged)
+	}
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
 }
 
 func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {

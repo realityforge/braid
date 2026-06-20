@@ -21,7 +21,7 @@ func TestRequirementsForPreflightMatrix(t *testing.T) {
 		{command: cli.CommandStatus, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandDiff, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandAdd, want: Requirements{Git: true, Root: true, Clean: true, MayWrite: true}},
-		{command: cli.CommandUpdate, want: Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}},
+		{command: cli.CommandUpdate, want: Requirements{Git: true, Root: true, Config: true, MayWrite: true}},
 		{command: cli.CommandRemove, want: Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}},
 		{command: cli.CommandPush, want: Requirements{Git: true, Root: true, Config: true}},
 	}
@@ -141,8 +141,8 @@ func TestCleanWorktreeRequirements(t *testing.T) {
 	app := NewAppWithOptions(Options{Git: git, ConfigRoot: root})
 	var stdout, stderr bytes.Buffer
 
-	if code := app.Run([]string{"update"}, &stdout, &stderr); code != 1 {
-		t.Fatalf("update exit = %d, want 1", code)
+	if code := app.Run([]string{"remove", "vendor/repo"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("remove exit = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "local changes are present") {
 		t.Fatalf("stderr = %q", stderr.String())
@@ -160,6 +160,15 @@ func TestCleanWorktreeRequirements(t *testing.T) {
 	}
 	if containsCall(git.calls, "status") {
 		t.Fatalf("diff should not require clean status: %#v", git.calls)
+	}
+
+	git.calls = nil
+	git.status = " M file\n"
+	if err := Preflight(context.Background(), cli.CommandUpdate, cli.Invocation{Command: cli.CommandUpdate}, Options{Git: git, ConfigRoot: root}, &stderr); err != nil {
+		t.Fatalf("update Preflight returned error: %v", err)
+	}
+	if containsCall(git.calls, "status") {
+		t.Fatalf("update should not require global clean status in preflight: %#v", git.calls)
 	}
 }
 

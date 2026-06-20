@@ -353,3 +353,11 @@ func writeFailingPreCommitHook(t *testing.T, repo string) {
 		t.Fatalf("write pre-commit hook: %v", err)
 	}
 }
+
+func writePostCommitHook(t *testing.T, repo string) {
+	t.Helper()
+	hook := filepath.Join(repo, ".git", "hooks", "post-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf 'ran\\n' > post-commit-ran\n"), 0o755); err != nil {
+		t.Fatalf("write post-commit hook: %v", err)
+	}
+}

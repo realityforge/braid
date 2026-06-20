@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -225,6 +226,211 @@ func TestGitPreflightWrappers(t *testing.T) {
 	}
 }
 
+func TestStatusPorcelainPathspecsIgnoresUnrelatedPaths(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "target.txt", "base\n")
+	writeRealFile(t, repo, "unrelated.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	writeRealFile(t, repo, "target.txt", "target change\n")
+	writeRealFile(t, repo, "unrelated.txt", "unrelated change\n")
+	writeRealFile(t, repo, "other/untracked.txt", "untracked\n")
+
+	status, err := New(repo, false, nil).StatusPorcelainPathspecs(context.Background(), "target.txt")
+	if err != nil {
+		t.Fatalf("StatusPorcelainPathspecs returned error: %v", err)
+	}
+	if !strings.Contains(status, "target.txt") {
+		t.Fatalf("status = %q, want target path", status)
+	}
+	if strings.Contains(status, "unrelated") || strings.Contains(status, "other/") {
+		t.Fatalf("status = %q, want unrelated paths ignored", status)
+	}
+}
+
+func TestBlockingOperationDetectsSentinelAndUnmergedEntries(t *testing.T) {
+	t.Run("sentinel", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "file.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		writeRealFile(t, filepath.Join(repo, ".git"), "MERGE_HEAD", "abc123\n")
+
+		state, blocked, err := New(repo, false, nil).BlockingOperation(context.Background())
+		if err != nil {
+			t.Fatalf("BlockingOperation returned error: %v", err)
+		}
+		if !blocked || state != "MERGE_HEAD" {
+			t.Fatalf("state = %q blocked = %v, want MERGE_HEAD block", state, blocked)
+		}
+	})
+
+	t.Run("unmerged", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "file.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		realGit(t, repo, "checkout", "-b", "left")
+		writeRealFile(t, repo, "file.txt", "left\n")
+		realGit(t, repo, "commit", "-am", "left")
+		realGit(t, repo, "checkout", "main")
+		writeRealFile(t, repo, "file.txt", "right\n")
+		realGit(t, repo, "commit", "-am", "right")
+		result, err := Runner{WorkDir: repo}.Run(context.Background(), "merge", "left")
+		if err != nil {
+			t.Fatalf("merge command failed to run: %v", err)
+		}
+		if result.ExitCode == 0 {
+			t.Fatal("merge unexpectedly succeeded")
+		}
+
+		state, blocked, err := New(repo, false, nil).BlockingOperation(context.Background())
+		if err != nil {
+			t.Fatalf("BlockingOperation returned error: %v", err)
+		}
+		if !blocked || state != "unmerged index entries" {
+			t.Fatalf("state = %q blocked = %v, want unmerged block", state, blocked)
+		}
+	})
+}
+
+func TestMergeTreeWriteReturnsMergedTreeAndConflictDetails(t *testing.T) {
+	t.Run("clean", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "base.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		base := realGitOutput(t, repo, "rev-parse", "HEAD")
+		realGit(t, repo, "checkout", "-b", "local")
+		writeRealFile(t, repo, "local.txt", "local\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "local")
+		local := realGitOutput(t, repo, "rev-parse", "HEAD")
+		realGit(t, repo, "checkout", "main")
+		realGit(t, repo, "checkout", "-b", "remote")
+		writeRealFile(t, repo, "remote.txt", "remote\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "remote")
+		remote := realGitOutput(t, repo, "rev-parse", "HEAD")
+
+		merged, err := New(repo, false, nil).MergeTreeWrite(context.Background(), base, local, remote)
+		if err != nil {
+			t.Fatalf("MergeTreeWrite returned error: %v", err)
+		}
+		if merged.Tree == "" {
+			t.Fatal("merged tree is empty")
+		}
+		tree := realGitOutput(t, repo, "ls-tree", "-r", "--name-only", merged.Tree)
+		if !strings.Contains(tree, "local.txt") || !strings.Contains(tree, "remote.txt") {
+			t.Fatalf("merged tree contents = %q, want local and remote files", tree)
+		}
+	})
+
+	t.Run("conflict", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "file.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		base := realGitOutput(t, repo, "rev-parse", "HEAD")
+		realGit(t, repo, "checkout", "-b", "local")
+		writeRealFile(t, repo, "file.txt", "local\n")
+		realGit(t, repo, "commit", "-am", "local")
+		local := realGitOutput(t, repo, "rev-parse", "HEAD")
+		realGit(t, repo, "checkout", "main")
+		realGit(t, repo, "checkout", "-b", "remote")
+		writeRealFile(t, repo, "file.txt", "remote\n")
+		realGit(t, repo, "commit", "-am", "remote")
+		remote := realGitOutput(t, repo, "rev-parse", "HEAD")
+
+		before := realGitOutput(t, repo, "status", "--porcelain")
+		merged, err := New(repo, false, nil).MergeTreeWrite(context.Background(), base, local, remote)
+		if err == nil {
+			t.Fatal("MergeTreeWrite returned nil error for conflict")
+		}
+		if merged.Tree == "" {
+			t.Fatal("conflicted merged tree is empty")
+		}
+		if !strings.Contains(merged.Details, "CONFLICT") || !strings.Contains(merged.Details, "file.txt") {
+			t.Fatalf("conflict details = %q, want conflict path", merged.Details)
+		}
+		after := realGitOutput(t, repo, "status", "--porcelain")
+		if after != before {
+			t.Fatalf("status changed from %q to %q", before, after)
+		}
+	})
+}
+
+func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "mirror.txt", "base\n")
+	writeRealFile(t, repo, "unrelated.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	writeRealFile(t, repo, "mirror.txt", "updated\n")
+	blob := realGitOutput(t, repo, "hash-object", "-w", "mirror.txt")
+	git := New(repo, false, nil)
+	tree, err := git.MakeTreeWithItemIn(context.Background(), "HEAD", "mirror.txt", TreeItem{Mode: "100644", Type: "blob", Hash: blob})
+	if err != nil {
+		t.Fatalf("MakeTreeWithItemIn returned error: %v", err)
+	}
+
+	writeRealFile(t, repo, "unrelated.txt", "staged\n")
+	realGit(t, repo, "add", "unrelated.txt")
+	writeRealFile(t, repo, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n")
+	chmodRealFile(t, repo, ".git/hooks/pre-commit", 0o755)
+	writeRealFile(t, repo, ".git/hooks/post-commit", "#!/bin/sh\nprintf ran > post-commit-ran\n")
+	chmodRealFile(t, repo, ".git/hooks/post-commit", 0o755)
+
+	committed, err := git.CommitTreeWithTemporaryIndex(context.Background(), tree, "temp index commit")
+	if err != nil {
+		t.Fatalf("CommitTreeWithTemporaryIndex returned error: %v", err)
+	}
+	if !committed {
+		t.Fatal("CommitTreeWithTemporaryIndex committed = false, want true")
+	}
+	if got := realGitOutput(t, repo, "show", "HEAD:mirror.txt"); got != "updated" {
+		t.Fatalf("HEAD:mirror.txt = %q, want updated", got)
+	}
+	if got := realGitOutput(t, repo, "show", "HEAD:unrelated.txt"); got != "base" {
+		t.Fatalf("HEAD:unrelated.txt = %q, want base", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "post-commit-ran")); err != nil {
+		t.Fatalf("post-commit hook did not run: %v", err)
+	}
+	if err := git.RestorePathspecsFromHead(context.Background(), "mirror.txt"); err != nil {
+		t.Fatalf("RestorePathspecsFromHead returned error: %v", err)
+	}
+	if staged := realGitOutput(t, repo, "diff", "--cached", "--name-only"); staged != "unrelated.txt" {
+		t.Fatalf("cached diff = %q, want unrelated.txt", staged)
+	}
+}
+
+func TestRestorePathspecsFromHeadUpdatesOnlyExplicitPathspecs(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "restore.txt", "base\n")
+	writeRealFile(t, repo, "keep.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+	writeRealFile(t, repo, "restore.txt", "changed\n")
+	writeRealFile(t, repo, "keep.txt", "changed\n")
+	realGit(t, repo, "add", "restore.txt", "keep.txt")
+
+	if err := New(repo, false, nil).RestorePathspecsFromHead(context.Background(), "restore.txt"); err != nil {
+		t.Fatalf("RestorePathspecsFromHead returned error: %v", err)
+	}
+	if got := readRealFile(t, repo, "restore.txt"); got != "base\n" {
+		t.Fatalf("restore.txt = %q, want base", got)
+	}
+	if got := readRealFile(t, repo, "keep.txt"); got != "changed\n" {
+		t.Fatalf("keep.txt = %q, want changed", got)
+	}
+	if staged := realGitOutput(t, repo, "diff", "--cached", "--name-only"); staged != "keep.txt" {
+		t.Fatalf("cached diff = %q, want keep.txt only", staged)
+	}
+}
+
 func helperRunner(t *testing.T, env map[string]string) Runner {
 	t.Helper()
 	merged := map[string]string{
@@ -318,6 +524,57 @@ func helperGitArgs(args []string) []string {
 		}
 	}
 	return nil
+}
+
+func initRealRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	realGit(t, dir, "init", "--initial-branch=main")
+	realGit(t, dir, "config", "--local", "user.name", "Braid Test")
+	realGit(t, dir, "config", "--local", "user.email", "braid-test@example.invalid")
+	realGit(t, dir, "config", "--local", "commit.gpgsign", "false")
+	return dir
+}
+
+func realGit(t *testing.T, dir string, args ...string) Result {
+	t.Helper()
+	result, err := Runner{WorkDir: dir}.RunOK(context.Background(), args...)
+	if err != nil {
+		t.Fatalf("git %v failed in %s: %v\nstdout:\n%s\nstderr:\n%s", args, dir, err, result.Stdout, result.Stderr)
+	}
+	return result
+}
+
+func realGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	return strings.TrimSpace(realGit(t, dir, args...).Stdout)
+}
+
+func writeRealFile(t *testing.T, root, relativePath, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create parent for %s: %v", relativePath, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", relativePath, err)
+	}
+}
+
+func chmodRealFile(t *testing.T, root, relativePath string, mode os.FileMode) {
+	t.Helper()
+	if err := os.Chmod(filepath.Join(root, filepath.FromSlash(relativePath)), mode); err != nil {
+		t.Fatalf("chmod %s: %v", relativePath, err)
+	}
+}
+
+func readRealFile(t *testing.T, root, relativePath string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
+	if err != nil {
+		t.Fatalf("read %s: %v", relativePath, err)
+	}
+	return string(data)
 }
 
 func helperExitCode() int {

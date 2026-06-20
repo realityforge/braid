@@ -240,6 +240,54 @@ func TestExecutableFailurePaths(t *testing.T) {
 	assertClean(t, env, rollbackRepo)
 }
 
+func TestExecutableScopedUpdatePreservesUnrelatedState(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "README.md", "base\n")
+	commitAll(t, env, upstream, "base")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	assertResult(t, add, 0, "", "")
+	writeFile(t, downstream, "tracked.txt", "tracked base\n")
+	gitOK(t, env, downstream, "add", "tracked.txt")
+	gitOK(t, env, downstream, "commit", "-m", "add tracked file")
+
+	writeFile(t, downstream, "staged.txt", "staged content\n")
+	gitOK(t, env, downstream, "add", "staged.txt")
+	writeFile(t, downstream, "tracked.txt", "tracked dirty\n")
+	writeFile(t, downstream, "untracked.txt", "untracked content\n")
+	writeFile(t, upstream, "README.md", "updated\n")
+	remoteRevision := commitAll(t, env, upstream, "updated")
+
+	update := runBraid(t, env, downstream, braid, "update", "vendor/basic")
+	assertResult(t, update, 0, "", "")
+	assertFile(t, downstream, "vendor/basic/README.md", "updated\n")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
+	})
+	changed := strings.Fields(gitOK(t, env, downstream, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").stdout)
+	if strings.Join(changed, "\n") != ".braids.json\nvendor/basic/README.md" {
+		t.Fatalf("Braid commit changed %#v, want config and mirror only", changed)
+	}
+	if got := strings.TrimSpace(gitOK(t, env, downstream, "show", ":staged.txt").stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+	assertFile(t, downstream, "tracked.txt", "tracked dirty\n")
+	assertFile(t, downstream, "untracked.txt", "untracked content\n")
+	status := gitOK(t, env, downstream, "status", "--porcelain").stdout
+	assertContains(t, status, "A  staged.txt")
+	assertContains(t, status, " M tracked.txt")
+	assertContains(t, status, "?? untracked.txt")
+}
+
 func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	root := t.TempDir()
 	env := newProcessEnv(t, root)
@@ -263,6 +311,8 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 
 	writeFile(t, downstream, "vendor/basic/README.md", "local\n")
 	commitAll(t, env, downstream, "local mirror change")
+	writeFile(t, downstream, "staged.txt", "staged content\n")
+	gitOK(t, env, downstream, "add", "staged.txt")
 	writeFile(t, upstream, "README.md", "remote\n")
 	remoteRevision := commitAll(t, env, upstream, "remote change")
 
@@ -270,6 +320,8 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	assertExit(t, update, 0)
 	assertEmpty(t, "conflict update stderr", update.stderr)
 	assertContains(t, update.stdout, "CONFLICT")
+	assertContains(t, update.stdout, "Braid: warning: unrelated staged changes are present")
+	assertContains(t, update.stdout, "git commit -F .git/MERGE_MSG")
 	conflicted := readFile(t, downstream, "vendor/basic/README.md")
 	assertContains(t, conflicted, "<<<<<<<")
 	assertContains(t, conflicted, "local")
@@ -278,7 +330,54 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
 	})
+	if unmerged := strings.TrimSpace(gitOK(t, env, downstream, "ls-files", "-u").stdout); unmerged != "" {
+		t.Fatalf("unmerged entries = %q, want marker fallback without unmerged entries", unmerged)
+	}
+	if cached := strings.Fields(gitOK(t, env, downstream, "diff", "--cached", "--name-only").stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt" {
+		t.Fatalf("cached names = %#v, want config and staged unrelated file", cached)
+	}
+	if got := strings.TrimSpace(gitOK(t, env, downstream, "show", ":staged.txt").stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
 	assertContains(t, gitOK(t, env, downstream, "status", "--porcelain").stdout, "README.md")
+}
+
+func TestExecutableUpdateAllScopedPrecheckStopsBeforeUpdates(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstreamA := filepath.Join(root, "upstream-a")
+	initRepo(t, env, upstreamA)
+	writeFile(t, upstreamA, "README.md", "a base\n")
+	aBase := commitAll(t, env, upstreamA, "a base")
+	upstreamB := filepath.Join(root, "upstream-b")
+	initRepo(t, env, upstreamB)
+	writeFile(t, upstreamB, "README.md", "b base\n")
+	bBase := commitAll(t, env, upstreamB, "b base")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamA, "vendor/a"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamB, "vendor/b"), 0, "", "")
+	writeFile(t, upstreamA, "README.md", "a updated\n")
+	commitAll(t, env, upstreamA, "a updated")
+	writeFile(t, upstreamB, "README.md", "b updated\n")
+	commitAll(t, env, upstreamB, "b updated")
+	writeFile(t, downstream, "vendor/b/README.md", "dirty b\n")
+
+	update := runBraid(t, env, downstream, braid, "--no-cache", "update")
+	assertExit(t, update, 1)
+	assertEmpty(t, "update-all precheck stdout", update.stdout)
+	assertContains(t, update.stderr, "local changes are present in vendor/b")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/a": {URL: upstreamA, Branch: "main", Revision: aBase},
+		"vendor/b": {URL: upstreamB, Branch: "main", Revision: bBase},
+	})
+	assertNoRemote(t, env, downstream, remoteName("main", "vendor/a"))
+	assertNoRemote(t, env, downstream, remoteName("main", "vendor/b"))
 }
 
 type processEnv struct {

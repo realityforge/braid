@@ -58,7 +58,14 @@ type UpdateGit interface {
 	StatusGit
 	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
 	MergeTrees(context.Context, map[string]string, string, string, string) (string, error)
+	MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error)
 	RepoFilePath(context.Context, string) (string, error)
+	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
+	BlockingOperation(context.Context) (string, bool, error)
+	HashFile(context.Context, string) (gitexec.TreeItem, error)
+	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
+	RestorePathspecsFromHead(context.Context, ...string) error
+	RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error
 }
 
 type RemoveGit interface {
@@ -184,7 +191,9 @@ func RequirementsFor(command cli.Command) Requirements {
 		return Requirements{Git: true, Root: true, Config: true}
 	case cli.CommandAdd:
 		return Requirements{Git: true, Root: true, Clean: true, MayWrite: true}
-	case cli.CommandUpdate, cli.CommandRemove:
+	case cli.CommandUpdate:
+		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
+	case cli.CommandRemove:
 		return Requirements{Git: true, Root: true, Config: true, Clean: true, MayWrite: true}
 	case cli.CommandPush:
 		return Requirements{Git: true, Root: true, Config: true}

@@ -68,6 +68,20 @@ type TreeItem struct {
 	Hash string
 }
 
+type MergeTreeResult struct {
+	Tree    string
+	Details string
+}
+
+var blockingOperationSentinels = []string{
+	"MERGE_HEAD",
+	"CHERRY_PICK_HEAD",
+	"REVERT_HEAD",
+	"REBASE_HEAD",
+	"rebase-merge",
+	"rebase-apply",
+}
+
 func New(workDir string, verbose bool, trace io.Writer) Git {
 	return Git{
 		Runner: Runner{
@@ -166,6 +180,39 @@ func (g Git) StatusPorcelain(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return result.Stdout, nil
+}
+
+func (g Git) StatusPorcelainPathspecs(ctx context.Context, pathspecs ...string) (string, error) {
+	args := []string{"status", "--porcelain", "--"}
+	args = append(args, pathspecs...)
+	result, err := g.RunOK(ctx, args...)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
+func (g Git) BlockingOperation(ctx context.Context) (string, bool, error) {
+	result, err := g.RunOK(ctx, "ls-files", "-u")
+	if err != nil {
+		return "", false, err
+	}
+	if strings.TrimSpace(result.Stdout) != "" {
+		return "unmerged index entries", true, nil
+	}
+
+	for _, sentinel := range blockingOperationSentinels {
+		path, err := g.gitPath(ctx, sentinel)
+		if err != nil {
+			return "", false, err
+		}
+		if _, err := os.Stat(path); err == nil {
+			return sentinel, true, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false, err
+		}
+	}
+	return "", false, nil
 }
 
 func (g Git) RemoteURL(ctx context.Context, remote string) (string, bool, error) {
@@ -269,6 +316,14 @@ func (g Git) Add(ctx context.Context, path string) error {
 	return err
 }
 
+func (g Git) HashFile(ctx context.Context, path string) (TreeItem, error) {
+	hash, err := g.Output(ctx, "hash-object", "-w", "--", path)
+	if err != nil {
+		return TreeItem{}, err
+	}
+	return TreeItem{Mode: "100644", Type: "blob", Hash: hash}, nil
+}
+
 func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
 	result, err := g.Run(ctx, "commit", "--no-verify", "-m", message)
 	if err != nil {
@@ -281,6 +336,22 @@ func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
 		return false, nil
 	}
 	return false, &ExitError{Result: result}
+}
+
+func (g Git) CommitTreeWithTemporaryIndex(ctx context.Context, treeish, message string) (bool, error) {
+	dir, err := os.MkdirTemp("", "braid-index")
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
+
+	tempGit := g.withIndex(filepath.Join(dir, "index"))
+	if err := tempGit.ReadTreeIndexMerge(ctx, treeish); err != nil {
+		return false, err
+	}
+	return tempGit.CommitMessage(ctx, message)
 }
 
 func (g Git) ResetHard(ctx context.Context, target string) error {
@@ -301,6 +372,24 @@ func (g Git) UpdateRef(ctx context.Context, args ...string) error {
 
 func (g Git) ReadTreeUpdateMerge(ctx context.Context, treeish string) error {
 	_, err := g.RunOK(ctx, "read-tree", "-um", treeish)
+	return err
+}
+
+func (g Git) RestorePathspecsFromHead(ctx context.Context, pathspecs ...string) error {
+	return g.RestorePathspecsFromTree(ctx, "HEAD", true, true, pathspecs...)
+}
+
+func (g Git) RestorePathspecsFromTree(ctx context.Context, treeish string, staged, worktree bool, pathspecs ...string) error {
+	args := []string{"restore", "--source=" + treeish}
+	if staged {
+		args = append(args, "--staged")
+	}
+	if worktree {
+		args = append(args, "--worktree")
+	}
+	args = append(args, "--")
+	args = append(args, pathspecs...)
+	_, err := g.RunOK(ctx, args...)
 	return err
 }
 
@@ -328,9 +417,7 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 		_ = os.RemoveAll(dir)
 	}()
 
-	tempGit := g
-	tempGit.Runner.Env = copyEnv(g.Runner.Env)
-	tempGit.Runner.Env["GIT_INDEX_FILE"] = filepath.Join(dir, "index")
+	tempGit := g.withIndex(filepath.Join(dir, "index"))
 
 	if mainContent != "" && itemPath != "" {
 		// Use a temporary index to compose synthetic trees without disturbing the caller's index.
@@ -355,6 +442,18 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 		return "", fmt.Errorf("tree item type %q is not supported", item.Type)
 	}
 	return tempGit.Output(ctx, "write-tree")
+}
+
+func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (MergeTreeResult, error) {
+	result, runErr := g.Run(ctx, "merge-tree", "--write-tree", "--messages", "--merge-base="+baseTreeish, localTreeish, remoteTreeish)
+	parsed := parseMergeTreeOutput(result.Stdout)
+	if runErr != nil {
+		return parsed, runErr
+	}
+	if result.ExitCode != 0 {
+		return parsed, &ExitError{Result: result}
+	}
+	return parsed, nil
 }
 
 func (g Git) MergeTrees(ctx context.Context, env map[string]string, baseTreeish, localTreeish, remoteTreeish string) (string, error) {
@@ -390,6 +489,42 @@ func (g Git) LsFiles(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	return result.Stdout, nil
+}
+
+func (g Git) withIndex(indexPath string) Git {
+	tempGit := g
+	tempGit.Runner.Env = copyEnv(g.Runner.Env)
+	tempGit.Runner.Env["GIT_INDEX_FILE"] = indexPath
+	return tempGit
+}
+
+func (g Git) gitPath(ctx context.Context, path string) (string, error) {
+	gitPath, err := g.RepoFilePath(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(gitPath) {
+		return gitPath, nil
+	}
+	return filepath.Join(workDir(g.Runner.WorkDir), gitPath), nil
+}
+
+func workDir(value string) string {
+	if value == "" {
+		return "."
+	}
+	return value
+}
+
+func parseMergeTreeOutput(output string) MergeTreeResult {
+	first, rest, ok := strings.Cut(output, "\n")
+	if !ok {
+		return MergeTreeResult{Tree: strings.TrimSpace(output)}
+	}
+	return MergeTreeResult{
+		Tree:    strings.TrimSpace(first),
+		Details: rest,
+	}
 }
 
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
