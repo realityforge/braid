@@ -63,8 +63,8 @@ tasks:
       - command: bazel test //internal/gitexec:gitexec_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
   - id: T02
     title: Normalize command local_path inputs to repo-root paths
@@ -94,8 +94,8 @@ tasks:
       - command: bazel test //internal/command:command_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
   - id: T03
     title: Run Braid-owned Git and config operations from the worktree root
@@ -124,8 +124,8 @@ tasks:
       - command: bazel test //internal/command:command_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
   - id: T04
     title: Preserve diff passthrough and subdirectory conflict instructions
@@ -152,8 +152,8 @@ tasks:
       - command: bazel test //internal/command:command_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
   - id: T05
     title: Add integration coverage for subdirectory workflows
@@ -174,8 +174,8 @@ tasks:
       - command: bazel test //integration:braid_integration_test
         result: pass
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
   - id: T06
     title: Update README and run full validation
@@ -207,8 +207,8 @@ tasks:
       - command: bazel test //...
         result: pass; post-format full gate
     commit:
-      hash: pending
-      message: pending
+      hash: ce71114f202aafb8cf73e86c2077c612c07224f4
+      message: "feat(command): support subdirectory execution"
 
 history:
   - timestamp: "2026-06-20"
@@ -231,3 +231,7 @@ history:
     task: PLAN-APPROVAL
     commit: not_required
     note: User approved implementation in a subagent after iterative plan review completed.
+  - timestamp: "2026-06-20"
+    task: T01-T06
+    commit: ce71114f202aafb8cf73e86c2077c612c07224f4
+    note: Implemented accepted subdirectory execution plan and passed targeted and full Bazel gates.
