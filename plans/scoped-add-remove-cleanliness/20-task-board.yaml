@@ -264,3 +264,7 @@ history:
     task: T07
     commit: b84e6ce
     note: Recorded targeted and full Bazel validation evidence; final working tree audit completed.
+  - timestamp: 2026-06-20
+    task: PIR-R1
+    commit: not_required
+    note: Fixed implementation-review findings for add precheck ordering and post-commit failure-path tests; targeted gates and bazel test //... passed.

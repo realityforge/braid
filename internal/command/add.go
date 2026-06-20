@@ -47,13 +47,6 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 	}
 
 	addOptions := inv.Add
-	if addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
-		branch, err := defaultBranch(ctx, git, addOptions.URL)
-		if err != nil {
-			return err
-		}
-		addOptions.Branch = branch
-	}
 	if addOptions.Revision != "" {
 		addOptions.Branch = ""
 	}
@@ -68,7 +61,7 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 	if err != nil {
 		return err
 	}
-	if err := validateNewMirror(cfg, m); err != nil {
+	if err := validateNewMirrorPath(cfg, m); err != nil {
 		return err
 	}
 	if mirrorOverlapsConfig(m.Path) {
@@ -78,6 +71,18 @@ func (h AddHandler) add(ctx context.Context, git AddGit, inv cli.Invocation, tra
 		return err
 	}
 	if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options), m.Path); err != nil {
+		return err
+	}
+
+	if addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
+		branch, err := defaultBranch(ctx, git, addOptions.URL)
+		if err != nil {
+			return err
+		}
+		addOptions.Branch = branch
+		m.Branch = branch
+	}
+	if err := validateNewMirrorRemote(cfg, m); err != nil {
 		return err
 	}
 
@@ -173,7 +178,7 @@ func defaultBranch(ctx context.Context, git AddGit, url string) (string, error) 
 	return targets[0], nil
 }
 
-func validateNewMirror(cfg config.Config, candidate mirror.Mirror) error {
+func validateNewMirrorPath(cfg config.Config, candidate mirror.Mirror) error {
 	if err := pathcheck.ValidateLocal(candidate.Path, cfg.Paths()); err != nil {
 		return err
 	}
@@ -182,6 +187,10 @@ func validateNewMirror(cfg config.Config, candidate mirror.Mirror) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func validateNewMirrorRemote(cfg config.Config, candidate mirror.Mirror) error {
 	existing := make([]mirror.Mirror, 0, len(cfg.Mirrors))
 	for _, localPath := range cfg.Paths() {
 		existing = append(existing, cfg.Mirrors[localPath])

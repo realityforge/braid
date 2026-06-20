@@ -2,12 +2,16 @@ package command
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"braid/internal/cli"
 	"braid/internal/config"
+	"braid/internal/gitexec"
 	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
@@ -231,6 +235,24 @@ func TestAddCommandScopedPrecheckBlocksDirtyConfig(t *testing.T) {
 	assertContains(t, stderr, "local changes are present in .braids.json")
 }
 
+func TestAddCommandScopedPrecheckRunsBeforeDefaultBranchLookup(t *testing.T) {
+	repo := initDownstream(t)
+	cfg := config.Empty()
+	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	testutil.Git(t, repo, "add", config.FileName)
+	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":1,\"mirrors\":{}}\n")
+
+	missingUpstream := filepath.Join(t.TempDir(), "missing-upstream")
+	stderr := runCommandError(t, repo, []string{"add", missingUpstream, "vendor/basic"})
+	assertContains(t, stderr, "local changes are present in .braids.json")
+	if strings.Contains(stderr, "failed to detect default branch") || strings.Contains(stderr, "ls-remote") {
+		t.Fatalf("stderr = %q, want local scoped precheck before default branch lookup", stderr)
+	}
+}
+
 func TestAddCommandScopedPrecheckBlocksUnavailableTargets(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -394,6 +416,46 @@ func TestAddCommandMissingUpstreamPathCleansUpTemporaryRemote(t *testing.T) {
 	assertClean(t, repo)
 }
 
+func TestAddCommandReportsPostCommitRestoreFailure(t *testing.T) {
+	repo := initDownstream(t)
+	git := &fakeAddGit{restoreErr: errors.New("restore failed")}
+	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
+		context.Background(),
+		git,
+		cli.Invocation{
+			Global: cli.GlobalOptions{NoCache: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
+		},
+		new(bytes.Buffer),
+	)
+	if err == nil || !strings.Contains(err.Error(), "restore failed") {
+		t.Fatalf("add error = %v, want restore failure", err)
+	}
+	if !git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was not called before restore failure")
+	}
+}
+
+func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
+	repo := initDownstream(t)
+	git := &fakeAddGit{remoteRemoveErr: errors.New("remove remote failed")}
+	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
+		context.Background(),
+		git,
+		cli.Invocation{
+			Global: cli.GlobalOptions{NoCache: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
+		},
+		new(bytes.Buffer),
+	)
+	if err == nil || !strings.Contains(err.Error(), `add committed but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+		t.Fatalf("add error = %v, want post-commit remote cleanup failure", err)
+	}
+	if !git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was not called before remote cleanup failure")
+	}
+}
+
 func initDownstream(t *testing.T) string {
 	t.Helper()
 	repo := testutil.InitRepo(t)
@@ -501,3 +563,56 @@ func writePostCommitHook(t *testing.T, repo string) {
 		t.Fatalf("write post-commit hook: %v", err)
 	}
 }
+
+type fakeAddGit struct {
+	remoteRemoveErr error
+	restoreErr      error
+	committed       bool
+}
+
+func (f *fakeAddGit) RequireVersion(context.Context, string) error { return nil }
+func (f *fakeAddGit) IsInsideWorkTree(context.Context) (bool, error) {
+	return true, nil
+}
+func (f *fakeAddGit) RelativeWorkingDir(context.Context) (string, error) { return "", nil }
+func (f *fakeAddGit) RemoteURL(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
+func (f *fakeAddGit) RemoteAdd(context.Context, string, string) error { return nil }
+func (f *fakeAddGit) RemoteRemove(context.Context, string) error {
+	return f.remoteRemoveErr
+}
+func (f *fakeAddGit) RevParse(context.Context, string) (string, error) {
+	return "abcdef1234567890", nil
+}
+func (f *fakeAddGit) LsRemote(context.Context, ...string) (string, error) {
+	return "ref: refs/heads/main\tHEAD\n", nil
+}
+func (f *fakeAddGit) Fetch(context.Context, ...string) error { return nil }
+func (f *fakeAddGit) LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error) {
+	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "blob"}, nil
+}
+func (f *fakeAddGit) LsFiles(context.Context, string) (string, error) {
+	return "", nil
+}
+func (f *fakeAddGit) StatusPorcelainPathspecs(context.Context, ...string) (string, error) {
+	return "", nil
+}
+func (f *fakeAddGit) BlockingOperation(context.Context) (string, bool, error) {
+	return "", false, nil
+}
+func (f *fakeAddGit) HashBytes(context.Context, []byte) (gitexec.TreeItem, error) {
+	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "config"}, nil
+}
+func (f *fakeAddGit) MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error) {
+	return "tree", nil
+}
+func (f *fakeAddGit) CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error) {
+	f.committed = true
+	return true, nil
+}
+func (f *fakeAddGit) RestorePathspecsFromHead(context.Context, ...string) error {
+	return f.restoreErr
+}
+
+var _ AddGit = (*fakeAddGit)(nil)

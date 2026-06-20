@@ -1,12 +1,16 @@
 package command
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"braid/internal/cli"
 	"braid/internal/config"
+	"braid/internal/gitexec"
 	"braid/internal/testutil"
 )
 
@@ -222,6 +226,66 @@ func TestRemoveCommandBlocksUnresolvedGitOperationBeforeScopedStatus(t *testing.
 	assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
 }
 
+func TestRemoveCommandReportsPostCommitRestoreFailure(t *testing.T) {
+	repo := initDownstream(t)
+	writeRemoveMirrorConfig(t, repo)
+	git := &fakeRemoveGit{restoreErr: errors.New("restore failed")}
+
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	if err == nil || !strings.Contains(err.Error(), "restore failed") {
+		t.Fatalf("remove error = %v, want restore failure", err)
+	}
+	if !git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was not called before restore failure")
+	}
+}
+
+func TestRemoveCommandReportsPostCommitRemoteInspectFailure(t *testing.T) {
+	repo := initDownstream(t)
+	writeRemoveMirrorConfig(t, repo)
+	git := &fakeRemoveGit{remoteURLErr: errors.New("inspect failed")}
+
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to inspect Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "inspect failed") {
+		t.Fatalf("remove error = %v, want post-commit remote inspect failure", err)
+	}
+	if !git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was not called before remote inspect failure")
+	}
+}
+
+func TestRemoveCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
+	repo := initDownstream(t)
+	writeRemoveMirrorConfig(t, repo)
+	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
+
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+		t.Fatalf("remove error = %v, want post-commit remote cleanup failure", err)
+	}
+	if !git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was not called before remote cleanup failure")
+	}
+}
+
+func writeRemoveMirrorConfig(t *testing.T, repo string) {
+	t.Helper()
+	data := []byte(`{
+  "config_version": 1,
+  "mirrors": {
+    "vendor/basic": {
+      "url": "https://example.invalid/upstream.git",
+      "branch": "main",
+      "revision": "abcdef1234567890"
+    }
+  }
+}
+`)
+	if err := os.WriteFile(filepath.Join(repo, config.FileName), data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
 func assertPathMissing(t *testing.T, repo, relativePath string) {
 	t.Helper()
 	_, err := os.Stat(filepath.Join(repo, filepath.FromSlash(relativePath)))
@@ -240,3 +304,48 @@ func assertMirrorMissing(t *testing.T, repo, localPath string) {
 		t.Fatalf("mirror %q still exists in config", localPath)
 	}
 }
+
+type fakeRemoveGit struct {
+	remoteExists    bool
+	remoteURLErr    error
+	remoteRemoveErr error
+	restoreErr      error
+	committed       bool
+}
+
+func (f *fakeRemoveGit) RequireVersion(context.Context, string) error { return nil }
+func (f *fakeRemoveGit) IsInsideWorkTree(context.Context) (bool, error) {
+	return true, nil
+}
+func (f *fakeRemoveGit) RelativeWorkingDir(context.Context) (string, error) { return "", nil }
+func (f *fakeRemoveGit) RemoteURL(context.Context, string) (string, bool, error) {
+	return "https://example.invalid/upstream.git", f.remoteExists, f.remoteURLErr
+}
+func (f *fakeRemoveGit) RemoteAdd(context.Context, string, string) error { return nil }
+func (f *fakeRemoveGit) RemoteRemove(context.Context, string) error {
+	return f.remoteRemoveErr
+}
+func (f *fakeRemoveGit) StatusPorcelainPathspecs(context.Context, ...string) (string, error) {
+	return "", nil
+}
+func (f *fakeRemoveGit) BlockingOperation(context.Context) (string, bool, error) {
+	return "", false, nil
+}
+func (f *fakeRemoveGit) HashBytes(context.Context, []byte) (gitexec.TreeItem, error) {
+	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "config"}, nil
+}
+func (f *fakeRemoveGit) MakeTreeWithoutPath(context.Context, string, string) (string, error) {
+	return "without-mirror", nil
+}
+func (f *fakeRemoveGit) MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error) {
+	return "final-tree", nil
+}
+func (f *fakeRemoveGit) CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error) {
+	f.committed = true
+	return true, nil
+}
+func (f *fakeRemoveGit) RestorePathspecsFromHead(context.Context, ...string) error {
+	return f.restoreErr
+}
+
+var _ RemoveGit = (*fakeRemoveGit)(nil)
