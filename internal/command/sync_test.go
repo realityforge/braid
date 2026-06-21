@@ -242,6 +242,31 @@ func TestSyncCommandTargetValidationAndScopedPrecheckErrors(t *testing.T) {
 		assertContains(t, stderr, "local changes are present in .braids.json")
 	})
 
+	t.Run("dirty config with autostash", func(t *testing.T) {
+		upstream := testutil.InitRepo(t)
+		testutil.WriteFile(t, upstream, "README.md", "base\n")
+		testutil.CommitAll(t, upstream, "base")
+		repo := initDownstream(t)
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+		path := filepath.Join(repo, config.FileName)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if err := os.WriteFile(path, append(data, []byte(" \n")...), 0o644); err != nil {
+			t.Fatalf("dirty config: %v", err)
+		}
+		testutil.WriteFile(t, repo, "vendor/basic/README.md", "dirty\n")
+
+		stderr := runCommandError(t, repo, []string{"sync", "--autostash", "vendor/basic"})
+
+		assertContains(t, stderr, "local changes are present in .braids.json")
+		assertFile(t, repo, "vendor/basic/README.md", "dirty\n")
+		if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+			t.Fatalf("stash list = %q, want no autostash before config blocker", stashList)
+		}
+	})
+
 	t.Run("pull only dirty target", func(t *testing.T) {
 		upstream := testutil.InitRepo(t)
 		testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -254,6 +279,167 @@ func TestSyncCommandTargetValidationAndScopedPrecheckErrors(t *testing.T) {
 
 		assertContains(t, stderr, "local changes are present in vendor/basic")
 	})
+
+	t.Run("unresolved operation with autostash", func(t *testing.T) {
+		upstream := testutil.InitRepo(t)
+		testutil.WriteFile(t, upstream, "README.md", "base\n")
+		testutil.CommitAll(t, upstream, "base")
+		repo := initDownstream(t)
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+		testutil.WriteFile(t, repo, "vendor/basic/README.md", "dirty\n")
+		if err := os.WriteFile(filepath.Join(repo, ".git", "MERGE_HEAD"), []byte("abc123\n"), 0o644); err != nil {
+			t.Fatalf("write MERGE_HEAD: %v", err)
+		}
+
+		stderr := runCommandError(t, repo, []string{"sync", "--autostash", "vendor/basic"})
+
+		assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
+		assertFile(t, repo, "vendor/basic/README.md", "dirty\n")
+		if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+			t.Fatalf("stash list = %q, want no autostash before operation blocker", stashList)
+		}
+	})
+}
+
+func TestSyncCommandAutostashRestoresSelectedStateAndPreservesUnrelatedState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, ".gitignore", "vendor/basic/ignored.log\noutside-ignored.log\n")
+	testutil.WriteFile(t, repo, "outside.txt", "outside base\n")
+	testutil.Git(t, repo, "add", ".gitignore", "outside.txt")
+	testutil.Git(t, repo, "commit", "-m", "add ignore and outside file")
+
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "selected staged\n")
+	testutil.Git(t, repo, "add", "vendor/basic/README.md")
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "selected unstaged\n")
+	testutil.WriteFile(t, repo, "vendor/basic/new.txt", "new\n")
+	testutil.WriteFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
+	testutil.WriteFile(t, repo, "outside.txt", "outside staged\n")
+	testutil.Git(t, repo, "add", "outside.txt")
+	testutil.WriteFile(t, repo, "outside.txt", "outside unstaged\n")
+	testutil.WriteFile(t, repo, "outside-ignored.log", "outside ignored\n")
+	beforeOutsideStatus := testutil.Git(t, repo, "status", "--porcelain", "--ignored", "--", "outside.txt", "outside-ignored.log").Stdout
+
+	testutil.WriteFile(t, upstream, "remote.txt", "remote\n")
+	remoteRevision := testutil.CommitAll(t, upstream, "remote")
+
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
+
+	assertFile(t, repo, "vendor/basic/remote.txt", "remote\n")
+	if got := loadMirror(t, repo, "vendor/basic").Revision; got != remoteRevision {
+		t.Fatalf("revision = %q, want %q", got, remoteRevision)
+	}
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":vendor/basic/README.md").Stdout); got != "selected staged" {
+		t.Fatalf("staged selected README = %q, want selected staged", got)
+	}
+	assertFile(t, repo, "vendor/basic/README.md", "selected unstaged\n")
+	assertFile(t, repo, "vendor/basic/new.txt", "new\n")
+	assertFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
+	afterSelectedStatus := testutil.Git(t, repo, "status", "--porcelain", "--ignored", "--", "vendor/basic").Stdout
+	for _, want := range []string{"MM vendor/basic/README.md", "?? vendor/basic/new.txt", "!! vendor/basic/ignored.log"} {
+		assertContains(t, afterSelectedStatus, want)
+	}
+	afterOutsideStatus := testutil.Git(t, repo, "status", "--porcelain", "--ignored", "--", "outside.txt", "outside-ignored.log").Stdout
+	if afterOutsideStatus != beforeOutsideStatus {
+		t.Fatalf("outside status changed from %q to %q", beforeOutsideStatus, afterOutsideStatus)
+	}
+	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+		t.Fatalf("stash list = %q, want autostash dropped", stashList)
+	}
+}
+
+func TestSyncCommandAutostashIgnoredOnlyState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, ".gitignore", "vendor/basic/ignored.log\n")
+	testutil.Git(t, repo, "add", ".gitignore")
+	testutil.Git(t, repo, "commit", "-m", "ignore mirror log")
+	testutil.WriteFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
+	testutil.WriteFile(t, upstream, "remote.txt", "remote\n")
+	testutil.CommitAll(t, upstream, "remote")
+
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/basic"})
+
+	assertFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
+	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+		t.Fatalf("stash list = %q, want no autostash without flag", stashList)
+	}
+
+	testutil.WriteFile(t, upstream, "another.txt", "another\n")
+	testutil.CommitAll(t, upstream, "another")
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
+
+	assertFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
+	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+		t.Fatalf("stash list = %q, want autostash dropped", stashList)
+	}
+}
+
+func TestSyncCommandAutostashRestoresAfterOperationalFailure(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	cfg := config.Empty()
+	bogusRevision := strings.Repeat("0", 40)
+	if err := cfg.Add(mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: bogusRevision}); err != nil {
+		t.Fatalf("add mirror config: %v", err)
+	}
+	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "base\n")
+	testutil.Git(t, repo, "add", ".")
+	testutil.Git(t, repo, "commit", "-m", "configure broken mirror")
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "dirty\n")
+
+	stderr := runCommandError(t, repo, []string{"sync", "--autostash", "vendor/basic"})
+
+	assertContains(t, stderr, "recorded revision "+bogusRevision+" for vendor/basic is unavailable after hydration")
+	assertFile(t, repo, "vendor/basic/README.md", "dirty\n")
+	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
+		t.Fatalf("stash list = %q, want autostash restored and dropped", stashList)
+	}
+}
+
+func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local committed\n")
+	testutil.Git(t, repo, "add", "vendor/basic/README.md")
+	testutil.Git(t, repo, "commit", "-m", "local mirror change")
+	testutil.WriteFile(t, repo, "vendor/basic/note.txt", "saved work\n")
+	testutil.WriteFile(t, upstream, "README.md", "remote committed\n")
+	testutil.CommitAll(t, upstream, "remote mirror change")
+
+	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
+
+	assertContains(t, stdout, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, stderr, "Braid preserved autostash")
+	assertContains(t, stderr, "Resolve the Braid update conflict first")
+	assertContains(t, stderr, "git stash apply")
+	assertContains(t, stderr, "git restore --source=")
+	assertNoFile(t, repo, "vendor/basic/note.txt")
+	stashList := testutil.Git(t, repo, "stash", "list").Stdout
+	assertContains(t, stashList, "braid sync autostash")
+	data, err := os.ReadFile(filepath.Join(repo, "vendor", "basic", "README.md"))
+	if err != nil {
+		t.Fatalf("read conflicted README: %v", err)
+	}
+	assertContains(t, string(data), "<<<<<<<")
+	assertContains(t, string(data), "local committed")
+	assertContains(t, string(data), "remote committed")
 }
 
 func TestSyncCommandScopedPrecheckRunsBeforeSideEffects(t *testing.T) {

@@ -567,6 +567,17 @@ func assertFile(t *testing.T, repo, relativePath, want string) {
 	}
 }
 
+func assertNoFile(t *testing.T, repo, relativePath string) {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(repo, filepath.FromSlash(relativePath)))
+	if err == nil {
+		t.Fatalf("%s exists, want absent", relativePath)
+	}
+	if !os.IsNotExist(err) {
+		t.Fatalf("stat %s: %v", relativePath, err)
+	}
+}
+
 func assertCommitSubject(t *testing.T, repo, want string) {
 	t.Helper()
 	got := strings.TrimSpace(testutil.Git(t, repo, "log", "-1", "--pretty=%s").Stdout)

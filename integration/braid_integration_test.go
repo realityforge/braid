@@ -199,6 +199,55 @@ func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {
 	assertClean(t, env, downstream)
 }
 
+func TestExecutableSyncAutostashRestoresSelectedState(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "README.md", "base\n")
+	commitAll(t, env, upstream, "seed upstream")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	assertResult(t, add, 0, "", "")
+	writeFile(t, downstream, "outside.txt", "outside base\n")
+	gitOK(t, env, downstream, "add", "outside.txt")
+	gitOK(t, env, downstream, "commit", "-m", "add outside")
+
+	writeFile(t, downstream, "vendor/basic/README.md", "selected staged\n")
+	gitOK(t, env, downstream, "add", "vendor/basic/README.md")
+	writeFile(t, downstream, "vendor/basic/README.md", "selected unstaged\n")
+	writeFile(t, downstream, "outside.txt", "outside staged\n")
+	gitOK(t, env, downstream, "add", "outside.txt")
+	writeFile(t, downstream, "outside.txt", "outside unstaged\n")
+	outsideStatus := gitOK(t, env, downstream, "status", "--porcelain", "--", "outside.txt").stdout
+
+	writeFile(t, upstream, "remote.txt", "remote\n")
+	remoteRevision := commitAll(t, env, upstream, "remote update")
+	sync := runBraid(t, env, downstream, braid, "sync", "--pull-only", "--autostash", "vendor/basic")
+	assertResult(t, sync, 0, "", "")
+
+	assertFile(t, downstream, "vendor/basic/remote.txt", "remote\n")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
+	})
+	if got := strings.TrimSpace(gitOK(t, env, downstream, "show", ":vendor/basic/README.md").stdout); got != "selected staged" {
+		t.Fatalf("staged selected README = %q, want selected staged", got)
+	}
+	assertFile(t, downstream, "vendor/basic/README.md", "selected unstaged\n")
+	if got := gitOK(t, env, downstream, "status", "--porcelain", "--", "outside.txt").stdout; got != outsideStatus {
+		t.Fatalf("outside status changed from %q to %q", outsideStatus, got)
+	}
+	if stashList := strings.TrimSpace(gitOK(t, env, downstream, "stash", "list").stdout); stashList != "" {
+		t.Fatalf("stash list = %q, want autostash dropped", stashList)
+	}
+}
+
 func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 	root := t.TempDir()
 	env := newProcessEnv(t, root)

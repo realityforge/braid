@@ -66,12 +66,11 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	autostash, err := h.prepareSyncAutostash(ctx, repo, git, targets, inv.Sync.Autostash)
+	cache, err := runtimeCache(inv.Global)
 	if err != nil {
 		return err
 	}
-
-	cache, err := runtimeCache(inv.Global)
+	autostash, err := h.prepareSyncAutostash(ctx, repo, git, targets, inv.Sync.Autostash)
 	if err != nil {
 		return err
 	}
@@ -196,6 +195,9 @@ func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext,
 				return nil, err
 			}
 		}
+		return nil, nil
+	}
+	if len(paths) == 0 {
 		return nil, nil
 	}
 	status, err := git.StatusPorcelainPathspecsWithIgnored(ctx, paths...)
