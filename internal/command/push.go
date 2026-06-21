@@ -135,13 +135,21 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 		return pushResult{Status: pushStatusNoLocalChanges}, nil
 	}
 
-	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr); err != nil {
+	provenanceTemplate, ok, provenanceErr := buildPushProvenanceTemplate(ctx, git, m)
+	if provenanceErr != nil {
+		warnPushProvenance(stderr, provenanceErr)
+	}
+	if !ok {
+		provenanceTemplate = pushProvenanceTemplate{}
+	}
+
+	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr, provenanceTemplate); err != nil {
 		return pushResult{}, err
 	}
 	return pushResult{Status: pushStatusPushed}, nil
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer, provenanceTemplate pushProvenanceTemplate) error {
 	tempDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -175,7 +183,12 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 	if err := tempGit.ReadTreeUpdateMerge(ctx, newTree); err != nil {
 		return err
 	}
-	if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
+	templatePath := preparePushProvenanceTemplate(ctx, tempGit, tempDir, provenanceTemplate, stderr)
+	if templatePath != "" {
+		if err := tempGit.CommitVerboseTemplate(ctx, templatePath, stdin, stdout, stderr); err != nil {
+			return err
+		}
+	} else if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
 		return err
 	}
 	return tempGit.Push(ctx, m.URL, "HEAD:refs/heads/"+branch)
@@ -201,6 +214,26 @@ func copyLocalGitConfig(ctx context.Context, source PushGit, target gitexec.Git)
 		}
 	}
 	return nil
+}
+
+func preparePushProvenanceTemplate(ctx context.Context, tempGit gitexec.Git, tempDir string, template pushProvenanceTemplate, stderr io.Writer) string {
+	if template.Content == "" {
+		return ""
+	}
+	if err := tempGit.ConfigSet(ctx, "--local", "core.commentChar", template.CommentChar); err != nil {
+		warnPushProvenance(stderr, fmt.Errorf("set temporary core.commentChar: %w", err))
+		return ""
+	}
+	templatePath := filepath.Join(tempDir, "BRAID_COMMIT_TEMPLATE")
+	if err := os.WriteFile(templatePath, []byte(template.Content), 0o644); err != nil {
+		warnPushProvenance(stderr, fmt.Errorf("write temporary commit template: %w", err))
+		return ""
+	}
+	return templatePath
+}
+
+func warnPushProvenance(stderr io.Writer, err error) {
+	_, _ = fmt.Fprintf(stderr, "Braid: warning: push provenance guidance skipped: %v\n", err)
 }
 
 func writeAlternates(ctx context.Context, source PushGit, tempDir, sourceWorkDir string) error {

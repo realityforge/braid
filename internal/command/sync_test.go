@@ -46,6 +46,44 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	assertNoGitRemote(t, repo, "main_braid_vendor_basic")
 }
 
+func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	testutil.Git(t, upstreamA, "config", "receive.denyCurrentBranch", "updateInstead")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	testutil.CommitAll(t, upstreamB, "b base")
+	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
+	aCommit := commitAllWithMessage(t, repo, "local a sync")
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
+	bCommit := commitAllWithMessage(t, repo, "local b sync")
+	captureDir, editor := writeSequenceCapturingEditor(t, "Sync push")
+	t.Setenv("GIT_EDITOR", editor)
+
+	runCommandOK(t, repo, []string{"sync", "vendor/a", "vendor/b"})
+
+	first := readTestFile(t, filepath.Join(captureDir, "template-1.txt"))
+	second := readTestFile(t, filepath.Join(captureDir, "template-2.txt"))
+	assertContains(t, first, "# Braid downstream mirror commit guidance for vendor/a")
+	assertContains(t, first, "# Commit "+aCommit)
+	assertContains(t, first, "# local a sync")
+	assertNotContains(t, first, bCommit)
+	assertNotContains(t, first, "local b sync")
+	assertContains(t, second, "# Braid downstream mirror commit guidance for vendor/b")
+	assertContains(t, second, "# Commit "+bCommit)
+	assertContains(t, second, "# local b sync")
+	assertNotContains(t, second, aCommit)
+	assertNotContains(t, second, "local a sync")
+	assertFile(t, upstreamA, "README.md", "a local\n")
+	assertFile(t, upstreamB, "README.md", "b local\n")
+}
+
 func TestSyncCommandPullOnlyUpdatesWithoutPushing(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")

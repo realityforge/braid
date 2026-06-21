@@ -9,6 +9,7 @@ go_library(
         "path.go",
         "preflight.go",
         "push.go",
+        "push_provenance.go",
         "remove.go",
         "setup.go",
         "status.go",
@@ -42,6 +43,7 @@ go_test(
         "update_test.go",
     ],
     embed = [":command"],
+    timeout = "long",
     deps = [
         "//internal/cli",
         "//internal/config",

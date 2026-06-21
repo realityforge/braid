@@ -86,6 +86,11 @@ type RemoveGit interface {
 type PushGit interface {
 	UpdateGit
 	ConfigGet(context.Context, ...string) (string, bool, error)
+	CoreCommentChar(context.Context) (string, bool, error)
+	FirstParentCommits(context.Context, string) ([]string, error)
+	LogCommitsTouchingPath(context.Context, string, string) ([]gitexec.Commit, error)
+	ShowFile(context.Context, string, string) ([]byte, bool, error)
+	TreeItem(context.Context, string) (gitexec.TreeItem, error)
 }
 
 type Requirements struct {

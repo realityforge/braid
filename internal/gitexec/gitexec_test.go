@@ -234,6 +234,105 @@ func TestGitPreflightWrappers(t *testing.T) {
 	}
 }
 
+func TestCommitVerboseTemplateForcesCommentStrippingCleanup(t *testing.T) {
+	git := Git{Runner: helperRunner(t, nil)}
+
+	var stdout, stderr bytes.Buffer
+	if err := git.CommitVerbose(context.Background(), strings.NewReader("plain input\n"), &stdout, &stderr); err != nil {
+		t.Fatalf("CommitVerbose returned error: %v", err)
+	}
+	if got, want := strings.Split(strings.TrimSpace(stdout.String()), "\n"), []string{"commit", "-v"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("CommitVerbose args = %#v, want %#v", got, want)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := git.CommitVerboseTemplate(context.Background(), "/tmp/template.txt", strings.NewReader("template input\n"), &stdout, &stderr); err != nil {
+		t.Fatalf("CommitVerboseTemplate returned error: %v", err)
+	}
+	want := []string{"commit", "--cleanup=strip", "-v", "-t", "/tmp/template.txt"}
+	if got := strings.Split(strings.TrimSpace(stdout.String()), "\n"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("CommitVerboseTemplate args = %#v, want %#v", got, want)
+	}
+}
+
+func TestCoreCommentChar(t *testing.T) {
+	repo := initRealRepo(t)
+	git := New(repo, false, nil)
+
+	if value, ok, err := git.CoreCommentChar(context.Background()); err != nil || ok || value != "" {
+		t.Fatalf("unset CoreCommentChar = %q, %v, %v; want unset nil", value, ok, err)
+	}
+
+	realGit(t, repo, "config", "--local", "core.commentChar", ";")
+	if value, ok, err := git.CoreCommentChar(context.Background()); err != nil || !ok || value != ";" {
+		t.Fatalf("single-character CoreCommentChar = %q, %v, %v; want ; true nil", value, ok, err)
+	}
+
+	realGit(t, repo, "config", "--local", "core.commentChar", " ")
+	if value, ok, err := git.CoreCommentChar(context.Background()); err != nil || !ok || value != " " {
+		t.Fatalf("space CoreCommentChar = %q, %v, %v; want space true nil", value, ok, err)
+	}
+
+	realGit(t, repo, "config", "--local", "core.commentChar", "auto")
+	if value, ok, err := git.CoreCommentChar(context.Background()); err != nil || !ok || value != "auto" {
+		t.Fatalf("auto CoreCommentChar = %q, %v, %v; want auto true nil", value, ok, err)
+	}
+}
+
+func TestHistoryHelpersReadCommitsFilesAndTrees(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "mirror/file.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base mirror")
+	writeRealFile(t, repo, "mirror/file.txt", "changed\n")
+	realGit(t, repo, "commit", "-am", "change mirror", "-m", "body line\n\nlast line")
+	head := realGitOutput(t, repo, "rev-parse", "HEAD")
+
+	git := New(repo, false, nil)
+	commits, err := git.FirstParentCommits(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatalf("FirstParentCommits returned error: %v", err)
+	}
+	if len(commits) != 2 || commits[0] != head {
+		t.Fatalf("FirstParentCommits = %#v, want HEAD first", commits)
+	}
+
+	pathCommits, err := git.LogCommitsTouchingPath(context.Background(), "HEAD", "mirror/file.txt")
+	if err != nil {
+		t.Fatalf("LogCommitsTouchingPath returned error: %v", err)
+	}
+	if len(pathCommits) != 2 {
+		t.Fatalf("path commits = %#v, want two commits", pathCommits)
+	}
+	got := pathCommits[1]
+	if got.Hash != head || got.Subject != "change mirror" {
+		t.Fatalf("latest path commit = %#v, want head/change mirror", got)
+	}
+	if want := "change mirror\n\nbody line\n\nlast line"; got.Message != want {
+		t.Fatalf("commit message = %q, want %q", got.Message, want)
+	}
+
+	data, ok, err := git.ShowFile(context.Background(), "HEAD", "mirror/file.txt")
+	if err != nil {
+		t.Fatalf("ShowFile returned error: %v", err)
+	}
+	if !ok || string(data) != "changed\n" {
+		t.Fatalf("ShowFile = %q, %v; want changed true", data, ok)
+	}
+	if data, ok, err := git.ShowFile(context.Background(), "HEAD", "missing.txt"); err != nil || ok || data != nil {
+		t.Fatalf("missing ShowFile = %q, %v, %v; want nil false nil", data, ok, err)
+	}
+
+	item, err := git.TreeItem(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatalf("TreeItem returned error: %v", err)
+	}
+	if item.Mode != "040000" || item.Type != "tree" || item.Hash == "" {
+		t.Fatalf("TreeItem = %#v, want tree item", item)
+	}
+}
+
 func TestWorkTreeRootFromRootAndSubdirectory(t *testing.T) {
 	repo := initRealRepo(t)
 	subdir := filepath.Join(repo, "nested", "dir")
@@ -814,6 +913,11 @@ func TestHelperProcess(t *testing.T) {
 		}
 		helperFprintf(os.Stdout, "helper stdout: %s", input)
 		helperFprintf(os.Stderr, "helper stderr: %s", input)
+		os.Exit(helperExitCode())
+	case "commit":
+		for _, arg := range args {
+			helperFprintln(os.Stdout, arg)
+		}
 		os.Exit(helperExitCode())
 	case "argv":
 		for _, arg := range args {

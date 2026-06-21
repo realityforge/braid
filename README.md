@@ -319,7 +319,9 @@ Dirty `.braids.json` and unresolved Git operation state still stop before any
 autostash is created.
 
 Autostash does not push uncommitted mirror changes. The push phase still uses
-only the mirror content recorded in downstream `HEAD`.
+only the mirror content recorded in downstream `HEAD`. When sync pushes a
+changed branch mirror, the upstream commit editor receives the same commented
+downstream provenance guidance described for `braid push`.
 
 If sync reaches a Braid update conflict after creating an autostash, Braid
 leaves the stash intact instead of applying it over conflict markers. Resolve
@@ -362,6 +364,18 @@ braid sync vendor/rails --keep
 `braid push` creates an upstream commit from the mirror content recorded in your
 downstream `HEAD`, opens Git's commit editor for the upstream commit message, and
 pushes that commit.
+
+When available, the editor starts with commented guidance listing downstream
+commits that touched the mirror path since the last clean mirror state. The
+guidance includes full downstream commit messages so you can summarize, copy, or
+ignore the relevant context while writing the upstream commit message. Braid
+does not generate an upstream subject for you, and leaving the guidance in place
+does not add it to the final commit message.
+
+This guidance is best-effort. If Braid cannot compute it safely, or if
+`core.commentChar` is set to `auto`, Braid prints a warning and opens the editor
+without the provenance block; the push still proceeds through the normal commit
+and push checks.
 
 For branch mirrors, pushing without `--branch` targets the tracked branch:
 

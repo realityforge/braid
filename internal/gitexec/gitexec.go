@@ -68,6 +68,12 @@ type TreeItem struct {
 	Hash string
 }
 
+type Commit struct {
+	Hash    string
+	Subject string
+	Message string
+}
+
 type MergeTreeResult struct {
 	Tree    string
 	Details string
@@ -191,6 +197,18 @@ func (g Git) ConfigSet(ctx context.Context, args ...string) error {
 	gitArgs := append([]string{"config"}, args...)
 	_, err := g.RunOK(ctx, gitArgs...)
 	return err
+}
+
+func (g Git) CoreCommentChar(ctx context.Context) (string, bool, error) {
+	result, err := g.RunOK(ctx, "config", "--get", "core.commentChar")
+	if err != nil {
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1 {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return strings.TrimRight(result.Stdout, "\r\n"), true, nil
 }
 
 func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
@@ -426,6 +444,29 @@ func (g Git) LsTreeItem(ctx context.Context, treeish, path string) (TreeItem, er
 	return item, nil
 }
 
+func (g Git) TreeItem(ctx context.Context, treeish string) (TreeItem, error) {
+	hash, err := g.RevParse(ctx, treeish+"^{tree}")
+	if err != nil {
+		return TreeItem{}, err
+	}
+	return TreeItem{Mode: "040000", Type: "tree", Hash: hash}, nil
+}
+
+func (g Git) ShowFile(ctx context.Context, treeish, path string) ([]byte, bool, error) {
+	result, err := g.RunOK(ctx, "ls-tree", treeish, path)
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(result.Stdout) == "" {
+		return nil, false, nil
+	}
+	result, err = g.RunOK(ctx, "show", treeish+":"+path)
+	if err != nil {
+		return nil, false, err
+	}
+	return []byte(result.Stdout), true, nil
+}
+
 func (g Git) ReadTreePrefix(ctx context.Context, prefix, treeish string, updateWorktree bool) error {
 	mode := "-i"
 	if updateWorktree {
@@ -566,10 +607,47 @@ func (g Git) CommitVerbose(ctx context.Context, stdin io.Reader, stdout, stderr 
 	return err
 }
 
+func (g Git) CommitVerboseTemplate(ctx context.Context, templatePath string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if templatePath == "" {
+		return errors.New("commit template path is required")
+	}
+	_, err := g.Runner.RunInteractiveOK(ctx, stdin, stdout, stderr, "commit", "--cleanup=strip", "-v", "-t", templatePath)
+	return err
+}
+
 func (g Git) Push(ctx context.Context, args ...string) error {
 	gitArgs := append([]string{"push"}, args...)
 	_, err := g.RunOK(ctx, gitArgs...)
 	return err
+}
+
+func (g Git) FirstParentCommits(ctx context.Context, rev string) ([]string, error) {
+	if rev == "" {
+		return nil, errors.New("revision is required")
+	}
+	result, err := g.RunOK(ctx, "rev-list", "--first-parent", rev)
+	if err != nil {
+		return nil, err
+	}
+	return splitNonEmptyLines(result.Stdout), nil
+}
+
+func (g Git) LogCommitsTouchingPath(ctx context.Context, revisionRange, path string) ([]Commit, error) {
+	if path == "" {
+		return nil, errors.New("path is required")
+	}
+	args := []string{"log", "--full-history", "--reverse", "--format=%x1f%H%x00%s%x00%B%x1e"}
+	if revisionRange != "" {
+		args = append(args, revisionRange)
+	} else {
+		args = append(args, "HEAD")
+	}
+	args = append(args, "--", path)
+	result, err := g.RunOK(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseLogCommits(result.Stdout)
 }
 
 func (g Git) MakeTreeWithItem(ctx context.Context, itemPath string, item TreeItem) (string, error) {
@@ -728,6 +806,41 @@ func writePathspecFile(pathspecs []string) (string, func(), error) {
 		return "", func() {}, err
 	}
 	return path, cleanup, nil
+}
+
+func splitNonEmptyLines(output string) []string {
+	output = strings.TrimRight(output, "\n")
+	if output == "" {
+		return nil
+	}
+	return strings.Split(output, "\n")
+}
+
+func parseLogCommits(output string) ([]Commit, error) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, nil
+	}
+	records := strings.Split(output, "\x1e")
+	commits := make([]Commit, 0, len(records))
+	for _, record := range records {
+		record = strings.TrimPrefix(record, "\n")
+		record = strings.TrimPrefix(record, "\x1f")
+		record = strings.TrimSuffix(record, "\n")
+		if record == "" {
+			continue
+		}
+		fields := strings.SplitN(record, "\x00", 3)
+		if len(fields) != 3 {
+			return nil, fmt.Errorf("could not parse log commit record %q", record)
+		}
+		commits = append(commits, Commit{
+			Hash:    fields[0],
+			Subject: fields[1],
+			Message: strings.TrimSuffix(fields[2], "\n"),
+		})
+	}
+	return commits, nil
 }
 
 func stashSubjectMatchesMessage(subject, message string) bool {
