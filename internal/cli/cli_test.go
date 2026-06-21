@@ -97,6 +97,16 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a"}, PullOnly: true, Keep: true}},
 		},
 		{
+			name: "sync autostash",
+			args: []string{"sync", "--autostash", "vendor/a"},
+			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a"}, Autostash: true}},
+		},
+		{
+			name: "sync pull only autostash keep",
+			args: []string{"sync", "vendor/a", "--pull-only", "--autostash", "--keep"},
+			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a"}, PullOnly: true, Autostash: true, Keep: true}},
+		},
+		{
 			name: "setup",
 			args: []string{"--verbose", "setup", "vendor/repo", "--force"},
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandSetup, Setup: SetupOptions{LocalPath: "vendor/repo", Force: true}},
@@ -259,7 +269,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then update mirrors") {
 		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
 	}
-	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--keep]\n"; got != want {
+	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
 	}
 	for _, command := range []Command{

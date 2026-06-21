@@ -66,6 +66,7 @@ type PushOptions struct {
 type SyncOptions struct {
 	LocalPaths []string
 	PullOnly   bool
+	Autostash  bool
 	Keep       bool
 }
 
@@ -405,6 +406,7 @@ func parseSync(args []string, options *SyncOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandSync, args, []flagSpec{
 		boolFlag("--pull-only", "", func() { options.PullOnly = true }),
+		boolFlag("--autostash", "", func() { options.Autostash = true }),
 		boolFlag("--keep", "", func() { options.Keep = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
@@ -598,7 +600,7 @@ func CommandUsage(command Command) string {
 	case CommandPush:
 		return "usage: braid push <local_path> [--branch|-b <branch>] [--keep]\n"
 	case CommandSync:
-		return "usage: braid sync [local_path...] [--pull-only] [--keep]\n"
+		return "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"
 	case CommandSetup:
 		return "usage: braid setup [local_path] [--force|-f]\n"
 	case CommandVersion:
