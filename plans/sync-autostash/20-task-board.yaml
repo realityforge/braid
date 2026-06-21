@@ -211,6 +211,14 @@ tasks:
     evidence:
       - command: "bazel test //internal/command:command_test"
         result: "pass: 1 test target passed"
+      - command: "Iterative implementation review round 1"
+        result: "pass: accepted missing command coverage for partial update-conflict failure and cleanup failure as valid findings"
+      - command: "bazel test //internal/command:command_test --test_output=streamed --test_filter=TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash"
+        result: "pass: 1 test target passed"
+      - command: "bazel test //internal/command:command_test --test_output=streamed --test_filter=TestSyncCommandAutostashRestoreReportsCleanupFailureAfterApply"
+        result: "pass: 1 test target passed"
+      - command: "bazel test //internal/command:command_test --test_output=streamed --test_arg=-test.v"
+        result: "pass: 1 test target passed in 180.1s"
       - command: "bazel test //integration:braid_integration_test"
         result: "pass: 1 test target passed"
     commit:
@@ -238,6 +246,10 @@ tasks:
         result: "pass"
       - command: "bazel test //..."
         result: "pass: 10 test targets passed"
+      - command: "post-review git diff --check"
+        result: "pass"
+      - command: "post-review bazel test //..."
+        result: "pass: 10 test targets passed; 3 executed, 7 cached"
     commit:
       hash: 183375ff65ed9275d7557b7242e04ca18eb132e2
       message: "docs(readme): document sync autostash"

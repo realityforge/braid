@@ -34,6 +34,10 @@ type syncAutostashGit interface {
 	PushGit
 	StatusPorcelainPathspecsWithIgnored(context.Context, ...string) (string, error)
 	StashPushAllPathspecs(context.Context, string, ...string) (gitexec.StashEntry, bool, error)
+	syncAutostashRestoreGit
+}
+
+type syncAutostashRestoreGit interface {
 	StashApply(context.Context, string) error
 	RestoreStashIndexPathspecs(context.Context, string, ...string) error
 	DropStashEntry(context.Context, gitexec.StashEntry) (string, error)
@@ -217,7 +221,7 @@ func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext,
 	return &syncAutostash{Entry: entry, Paths: paths}, nil
 }
 
-func (h SyncHandler) restoreSyncAutostash(ctx context.Context, git syncAutostashGit, saved syncAutostash) error {
+func (h SyncHandler) restoreSyncAutostash(ctx context.Context, git syncAutostashRestoreGit, saved syncAutostash) error {
 	if err := git.StashApply(ctx, saved.Entry.OID); err != nil {
 		return fmt.Errorf("failed to restore braid sync autostash %s: %w. %s", saved.Entry.OID, err, manualAutostashRestoreInstructions(saved))
 	}

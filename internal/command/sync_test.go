@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -440,6 +441,100 @@ func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
 	assertContains(t, string(data), "<<<<<<<")
 	assertContains(t, string(data), "local committed")
 	assertContains(t, string(data), "remote committed")
+}
+
+func TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local committed\n")
+	testutil.Git(t, repo, "add", "vendor/basic/README.md")
+	testutil.Git(t, repo, "commit", "-m", "local mirror change")
+	testutil.WriteFile(t, repo, "vendor/basic/note.txt", "saved work\n")
+	testutil.WriteFile(t, upstream, "README.md", "remote committed\n")
+	testutil.CommitAll(t, upstream, "remote mirror change")
+	if err := os.Mkdir(filepath.Join(repo, ".git", "MERGE_MSG"), 0o755); err != nil {
+		t.Fatalf("create MERGE_MSG directory: %v", err)
+	}
+
+	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
+
+	assertContains(t, stdout, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, stderr, "update vendor/basic:")
+	assertContains(t, stderr, "MERGE_MSG")
+	assertContains(t, stderr, "Braid preserved autostash")
+	assertContains(t, stderr, "Resolve the Braid update conflict first")
+	assertNoFile(t, repo, "vendor/basic/note.txt")
+	stashList := testutil.Git(t, repo, "stash", "list").Stdout
+	assertContains(t, stashList, "braid sync autostash")
+	data, err := os.ReadFile(filepath.Join(repo, "vendor", "basic", "README.md"))
+	if err != nil {
+		t.Fatalf("read conflicted README: %v", err)
+	}
+	assertContains(t, string(data), "<<<<<<<")
+	assertContains(t, string(data), "local committed")
+	assertContains(t, string(data), "remote committed")
+}
+
+func TestSyncCommandAutostashRestoreReportsCleanupFailureAfterApply(t *testing.T) {
+	git := &fakeSyncAutostashRestoreGit{dropErr: errors.New("drop failed")}
+	saved := syncAutostash{
+		Entry: gitexec.StashEntry{OID: "abc123", Message: syncAutostashMessage},
+		Paths: []string{"vendor/basic"},
+	}
+
+	err := SyncHandler{}.restoreSyncAutostash(context.Background(), git, saved)
+
+	if err == nil {
+		t.Fatal("restoreSyncAutostash returned nil error for drop failure")
+	}
+	assertContains(t, err.Error(), "restored saved work from braid sync autostash abc123")
+	assertContains(t, err.Error(), "could not remove the stash entry")
+	assertContains(t, err.Error(), "The saved stash abc123 remains recoverable")
+	if !git.applied || !git.indexRestored || !git.dropAttempted {
+		t.Fatalf("restore calls applied=%v indexRestored=%v dropAttempted=%v, want all true", git.applied, git.indexRestored, git.dropAttempted)
+	}
+	if git.applyOID != saved.Entry.OID || git.restoreOID != saved.Entry.OID || git.dropEntry != saved.Entry {
+		t.Fatalf("restore used apply=%q restore=%q drop=%#v, want saved entry %#v", git.applyOID, git.restoreOID, git.dropEntry, saved.Entry)
+	}
+	if got := strings.Join(git.restorePaths, "\n"); got != "vendor/basic" {
+		t.Fatalf("restore paths = %q, want vendor/basic", got)
+	}
+}
+
+type fakeSyncAutostashRestoreGit struct {
+	applyErr      error
+	restoreErr    error
+	dropErr       error
+	applied       bool
+	indexRestored bool
+	dropAttempted bool
+	applyOID      string
+	restoreOID    string
+	restorePaths  []string
+	dropEntry     gitexec.StashEntry
+}
+
+func (f *fakeSyncAutostashRestoreGit) StashApply(_ context.Context, oid string) error {
+	f.applied = true
+	f.applyOID = oid
+	return f.applyErr
+}
+
+func (f *fakeSyncAutostashRestoreGit) RestoreStashIndexPathspecs(_ context.Context, oid string, paths ...string) error {
+	f.indexRestored = true
+	f.restoreOID = oid
+	f.restorePaths = append([]string(nil), paths...)
+	return f.restoreErr
+}
+
+func (f *fakeSyncAutostashRestoreGit) DropStashEntry(_ context.Context, entry gitexec.StashEntry) (string, error) {
+	f.dropAttempted = true
+	f.dropEntry = entry
+	return "", f.dropErr
 }
 
 func TestSyncCommandScopedPrecheckRunsBeforeSideEffects(t *testing.T) {
