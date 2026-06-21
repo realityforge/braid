@@ -299,7 +299,35 @@ revision mirrors, and do not print this skipped-mirror note.
 Before any fetch, push, editor, worktree write, config write, or update commit,
 `sync` checks unresolved Git operation state, `.braids.json`, and every selected
 mirror path for index and working tree changes. Dirty mirrors outside an
-explicit selection do not block that explicit sync.
+explicit selection do not block that explicit sync. Ignored-only files under a
+selected mirror do not block the default check.
+
+Use `--autostash` when selected mirror paths have uncommitted work that should
+be carried across the sync:
+
+```bash
+braid sync --autostash vendor/rails
+braid sync --pull-only --autostash vendor/rails
+```
+
+Autostash is path-scoped to the selected mirrors. It saves tracked staged
+changes, tracked unstaged changes, tracked deletions, untracked files, and
+ignored files under those selected mirror paths, then restores them after sync.
+Selected mirror-path index state is restored from the saved stash entry, while
+unrelated staged and unstaged files outside selected mirrors are left alone.
+Dirty `.braids.json` and unresolved Git operation state still stop before any
+autostash is created.
+
+Autostash does not push uncommitted mirror changes. The push phase still uses
+only the mirror content recorded in downstream `HEAD`.
+
+If sync reaches a Braid update conflict after creating an autostash, Braid
+leaves the stash intact instead of applying it over conflict markers. Resolve
+the Braid update first using the printed conflict instructions, then follow the
+printed recovery command to apply the saved stash and restore selected-path
+index state. If automatic restoration succeeds but the saved stash cannot be
+dropped safely, Braid leaves your restored work in place, keeps the stash
+recoverable, and tells you to inspect `git stash list` before manual cleanup.
 
 The default push phase only auto-pushes branch-tracking mirrors with committed
 local mirror changes. Branch mirrors without committed local changes are skipped
@@ -421,7 +449,7 @@ includes it.
 | `diff` | Show local mirror changes, with Git diff arguments after `--`. |
 | `update` | Update one mirror, or every branch/tag mirror when no path is given. |
 | `push` | Push committed local mirror changes upstream. |
-| `sync [local_path...] [--pull-only] [--keep]` | Push changed branch mirrors, then update selected mirrors. |
+| `sync [local_path...] [--pull-only] [--autostash] [--keep]` | Push changed branch mirrors, then update selected mirrors. |
 | `remove` | Remove mirrored content and config. |
 | `setup` | Add or refresh Braid-managed Git remotes. |
 | `version` | Print the Braid version. |
