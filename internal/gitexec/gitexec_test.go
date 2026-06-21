@@ -278,6 +278,261 @@ func TestStatusPorcelainPathspecsIgnoresUnrelatedPaths(t *testing.T) {
 	}
 }
 
+func TestStatusPorcelainPathspecsWithIgnoredReportsIgnoredOnlyState(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, ".gitignore", "target/ignored.log\n")
+	writeRealFile(t, repo, "target/tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+	writeRealFile(t, repo, "target/ignored.log", "ignored\n")
+
+	git := New(repo, false, nil)
+	defaultStatus, err := git.StatusPorcelainPathspecs(context.Background(), "target")
+	if err != nil {
+		t.Fatalf("StatusPorcelainPathspecs returned error: %v", err)
+	}
+	if defaultStatus != "" {
+		t.Fatalf("default status = %q, want ignored-only path omitted", defaultStatus)
+	}
+
+	ignoredStatus, err := git.StatusPorcelainPathspecsWithIgnored(context.Background(), "target")
+	if err != nil {
+		t.Fatalf("StatusPorcelainPathspecsWithIgnored returned error: %v", err)
+	}
+	if !strings.Contains(ignoredStatus, "!! target/ignored.log") {
+		t.Fatalf("ignored status = %q, want ignored path", ignoredStatus)
+	}
+}
+
+func TestStashPushAllPathspecsRestoresSelectedStateAndPreservesUnrelatedState(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, ".gitignore", "mirror/ignored.log\noutside-ignored.log\n")
+	writeRealFile(t, repo, "mirror/file.txt", "base\n")
+	writeRealFile(t, repo, "mirror/delete.txt", "delete\n")
+	writeRealFile(t, repo, "outside.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	writeRealFile(t, repo, "mirror/file.txt", "staged\n")
+	realGit(t, repo, "add", "mirror/file.txt")
+	writeRealFile(t, repo, "mirror/file.txt", "unstaged\n")
+	if err := os.Remove(filepath.Join(repo, "mirror", "delete.txt")); err != nil {
+		t.Fatalf("remove selected tracked file: %v", err)
+	}
+	writeRealFile(t, repo, "mirror/new.txt", "new\n")
+	writeRealFile(t, repo, "mirror/ignored.log", "ignored\n")
+	writeRealFile(t, repo, "outside.txt", "outside staged\n")
+	realGit(t, repo, "add", "outside.txt")
+	writeRealFile(t, repo, "outside.txt", "outside unstaged\n")
+	writeRealFile(t, repo, "outside-ignored.log", "outside ignored\n")
+
+	git := New(repo, false, nil)
+	entry, saved, err := git.StashPushAllPathspecs(context.Background(), "braid sync autostash test", "mirror")
+	if err != nil {
+		t.Fatalf("StashPushAllPathspecs returned error: %v", err)
+	}
+	if !saved {
+		t.Fatal("StashPushAllPathspecs saved = false, want true")
+	}
+	if entry.OID == "" || entry.Message != "braid sync autostash test" {
+		t.Fatalf("stash entry = %#v, want oid and message", entry)
+	}
+
+	selectedStatus, err := git.StatusPorcelainPathspecsWithIgnored(context.Background(), "mirror")
+	if err != nil {
+		t.Fatalf("selected status after stash returned error: %v", err)
+	}
+	if selectedStatus != "" {
+		t.Fatalf("selected status after stash = %q, want clean", selectedStatus)
+	}
+	assertNoRealFile(t, repo, "mirror/new.txt")
+	assertNoRealFile(t, repo, "mirror/ignored.log")
+	if got := readRealFile(t, repo, "mirror/delete.txt"); got != "delete\n" {
+		t.Fatalf("mirror/delete.txt after stash = %q, want restored tracked file", got)
+	}
+
+	outsideStatus, err := git.StatusPorcelainPathspecsWithIgnored(context.Background(), "outside.txt", "outside-ignored.log")
+	if err != nil {
+		t.Fatalf("outside status after stash returned error: %v", err)
+	}
+	if !strings.Contains(outsideStatus, "MM outside.txt") || !strings.Contains(outsideStatus, "!! outside-ignored.log") {
+		t.Fatalf("outside status after stash = %q, want staged/unstaged and ignored outside state", outsideStatus)
+	}
+	if got := realGitOutput(t, repo, "show", ":outside.txt"); got != "outside staged" {
+		t.Fatalf("staged outside.txt = %q, want outside staged", got)
+	}
+	if got := readRealFile(t, repo, "outside.txt"); got != "outside unstaged\n" {
+		t.Fatalf("worktree outside.txt = %q, want outside unstaged", got)
+	}
+
+	if err := git.StashApply(context.Background(), entry.OID); err != nil {
+		t.Fatalf("StashApply returned error: %v", err)
+	}
+	if err := git.RestoreStashIndexPathspecs(context.Background(), entry.OID, "mirror"); err != nil {
+		t.Fatalf("RestoreStashIndexPathspecs returned error: %v", err)
+	}
+	restoredStatus, err := git.StatusPorcelainPathspecsWithIgnored(context.Background(), "mirror")
+	if err != nil {
+		t.Fatalf("selected status after apply returned error: %v", err)
+	}
+	for _, want := range []string{"MM mirror/file.txt", " D mirror/delete.txt", "?? mirror/new.txt", "!! mirror/ignored.log"} {
+		if !strings.Contains(restoredStatus, want) {
+			t.Fatalf("selected status after apply = %q, want %q", restoredStatus, want)
+		}
+	}
+	if got := realGitOutput(t, repo, "show", ":mirror/file.txt"); got != "staged" {
+		t.Fatalf("staged mirror/file.txt = %q, want staged", got)
+	}
+	if got := readRealFile(t, repo, "mirror/file.txt"); got != "unstaged\n" {
+		t.Fatalf("worktree mirror/file.txt = %q, want unstaged", got)
+	}
+
+	selector, err := git.DropStashEntry(context.Background(), entry)
+	if err != nil {
+		t.Fatalf("DropStashEntry returned error: %v", err)
+	}
+	if selector == "" {
+		t.Fatal("DropStashEntry selector is empty")
+	}
+	entries, err := git.StashList(context.Background())
+	if err != nil {
+		t.Fatalf("StashList returned error: %v", err)
+	}
+	for _, stash := range entries {
+		if stash.OID == entry.OID {
+			t.Fatalf("stash list still contains dropped entry: %#v", entries)
+		}
+	}
+	outsideStatusAfterApply, err := git.StatusPorcelainPathspecsWithIgnored(context.Background(), "outside.txt", "outside-ignored.log")
+	if err != nil {
+		t.Fatalf("outside status after apply returned error: %v", err)
+	}
+	if outsideStatusAfterApply != outsideStatus {
+		t.Fatalf("outside status changed from %q to %q", outsideStatus, outsideStatusAfterApply)
+	}
+}
+
+func TestStashDropResolvesCurrentSelectorWithExistingUserStashes(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	writeRealFile(t, repo, "tracked.txt", "user before\n")
+	realGit(t, repo, "stash", "push", "-m", "user before")
+
+	writeRealFile(t, repo, "tracked.txt", "braid\n")
+	git := New(repo, false, nil)
+	entry, saved, err := git.StashPushAllPathspecs(context.Background(), "braid sync autostash selector test", "tracked.txt")
+	if err != nil {
+		t.Fatalf("StashPushAllPathspecs returned error: %v", err)
+	}
+	if !saved {
+		t.Fatal("StashPushAllPathspecs saved = false, want true")
+	}
+
+	writeRealFile(t, repo, "tracked.txt", "user after\n")
+	realGit(t, repo, "stash", "push", "-m", "user after")
+
+	selector, err := git.ResolveStashSelector(context.Background(), entry)
+	if err != nil {
+		t.Fatalf("ResolveStashSelector returned error: %v", err)
+	}
+	if selector != "stash@{1}" {
+		t.Fatalf("selector = %q, want stash@{1}", selector)
+	}
+	droppedSelector, err := git.DropStashEntry(context.Background(), entry)
+	if err != nil {
+		t.Fatalf("DropStashEntry returned error: %v", err)
+	}
+	if droppedSelector != selector {
+		t.Fatalf("dropped selector = %q, want %q", droppedSelector, selector)
+	}
+	entries, err := git.StashList(context.Background())
+	if err != nil {
+		t.Fatalf("StashList returned error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("stash entries = %#v, want two user stashes", entries)
+	}
+	for _, stash := range entries {
+		if stash.OID == entry.OID || strings.Contains(stash.Subject, "braid sync autostash selector test") {
+			t.Fatalf("stash list still contains Braid entry: %#v", entries)
+		}
+	}
+}
+
+func TestStashLookupErrorsLeaveEntriesRecoverable(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "tracked.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		writeRealFile(t, repo, "tracked.txt", "change\n")
+		git := New(repo, false, nil)
+		entry, saved, err := git.StashPushAllPathspecs(context.Background(), "braid sync autostash missing test", "tracked.txt")
+		if err != nil {
+			t.Fatalf("StashPushAllPathspecs returned error: %v", err)
+		}
+		if !saved {
+			t.Fatal("StashPushAllPathspecs saved = false, want true")
+		}
+		realGit(t, repo, "stash", "drop", "stash@{0}")
+
+		_, err = git.ResolveStashSelector(context.Background(), entry)
+		var lookupErr *StashLookupError
+		if !errors.As(err, &lookupErr) || len(lookupErr.Matches) != 0 {
+			t.Fatalf("ResolveStashSelector error = %#v, want missing StashLookupError", err)
+		}
+	})
+
+	t.Run("ambiguous", func(t *testing.T) {
+		repo := initRealRepo(t)
+		writeRealFile(t, repo, "tracked.txt", "base\n")
+		realGit(t, repo, "add", ".")
+		realGit(t, repo, "commit", "-m", "base")
+		writeRealFile(t, repo, "tracked.txt", "change\n")
+		git := New(repo, false, nil)
+		entry, saved, err := git.StashPushAllPathspecs(context.Background(), "braid sync autostash ambiguous test", "tracked.txt")
+		if err != nil {
+			t.Fatalf("StashPushAllPathspecs returned error: %v", err)
+		}
+		if !saved {
+			t.Fatal("StashPushAllPathspecs saved = false, want true")
+		}
+		_, err = resolveStashSelectorFromList(entry, []StashListEntry{
+			{Selector: "stash@{0}", OID: entry.OID, Subject: "On main: " + entry.Message},
+			{Selector: "stash@{1}", OID: entry.OID, Subject: "On main: " + entry.Message},
+		})
+		var lookupErr *StashLookupError
+		if !errors.As(err, &lookupErr) || len(lookupErr.Matches) != 2 {
+			t.Fatalf("ResolveStashSelector error = %#v, want ambiguous StashLookupError", err)
+		}
+		entries, listErr := git.StashList(context.Background())
+		if listErr != nil {
+			t.Fatalf("StashList returned error: %v", listErr)
+		}
+		if len(entries) != 1 || entries[0].OID != entry.OID {
+			t.Fatalf("stash entries = %#v, want saved entry recoverable", entries)
+		}
+	})
+}
+
+func TestStashPushAllPathspecsReturnsUnsavedForCleanPathspec(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+
+	entry, saved, err := New(repo, false, nil).StashPushAllPathspecs(context.Background(), "braid sync autostash clean test", "tracked.txt")
+	if err != nil {
+		t.Fatalf("StashPushAllPathspecs returned error: %v", err)
+	}
+	if saved || entry.OID != "" {
+		t.Fatalf("entry = %#v saved = %v, want no saved entry", entry, saved)
+	}
+}
+
 func TestBlockingOperationDetectsSentinelAndUnmergedEntries(t *testing.T) {
 	t.Run("sentinel", func(t *testing.T) {
 		repo := initRealRepo(t)
@@ -662,6 +917,17 @@ func readRealFile(t *testing.T, root, relativePath string) string {
 		t.Fatalf("read %s: %v", relativePath, err)
 	}
 	return string(data)
+}
+
+func assertNoRealFile(t *testing.T, root, relativePath string) {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(relativePath)))
+	if err == nil {
+		t.Fatalf("%s exists, want absent", relativePath)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat %s: %v", relativePath, err)
+	}
 }
 
 func helperExitCode() int {

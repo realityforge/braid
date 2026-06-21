@@ -73,6 +73,29 @@ type MergeTreeResult struct {
 	Details string
 }
 
+type StashEntry struct {
+	OID     string
+	Message string
+}
+
+type StashListEntry struct {
+	Selector string
+	OID      string
+	Subject  string
+}
+
+type StashLookupError struct {
+	Entry   StashEntry
+	Matches []StashListEntry
+}
+
+func (e *StashLookupError) Error() string {
+	if len(e.Matches) == 0 {
+		return fmt.Sprintf("could not find saved stash entry %s", e.Entry.OID)
+	}
+	return fmt.Sprintf("found multiple saved stash entries for %s", e.Entry.OID)
+}
+
 var blockingOperationSentinels = []string{
 	"MERGE_HEAD",
 	"CHERRY_PICK_HEAD",
@@ -194,6 +217,128 @@ func (g Git) StatusPorcelainPathspecs(ctx context.Context, pathspecs ...string) 
 		return "", err
 	}
 	return result.Stdout, nil
+}
+
+func (g Git) StatusPorcelainPathspecsWithIgnored(ctx context.Context, pathspecs ...string) (string, error) {
+	args := []string{"status", "--porcelain", "--ignored", "--"}
+	args = append(args, pathspecs...)
+	result, err := g.RunOK(ctx, args...)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
+func (g Git) StashPushAllPathspecs(ctx context.Context, message string, pathspecs ...string) (StashEntry, bool, error) {
+	if message == "" {
+		return StashEntry{}, false, errors.New("stash message is required")
+	}
+	if len(pathspecs) == 0 {
+		return StashEntry{}, false, errors.New("at least one stash pathspec is required")
+	}
+
+	pathspecFile, cleanup, err := writePathspecFile(pathspecs)
+	if err != nil {
+		return StashEntry{}, false, err
+	}
+	defer cleanup()
+
+	before, err := g.optionalRevParse(ctx, "refs/stash")
+	if err != nil {
+		return StashEntry{}, false, err
+	}
+	_, err = g.RunOK(ctx, "stash", "push", "--all", "-m", message, "--pathspec-from-file="+pathspecFile, "--pathspec-file-nul")
+	if err != nil {
+		return StashEntry{}, false, err
+	}
+	after, err := g.optionalRevParse(ctx, "refs/stash")
+	if err != nil {
+		return StashEntry{}, false, err
+	}
+	if after == "" || after == before {
+		return StashEntry{}, false, nil
+	}
+	return StashEntry{OID: after, Message: message}, true, nil
+}
+
+func (g Git) StashApply(ctx context.Context, ref string) error {
+	if ref == "" {
+		return errors.New("stash ref is required")
+	}
+	_, err := g.RunOK(ctx, "stash", "apply", ref)
+	return err
+}
+
+func (g Git) RestoreStashIndexPathspecs(ctx context.Context, stashOID string, pathspecs ...string) error {
+	if stashOID == "" {
+		return errors.New("stash oid is required")
+	}
+	if len(pathspecs) == 0 {
+		return errors.New("at least one stash index pathspec is required")
+	}
+	pathspecFile, cleanup, err := writePathspecFile(pathspecs)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	_, err = g.RunOK(ctx, "restore", "--source="+stashOID+"^2", "--staged", "--pathspec-from-file="+pathspecFile, "--pathspec-file-nul")
+	return err
+}
+
+func (g Git) StashList(ctx context.Context) ([]StashListEntry, error) {
+	result, err := g.RunOK(ctx, "stash", "list", "--format=%gd%x00%H%x00%gs")
+	if err != nil {
+		return nil, err
+	}
+	output := strings.TrimRight(result.Stdout, "\n")
+	if output == "" {
+		return nil, nil
+	}
+	lines := strings.Split(output, "\n")
+	entries := make([]StashListEntry, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.Split(line, "\x00")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("could not parse stash list entry %q", line)
+		}
+		entries = append(entries, StashListEntry{
+			Selector: parts[0],
+			OID:      parts[1],
+			Subject:  parts[2],
+		})
+	}
+	return entries, nil
+}
+
+func (g Git) ResolveStashSelector(ctx context.Context, entry StashEntry) (string, error) {
+	entries, err := g.StashList(ctx)
+	if err != nil {
+		return "", err
+	}
+	return resolveStashSelectorFromList(entry, entries)
+}
+
+func resolveStashSelectorFromList(entry StashEntry, entries []StashListEntry) (string, error) {
+	var matches []StashListEntry
+	for _, candidate := range entries {
+		if candidate.OID == entry.OID && stashSubjectMatchesMessage(candidate.Subject, entry.Message) {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 {
+		return "", &StashLookupError{Entry: entry, Matches: matches}
+	}
+	return matches[0].Selector, nil
+}
+
+func (g Git) DropStashEntry(ctx context.Context, entry StashEntry) (string, error) {
+	selector, err := g.ResolveStashSelector(ctx, entry)
+	if err != nil {
+		return "", err
+	}
+	_, err = g.RunOK(ctx, "stash", "drop", selector)
+	return selector, err
 }
 
 func (g Git) BlockingOperation(ctx context.Context) (string, bool, error) {
@@ -538,6 +683,55 @@ func (g Git) LsFiles(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	return result.Stdout, nil
+}
+
+func (g Git) optionalRevParse(ctx context.Context, rev string) (string, error) {
+	result, err := g.RunOK(ctx, "rev-parse", "--verify", "-q", rev)
+	if err != nil {
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+func writePathspecFile(pathspecs []string) (string, func(), error) {
+	file, err := os.CreateTemp("", "braid-pathspecs")
+	if err != nil {
+		return "", func() {}, err
+	}
+	path := file.Name()
+	cleanup := func() {
+		_ = os.Remove(path)
+	}
+	for _, pathspec := range pathspecs {
+		if strings.Contains(pathspec, "\x00") {
+			_ = file.Close()
+			cleanup()
+			return "", func() {}, fmt.Errorf("pathspec contains NUL byte: %q", pathspec)
+		}
+		if _, err := file.WriteString(pathspec); err != nil {
+			_ = file.Close()
+			cleanup()
+			return "", func() {}, err
+		}
+		if _, err := file.Write([]byte{0}); err != nil {
+			_ = file.Close()
+			cleanup()
+			return "", func() {}, err
+		}
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
+}
+
+func stashSubjectMatchesMessage(subject, message string) bool {
+	return subject == message || strings.HasSuffix(subject, ": "+message)
 }
 
 func (g Git) withIndex(indexPath string) Git {
