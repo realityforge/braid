@@ -1,5 +1,8 @@
 .DS_Store
 
+# Ignore release distribution directory
+/dist
+
 # Ignore temp directory
 /tmp
 
