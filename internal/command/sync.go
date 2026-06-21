@@ -46,7 +46,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	targets, err := h.syncTargets(repo, cfg, inv.Sync.LocalPaths)
+	targets, skippedLocked, err := h.syncTargets(repo, cfg, inv.Sync.LocalPaths)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 			return fmt.Errorf("update %s: %w", target.LocalPath, err)
 		}
 	}
-	return nil
+	return writeSkippedLockedMirrors(stdout, skippedLocked)
 }
 
 func (h SyncHandler) syncGit(repo RepoContext, inv cli.Invocation, trace io.Writer) PushGit {
@@ -91,17 +91,19 @@ func (h SyncHandler) syncGit(repo RepoContext, inv cli.Invocation, trace io.Writ
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths []string) ([]syncTarget, error) {
+func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths []string) ([]syncTarget, []string, error) {
 	if len(localPaths) == 0 {
 		targets := make([]syncTarget, 0, len(cfg.Mirrors))
+		var skippedLocked []string
 		for _, localPath := range cfg.Paths() {
 			m := cfg.Mirrors[localPath]
 			if m.Locked() {
+				skippedLocked = append(skippedLocked, localPath)
 				continue
 			}
 			targets = append(targets, syncTarget{LocalPath: localPath, Mirror: m})
 		}
-		return targets, nil
+		return targets, skippedLocked, nil
 	}
 
 	targets := make([]syncTarget, 0, len(localPaths))
@@ -109,19 +111,19 @@ func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths
 	for _, rawPath := range localPaths {
 		localPath, err := normalizeLocalPath(repo, rawPath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if _, ok := seen[localPath]; ok {
-			return nil, fmt.Errorf("duplicate sync path: %s", localPath)
+			return nil, nil, fmt.Errorf("duplicate sync path: %s", localPath)
 		}
 		seen[localPath] = struct{}{}
 		m, err := cfg.GetRequired(localPath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		targets = append(targets, syncTarget{LocalPath: localPath, Mirror: m})
 	}
-	return targets, nil
+	return targets, nil, nil
 }
 
 func (h SyncHandler) ensureSyncTargetsClean(ctx context.Context, repo RepoContext, git scopedCleanGit, targets []syncTarget) error {

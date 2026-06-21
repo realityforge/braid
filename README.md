@@ -228,14 +228,23 @@ Update one mirror to the newest revision for its tracked branch or tag:
 braid update vendor/rails
 ```
 
-Update every branch and tag mirror in `.braids.json`:
+Update every branch and tag mirror in lexicographic mirror path order:
 
 ```bash
 braid update
 ```
 
-Revision-locked mirrors are skipped by `braid update` without a path. Strategy
-changes require a local path:
+Revision-locked mirrors are skipped by `braid update` without a path. When any
+are skipped, a successful no-path update prints:
+
+```text
+Braid: skipped revision-locked mirrors:
+  vendor/a
+  vendor/z
+```
+
+Explicit-path updates do not print this skipped-mirror note. Strategy changes
+require a local path:
 
 ```bash
 braid update vendor/rails --revision <revision>
@@ -274,9 +283,18 @@ braid sync vendor/rails vendor/rack
 ```
 
 With no paths, `braid sync` selects every configured branch or tag mirror in
-`.braids.json` path order and skips revision-locked mirrors, matching no-path
-`braid update`. Explicit paths are processed in the order provided and may name
-branch, tag, or revision mirrors.
+lexicographic mirror path order and skips revision-locked mirrors, matching
+no-path `braid update`. When any revision-locked mirrors are skipped, successful
+no-path `braid sync` and `braid sync --pull-only` runs print:
+
+```text
+Braid: skipped revision-locked mirrors:
+  vendor/a
+  vendor/z
+```
+
+Explicit paths are processed in the order provided, may name branch, tag, or
+revision mirrors, and do not print this skipped-mirror note.
 
 Before any fetch, push, editor, worktree write, config write, or update commit,
 `sync` checks unresolved Git operation state, `.braids.json`, and every selected

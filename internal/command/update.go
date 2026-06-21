@@ -82,9 +82,11 @@ func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git Upda
 	}
 
 	var targets []string
+	var skippedLocked []string
 	for _, localPath := range cfg.Paths() {
 		m := cfg.Mirrors[localPath]
 		if m.Locked() {
+			skippedLocked = append(skippedLocked, localPath)
 			continue
 		}
 		targets = append(targets, localPath)
@@ -96,6 +98,21 @@ func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git Upda
 	for _, localPath := range targets {
 		if err := h.updateOne(ctx, repo, git, processGit, cache, localPath, options, verbose, stdout, trace); err != nil {
 			return fmt.Errorf("update %s: %w", localPath, err)
+		}
+	}
+	return writeSkippedLockedMirrors(stdout, skippedLocked)
+}
+
+func writeSkippedLockedMirrors(stdout io.Writer, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	if _, err := io.WriteString(stdout, "Braid: skipped revision-locked mirrors:\n"); err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if _, err := fmt.Fprintf(stdout, "  %s\n", path); err != nil {
+			return err
 		}
 	}
 	return nil

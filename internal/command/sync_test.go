@@ -75,7 +75,10 @@ func TestSyncCommandPullOnlyAllowsExplicitRevisionLockedMirror(t *testing.T) {
 	head := testutil.CurrentRevision(t, repo)
 	t.Setenv("GIT_EDITOR", writeFailingEditor(t))
 
-	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/revision"})
+	out := runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/revision"})
+	if out != "" {
+		t.Fatalf("sync stdout = %q, want quiet output", out)
+	}
 
 	if got := testutil.CurrentRevision(t, repo); got != head {
 		t.Fatalf("repo HEAD = %q, want unchanged %q", got, head)
@@ -109,7 +112,10 @@ func TestSyncCommandNoPathSelectsBranchAndTagMirrorsAndSkipsLocked(t *testing.T)
 	bRevision := testutil.CommitAll(t, upstreamB, "b remote")
 	testutil.Git(t, upstreamB, "tag", "-f", "v1")
 
-	runCommandOK(t, repo, []string{"sync", "--pull-only"})
+	out := runCommandOK(t, repo, []string{"sync", "--pull-only"})
+	if want := skippedLockedOutput("vendor/locked"); out != want {
+		t.Fatalf("sync stdout = %q, want %q", out, want)
+	}
 
 	if got := loadMirror(t, repo, "vendor/a").Revision; got != aRevision {
 		t.Fatalf("vendor/a revision = %q, want %q", got, aRevision)
@@ -125,6 +131,44 @@ func TestSyncCommandNoPathSelectsBranchAndTagMirrorsAndSkipsLocked(t *testing.T)
 	subjects := strings.Split(strings.TrimSpace(testutil.Git(t, repo, "log", "-2", "--pretty=%s").Stdout), "\n")
 	if len(subjects) != 2 || !strings.Contains(subjects[0], "vendor/b") || !strings.Contains(subjects[1], "vendor/a") {
 		t.Fatalf("last sync update subjects = %#v, want newest vendor/b then vendor/a", subjects)
+	}
+}
+
+func TestSyncCommandNoPathQuietWhenNoLockedMirrors(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	for _, args := range [][]string{
+		{"sync"},
+		{"sync", "--pull-only"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+			out := runCommandOK(t, repo, args)
+			if out != "" {
+				t.Fatalf("sync stdout = %q, want quiet output", out)
+			}
+		})
+	}
+}
+
+func TestSyncCommandAllLockedNoPathReportsSkippedMirrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"sync"},
+		{"sync", "--pull-only"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			repo := initDownstream(t)
+			writeLockedMirrorConfig(t, repo, "vendor/a", "vendor/z")
+
+			out := runCommandOK(t, repo, args)
+			if want := skippedLockedOutput("vendor/a", "vendor/z"); out != want {
+				t.Fatalf("sync stdout = %q, want %q", out, want)
+			}
+		})
 	}
 }
 
@@ -265,6 +309,26 @@ func TestSyncCommandNoPathScopedPrecheckRunsBeforeSideEffects(t *testing.T) {
 		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
 	}
 	assertNoGitRemote(t, repo, "main_braid_vendor_a")
+}
+
+func TestSyncCommandNoPathSuppressesSkippedMirrorOutputOnError(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	upstreamLocked := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamLocked, "README.md", "locked base\n")
+	lockedRevision := testutil.CommitAll(t, upstreamLocked, "locked base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamLocked, "vendor/locked", "--revision", lockedRevision})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "dirty a\n")
+
+	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync"})
+	assertContains(t, stderr, "local changes are present in vendor/a")
+	if stdout != "" {
+		t.Fatalf("sync stdout = %q, want quiet output on error", stdout)
+	}
 }
 
 func TestSyncCommandExplicitPrecheckIgnoresDirtyNonSelectedMirror(t *testing.T) {

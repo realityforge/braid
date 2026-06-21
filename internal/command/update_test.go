@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,49 @@ import (
 	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
+
+func skippedLockedOutput(paths ...string) string {
+	var out strings.Builder
+	out.WriteString("Braid: skipped revision-locked mirrors:\n")
+	for _, path := range paths {
+		out.WriteString("  ")
+		out.WriteString(path)
+		out.WriteString("\n")
+	}
+	return out.String()
+}
+
+func runCommandErrorWithOutput(t *testing.T, repo string, args []string) (string, string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Chdir(repo)
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{WorkDir: repo}).Run(args, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("braid %v succeeded unexpectedly, stdout = %q", args, stdout.String())
+	}
+	return stdout.String(), stderr.String()
+}
+
+func writeLockedMirrorConfig(t *testing.T, repo string, paths ...string) {
+	t.Helper()
+	cfg := config.Empty()
+	for _, path := range paths {
+		if err := cfg.Add(mirror.Mirror{
+			Path:     path,
+			URL:      filepath.Join(t.TempDir(), "missing-upstream"),
+			Revision: strings.Repeat("1", 40),
+		}); err != nil {
+			t.Fatalf("add locked mirror config: %v", err)
+		}
+	}
+	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	testutil.Git(t, repo, "add", config.FileName)
+	testutil.Git(t, repo, "commit", "-m", "configure locked mirrors")
+}
 
 func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	upstream := testutil.InitRepo(t)
@@ -198,6 +242,20 @@ func TestUpdateCommandIgnoresDirtyNonTargetMirrorForNoOpPathUpdate(t *testing.T)
 	assertFile(t, repo, "vendor/b/README.md", "dirty other mirror\n")
 }
 
+func TestUpdateCommandNoPathQuietWhenNoLockedMirrors(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	out := runCommandOK(t, repo, []string{"update"})
+	if out != "" {
+		t.Fatalf("update stdout = %q, want quiet output", out)
+	}
+}
+
 func TestUpdateCommandAllPrechecksEligibleMirrorsBeforeUpdating(t *testing.T) {
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
@@ -228,6 +286,26 @@ func TestUpdateCommandAllPrechecksEligibleMirrorsBeforeUpdating(t *testing.T) {
 	}
 }
 
+func TestUpdateCommandNoPathSuppressesSkippedMirrorOutputOnError(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	upstreamLocked := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamLocked, "README.md", "locked base\n")
+	lockedRevision := testutil.CommitAll(t, upstreamLocked, "locked base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamLocked, "vendor/locked", "--revision", lockedRevision})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "dirty a\n")
+
+	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"update"})
+	assertContains(t, stderr, "local changes are present in vendor/a")
+	if stdout != "" {
+		t.Fatalf("update stdout = %q, want quiet output on error", stdout)
+	}
+}
+
 func TestUpdateCommandAllSkipsLockedMirrorsBeforeScopedPrecheck(t *testing.T) {
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
@@ -241,8 +319,21 @@ func TestUpdateCommandAllSkipsLockedMirrorsBeforeScopedPrecheck(t *testing.T) {
 	runCommandOK(t, repo, []string{"add", upstreamLocked, "vendor/locked", "--revision", lockedRevision})
 	testutil.WriteFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
 
-	runCommandOK(t, repo, []string{"update"})
+	out := runCommandOK(t, repo, []string{"update"})
+	if want := skippedLockedOutput("vendor/locked"); out != want {
+		t.Fatalf("update stdout = %q, want %q", out, want)
+	}
 	assertFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
+}
+
+func TestUpdateCommandAllLockedNoPathReportsSkippedMirrors(t *testing.T) {
+	repo := initDownstream(t)
+	writeLockedMirrorConfig(t, repo, "vendor/a", "vendor/z")
+
+	out := runCommandOK(t, repo, []string{"update"})
+	if want := skippedLockedOutput("vendor/a", "vendor/z"); out != want {
+		t.Fatalf("update stdout = %q, want %q", out, want)
+	}
 }
 
 func TestUpdateCommandRejectsMirrorPathOverlappingConfig(t *testing.T) {
@@ -440,7 +531,7 @@ func TestUpdateCommandAllSkipsLockedAndUsesSortedOrder(t *testing.T) {
 	testutil.WriteFile(t, upstreamZ, "README.md", "z updated\n")
 	testutil.CommitAll(t, upstreamZ, "z updated")
 
-	runCommandOK(t, repo, []string{"update"})
+	out := runCommandOK(t, repo, []string{"update"})
 	if got := loadMirror(t, repo, "vendor/a").Revision; got != aRevision {
 		t.Fatalf("vendor/a revision = %q, want %q", got, aRevision)
 	}
@@ -449,6 +540,9 @@ func TestUpdateCommandAllSkipsLockedAndUsesSortedOrder(t *testing.T) {
 	}
 	if got := loadMirror(t, repo, "vendor/z").Revision; got != zBase {
 		t.Fatalf("vendor/z revision = %q, want locked %q", got, zBase)
+	}
+	if want := skippedLockedOutput("vendor/z"); out != want {
+		t.Fatalf("update stdout = %q, want %q", out, want)
 	}
 
 	subjects := strings.Split(strings.TrimSpace(testutil.Git(t, repo, "log", "-2", "--pretty=%s").Stdout), "\n")
@@ -540,6 +634,40 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	}
 	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
 		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+}
+
+func TestUpdateCommandNoPathWritesSkippedMirrorsAfterConflictOutput(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	upstreamLocked := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamLocked, "README.md", "locked base\n")
+	lockedRevision := testutil.CommitAll(t, upstreamLocked, "locked base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	runCommandOK(t, repo, []string{"add", upstreamLocked, "vendor/locked", "--revision", lockedRevision})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
+	testutil.CommitAll(t, repo, "local change")
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	testutil.CommitAll(t, upstream, "remote change")
+
+	out := runCommandOK(t, repo, []string{"update"})
+	conflictAt := strings.Index(out, "Braid: conflicts written to vendor/basic.")
+	if conflictAt < 0 {
+		t.Fatalf("update stdout = %q, want conflict instructions", out)
+	}
+	wantSkip := skippedLockedOutput("vendor/locked")
+	skipAt := strings.Index(out, wantSkip)
+	if skipAt < 0 {
+		t.Fatalf("update stdout = %q, want skipped mirror note %q", out, wantSkip)
+	}
+	if skipAt < conflictAt {
+		t.Fatalf("update stdout = %q, want skipped mirror note after conflict output", out)
+	}
+	if !strings.HasSuffix(out, wantSkip) {
+		t.Fatalf("update stdout = %q, want skipped mirror note suffix %q", out, wantSkip)
 	}
 }
 
