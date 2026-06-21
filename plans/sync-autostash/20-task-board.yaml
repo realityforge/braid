@@ -1,0 +1,317 @@
+meta:
+  project: braid sync autostash
+  plan_status: accepted
+  last_updated: "2026-06-21"
+  active_plan_tree: plans/sync-autostash
+  required_full_gates:
+    - bazel test //...
+  targeted_gates:
+    - bazel test //internal/cli:cli_test
+    - bazel test //internal/gitexec:gitexec_test
+    - bazel test //internal/command:command_test
+    - bazel test //integration:braid_integration_test
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: complete
+
+tasks:
+  - id: PLAN-QUESTIONS
+    title: Resolve autostash behavior questions
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Every `Q-*` item in `00-requirements.md` is resolved.
+      - Each resolved question records the selected option and artifacts updated.
+      - "`10-implementation-plan.md` Decision Log maps each resolved question to concrete plan changes."
+    files_touched:
+      - plans/sync-autostash/00-requirements.md
+      - plans/sync-autostash/01-autostash-behavior-deep-dive.md
+      - plans/sync-autostash/10-implementation-plan.md
+      - plans/sync-autostash/20-task-board.yaml
+    evidence:
+      - command: "Read structured-delivery-workflow and grill-me skill files"
+        result: pass
+      - command: "Inspected internal/command/sync.go and internal/command/update.go"
+        result: pass
+      - command: "git --version && git stash push -h"
+        result: "pass: git version 2.51.0; stash supports pathspec and include-untracked options"
+      - command: "temp-repo stash apply --index probe"
+        result: "pass: staged, unstaged, and untracked selected-path state restored"
+      - command: "User accepted Q-01 recommended flag name"
+        result: "pass: public flag is `--autostash` only"
+      - command: "User accepted Q-02 recommended pull-only behavior"
+        result: "pass: `--autostash` applies to both default sync and `sync --pull-only`"
+      - command: "temp-repo stash --all pathscope probe"
+        result: "pass: ignored files under selected path were captured; ignored files outside selected path were untouched"
+      - command: "User resolved Q-03 ignored-file behavior"
+        result: "pass: capture ignored files under selected mirror paths"
+      - command: "User accepted Q-04 recommended stash storage behavior"
+        result: "pass: use normal Git stash entry with exact-ref tracking and drop after successful restore only"
+      - command: "User accepted Q-05 recommended multi-target restoration timing"
+        result: "pass: one path-scoped stash before operational phases and one restore at command exit"
+      - command: "User accepted Q-06 recommended update-conflict behavior"
+        result: "pass: leave stash intact and instruct user to resolve Braid update before applying stash manually"
+      - command: "User accepted Q-07 recommended staged-change behavior"
+        result: "pass: staged selected mirror-path changes are allowed; implementation evidence later refined restoration to selected-path index restore from stash index parent"
+      - command: "Round 1 iterative plan review"
+        result: "pass: assessed four findings as valid and updated plan artifacts"
+      - command: "Round 2 iterative plan review"
+        result: "pass: assessed four findings as valid and updated plan artifacts"
+      - command: "Round 3 iterative plan review"
+        result: "pass: Findings: none"
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: PLAN-APPROVAL
+    title: Review and accept sync autostash plan
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-QUESTIONS
+    acceptance_criteria:
+      - User review of the latest plan is explicitly requested.
+      - User feedback is incorporated into planning artifacts.
+      - Approval outcome is recorded before implementation starts.
+      - Plan status is updated to accepted only after review outcome is recorded.
+    files_touched:
+      - plans/sync-autostash/00-requirements.md
+      - plans/sync-autostash/01-autostash-behavior-deep-dive.md
+      - plans/sync-autostash/10-implementation-plan.md
+      - plans/sync-autostash/20-task-board.yaml
+      - plans/sync-autostash/40-test-strategy.md
+    evidence:
+      - command: "User requested implementation in subagent"
+        result: "pass: reviewed plan accepted for implementation"
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T01
+    title: Add sync autostash CLI parsing and usage
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - The selected autostash flag is represented in `cli.SyncOptions`.
+      - The selected autostash flag parses for `braid sync`.
+      - Unknown or malformed sync flags retain existing parser diagnostics.
+      - Command usage documents the selected flag.
+      - CLI tests cover the new flag and existing sync parse behavior.
+    files_touched:
+      - internal/cli/cli.go
+      - internal/cli/cli_test.go
+    evidence:
+      - command: "bazel test //internal/cli:cli_test"
+        result: "pass: 1 test target passed"
+    commit:
+      hash: 2dc9ae88a7db879ae19a12ee8773bf3125b4b410
+      message: "feat(cli): parse sync autostash flag"
+
+  - id: T02
+    title: Add Git stash and ignored-aware status plumbing
+    status: completed
+    priority: high
+    depends_on:
+      - T01
+    acceptance_criteria:
+      - Git operations for path-scoped stash save are behind `internal/gitexec`.
+      - Git operations for stash worktree apply are behind `internal/gitexec`.
+      - Git operations for selected-path index restoration from the stash index parent are behind `internal/gitexec`.
+      - Git operations for resolving and dropping the saved stash entry are behind `internal/gitexec`.
+      - Stash save captures the created entry OID and identifying metadata.
+      - Stash drop resolves the current stash reflog selector for the saved entry before deleting it.
+      - Ambiguous or missing stash drop lookup leaves the stash recoverable with manual cleanup instructions.
+      - Ignored-aware selected-path status is available for autostash decisions.
+      - Pathspec handling is NUL-safe.
+      - Real Git tests cover staged, unstaged, deleted, untracked, and ignored path-scoped restoration.
+      - Tests cover existing stash entries so the implementation does not apply or drop the wrong entry.
+      - Tests prove ignored files outside selected pathspecs are not captured.
+      - Tests prove ignored-only selected mirror state is detected.
+      - Tests prove unrelated staged and unstaged paths outside selected pathspecs are preserved.
+      - Tests prove whole-stash `apply --index` is not used for restoration.
+    files_touched:
+      - internal/gitexec/gitexec.go
+      - internal/gitexec/gitexec_test.go
+      - internal/command/preflight.go
+    evidence:
+      - command: "bazel test //internal/gitexec:gitexec_test"
+        result: "pass: 1 test target passed"
+    commit:
+      hash: 55897243fcba70f6b14c0b27fb4a3e9866e26e25
+      message: "feat(gitexec): add scoped autostash plumbing"
+
+  - id: T03
+    title: Implement update status and sync autostash orchestration
+    status: completed
+    priority: high
+    depends_on:
+      - T02
+    acceptance_criteria:
+      - Sync without the flag preserves current dirty selected mirror behavior.
+      - Sync with the flag saves dirty selected mirror paths after immutable blockers pass and before sync side effects.
+      - Sync with the flag detects ignored-only selected mirror state before deciding whether to save.
+      - Dirty `.braids.json` still blocks even with the flag.
+      - Unresolved Git operation state still blocks even with the flag.
+      - Update internals return an explicit status for no-op, updated, and conflict outcomes.
+      - Sync detects update conflict status even when update exits successfully for existing public behavior.
+      - Update internals carry conflict status even when a later conflict-instruction or `MERGE_MSG` write returns an error.
+      - Existing `braid update` public conflict behavior remains covered.
+      - Sync with a saved autostash returns non-zero after update conflict state and leaves the stash intact.
+      - Sync suppresses automatic stash restore after partial update-conflict failure.
+      - Explicit sync only saves selected mirror paths.
+      - No-path sync only saves selected no-path targets.
+      - Sync restores saved worktree state and selected mirror-path index state when policy allows.
+      - Saved state is dropped only after successful restoration.
+      - Successful stash apply followed by unresolved stash drop returns a cleanup error with restored work preserved.
+      - Saved state remains recoverable with clear diagnostics when restoration is skipped or fails.
+    files_touched:
+      - internal/command/update.go
+      - internal/command/update_test.go
+      - internal/command/sync.go
+      - internal/command/sync_test.go
+      - internal/command/BUILD.bazel
+    evidence:
+      - command: "bazel test //internal/command:command_test"
+        result: "pass: 1 test target passed"
+    commit:
+      hash: 1017eed478ee205eed827c4c36788ec5d4573554
+      message: "feat(sync): orchestrate scoped autostash restore"
+
+  - id: T04
+    title: Add command and integration coverage
+    status: completed
+    priority: high
+    depends_on:
+      - T03
+    acceptance_criteria:
+      - Command tests cover no-flag dirty failure.
+      - Command tests cover staged plus unstaged restoration.
+      - Command tests cover untracked restoration.
+      - Command tests cover ignored-only selected mirror autostash.
+      - Command tests cover non-selected dirty mirror preservation.
+      - Command tests cover unrelated staged and unstaged paths outside selected mirrors.
+      - Command tests cover sync failure after save and restoration attempt.
+      - Command or integration tests cover update conflict policy, non-zero autostash sync exit, and recovery instructions.
+      - Command tests cover partial update-conflict failure after conflict state is written.
+      - Command tests cover successful stash apply followed by unresolved stash drop/cleanup.
+      - Command or integration coverage confirms existing `braid update` conflict behavior remains success with stdout instructions.
+      - Integration coverage proves a successful executable `sync --autostash` workflow.
+      - Targeted command and integration gates pass.
+    files_touched:
+      - internal/command/sync_test.go
+      - internal/command/update_test.go
+      - integration/braid_integration_test.go
+    evidence:
+      - command: "bazel test //internal/command:command_test"
+        result: "pass: 1 test target passed"
+      - command: "bazel test //integration:braid_integration_test"
+        result: "pass: 1 test target passed"
+    commit:
+      hash: 1c41c41ae7fb572d2398b4842bb756115ba5b6ba
+      message: "test(sync): cover autostash command workflows"
+
+  - id: T05
+    title: Update docs and run full gate
+    status: completed
+    priority: medium
+    depends_on:
+      - T04
+    acceptance_criteria:
+      - README documents the selected flag.
+      - README explains that tracked, untracked, and ignored selected mirror-path files are captured.
+      - README explains that uncommitted mirror changes are not pushed.
+      - README explains recovery behavior when restoration fails or is skipped.
+      - Full gate `bazel test //...` passes.
+      - "`git diff --check` passes."
+    files_touched:
+      - README.md
+      - plans/sync-autostash/20-task-board.yaml
+    evidence:
+      - command: "git diff --check"
+        result: "pass"
+      - command: "bazel test //..."
+        result: "pass: 10 test targets passed"
+    commit:
+      hash: 183375ff65ed9275d7557b7242e04ca18eb132e2
+      message: "docs(readme): document sync autostash"
+
+history:
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Draft plan tree created; open behavior questions recorded and first grill-me question pending user decision.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-01 resolved; public flag name is `--autostash`.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-02 resolved; `--autostash` applies to both default sync and sync --pull-only.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-03 resolved; ignored files under selected mirror paths are captured with path-scoped stash --all.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-04 resolved; autostash state uses a normal Git stash entry with exact-ref tracking.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-05 resolved; sync autostash uses one save before operational phases and one restore at command exit.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-06 resolved; update-conflict state leaves autostash intact and prints manual recovery instructions.
+  - timestamp: "2026-06-21"
+    task: PLAN-QUESTIONS
+    commit: not_required
+    note: Q-07 resolved; all open questions are resolved and the plan moved to approval review.
+  - timestamp: "2026-06-21"
+    task: T02
+    commit: not_required
+    note: Implementation issue I-01 recorded; whole-stash apply --index is unsafe with unrelated staged+unstaged paths, so restoration now uses apply without --index plus selected-path index restore from stash index parent.
+  - timestamp: "2026-06-21"
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Round 1 iterative plan review found four valid issues; plan updated for update status, ignored-aware dirty detection, stash drop identity, and unrelated index preservation coverage.
+  - timestamp: "2026-06-21"
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Round 2 iterative plan review found four valid issues; plan updated for update-conflict exit semantics, partial conflict-state failures, stash cleanup failure policy, and update refactor task scope.
+  - timestamp: "2026-06-21"
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: Round 3 iterative plan review reported no actionable findings.
+  - timestamp: "2026-06-21"
+    task: PLAN-APPROVAL
+    commit: not_required
+    note: User requested implementation in subagent; plan marked accepted and implementation moved to T01.
+  - timestamp: "2026-06-21"
+    task: T01
+    commit: 2dc9ae88a7db879ae19a12ee8773bf3125b4b410
+    note: Added sync --autostash CLI parsing and usage; bazel test //internal/cli:cli_test passed.
+  - timestamp: "2026-06-21"
+    task: T02
+    commit: 55897243fcba70f6b14c0b27fb4a3e9866e26e25
+    note: Added path-scoped stash save, non-index apply, selected-path index restore, safe stash drop lookup, and ignored-aware status plumbing; bazel test //internal/gitexec:gitexec_test passed.
+  - timestamp: "2026-06-21"
+    task: T03
+    commit: 1017eed478ee205eed827c4c36788ec5d4573554
+    note: Added update result statuses and sync autostash save/restore orchestration; bazel test //internal/command:command_test passed.
+  - timestamp: "2026-06-21"
+    task: T04
+    commit: 1c41c41ae7fb572d2398b4842bb756115ba5b6ba
+    note: Added command and executable integration coverage for sync --autostash workflows; command and integration targeted gates passed.
+  - timestamp: "2026-06-21"
+    task: T05
+    commit: 183375ff65ed9275d7557b7242e04ca18eb132e2
+    note: Updated README sync autostash docs; git diff --check and bazel test //... passed.
