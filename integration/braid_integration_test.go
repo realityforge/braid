@@ -167,6 +167,39 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	assertClean(t, env, downstream)
 }
 
+func TestExecutablePushProvenanceTemplateTouchesGitDefaultTemplate(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "README.md", "base\n")
+	commitAll(t, env, upstream, "seed upstream")
+	gitOK(t, env, upstream, "config", "--local", "receive.denyCurrentBranch", "updateInstead")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	assertResult(t, add, 0, "", "")
+
+	writeFile(t, downstream, "vendor/basic/README.md", "local\n")
+	localRevision := commitAll(t, env, downstream, "local mirror change")
+	capture, editor := capturingEditorCommand(t, root, "Executable push")
+	pushEnv := env.with("GIT_EDITOR", editor)
+
+	push := runBraid(t, pushEnv, downstream, braid, "push", "vendor/basic")
+	assertExit(t, push, 0)
+	assertEmpty(t, "push stderr", push.stderr)
+
+	template := readFile(t, root, filepath.Base(capture))
+	assertContains(t, template, "# Braid downstream mirror commit guidance for vendor/basic")
+	assertContains(t, template, "# Commit "+localRevision)
+	assertContains(t, template, "# local mirror change\n# Please enter the commit message")
+}
+
 func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {
 	root := t.TempDir()
 	env := newProcessEnv(t, root)
@@ -1263,6 +1296,25 @@ func editorCommand(t *testing.T, root, message string) string {
 		t.Fatalf("write editor script: %v", err)
 	}
 	return shellQuote(path)
+}
+
+func capturingEditorCommand(t *testing.T, root, message string) (string, string) {
+	t.Helper()
+	capture := filepath.Join(root, "captured-commit-message.txt")
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(root, "capturing-editor.cmd")
+		body := "@echo off\r\ncopy /Y \"%~1\" \"" + capture + "\" >NUL\r\n> \"%~1\" echo " + message + "\r\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write capturing editor script: %v", err)
+		}
+		return capture, `"` + path + `"`
+	}
+	path := filepath.Join(root, "capturing-editor.sh")
+	body := "#!/bin/sh\ncp \"$1\" " + shellQuote(capture) + " || exit 1\nprintf '%s\\n' " + shellQuote(message) + " > \"$1\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatalf("write capturing editor script: %v", err)
+	}
+	return capture, shellQuote(path)
 }
 
 func failingEditorCommand(t *testing.T, root string) string {

@@ -218,18 +218,22 @@ func formatPushProvenanceTemplate(m mirror.Mirror, commits []pushProvenanceCommi
 	if omitted > 0 {
 		lines = append(lines, omittedPushProvenanceMessage(omitted), "")
 	}
-	for _, commit := range commits {
+	for i, commit := range commits {
 		lines = append(lines, "Commit "+commit.Hash)
 		lines = append(lines, strings.Split(commit.Message, "\n")...)
-		lines = append(lines, "")
+		if i < len(commits)-1 {
+			lines = append(lines, "")
+		}
 	}
 
 	var b strings.Builder
-	for _, line := range lines {
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
 		b.WriteString(commentChar)
 		b.WriteByte(' ')
 		b.WriteString(line)
-		b.WriteByte('\n')
 	}
 	return b.String()
 }
