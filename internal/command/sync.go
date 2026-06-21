@@ -30,6 +30,22 @@ type syncPushPlan struct {
 	Actions []syncPushAction
 }
 
+type syncAutostashGit interface {
+	PushGit
+	StatusPorcelainPathspecsWithIgnored(context.Context, ...string) (string, error)
+	StashPushAllPathspecs(context.Context, string, ...string) (gitexec.StashEntry, bool, error)
+	StashApply(context.Context, string) error
+	RestoreStashIndexPathspecs(context.Context, string, ...string) error
+	DropStashEntry(context.Context, gitexec.StashEntry) (string, error)
+}
+
+type syncAutostash struct {
+	Entry gitexec.StashEntry
+	Paths []string
+}
+
+const syncAutostashMessage = "braid sync autostash"
+
 func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 	repo, err := Preflight(ctx, cli.CommandSync, inv, h.Options, stderr)
@@ -50,7 +66,8 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := h.ensureSyncTargetsClean(ctx, repo, git, targets); err != nil {
+	autostash, err := h.prepareSyncAutostash(ctx, repo, git, targets, inv.Sync.Autostash)
+	if err != nil {
 		return err
 	}
 
@@ -58,34 +75,65 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var runErr error
+	var updateConflict bool
 	if !inv.Sync.PullOnly {
 		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, stderr); err != nil {
-			return err
+			runErr = err
 		}
-		plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, stderr)
-		if err != nil {
-			return err
-		}
-		if err := h.runPushPlan(ctx, repo, git, plan, inv, stdout, stderr); err != nil {
-			return err
+		if runErr == nil {
+			plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, stderr)
+			if err != nil {
+				runErr = err
+			} else if err := h.runPushPlan(ctx, repo, git, plan, inv, stdout, stderr); err != nil {
+				runErr = err
+			}
 		}
 	}
 
-	update := UpdateHandler{Options: h.Options}
-	updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
-	for _, target := range targets {
-		if err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, stdout, stderr); err != nil {
-			return fmt.Errorf("update %s: %w", target.LocalPath, err)
+	if runErr == nil {
+		update := UpdateHandler{Options: h.Options}
+		updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
+		for _, target := range targets {
+			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, stdout, stderr)
+			if result.Status == updateStatusConflict && autostash != nil {
+				updateConflict = true
+				if err != nil {
+					runErr = fmt.Errorf("update %s: %w", target.LocalPath, err)
+				} else {
+					runErr = fmt.Errorf("update %s reached conflict state", target.LocalPath)
+				}
+				break
+			}
+			if err != nil {
+				runErr = fmt.Errorf("update %s: %w", target.LocalPath, err)
+				break
+			}
 		}
+	}
+
+	if autostash != nil {
+		if updateConflict {
+			return h.autostashConflictError(*autostash, runErr)
+		}
+		if restoreErr := h.restoreSyncAutostash(ctx, git, *autostash); restoreErr != nil {
+			if runErr != nil {
+				return fmt.Errorf("%w; additionally, %v", runErr, restoreErr)
+			}
+			return restoreErr
+		}
+	}
+	if runErr != nil {
+		return runErr
 	}
 	return writeSkippedLockedMirrors(stdout, skippedLocked)
 }
 
-func (h SyncHandler) syncGit(repo RepoContext, inv cli.Invocation, trace io.Writer) PushGit {
-	if git, ok := h.Options.Git.(PushGit); ok {
+func (h SyncHandler) syncGit(repo RepoContext, inv cli.Invocation, trace io.Writer) syncAutostashGit {
+	if git, ok := h.Options.Git.(syncAutostashGit); ok {
 		return git
 	}
-	if git, ok := repo.rootGit(inv, h.Options, trace).(PushGit); ok {
+	if git, ok := repo.rootGit(inv, h.Options, trace).(syncAutostashGit); ok {
 		return git
 	}
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
@@ -126,15 +174,85 @@ func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths
 	return targets, nil, nil
 }
 
-func (h SyncHandler) ensureSyncTargetsClean(ctx context.Context, repo RepoContext, git scopedCleanGit, targets []syncTarget) error {
+func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext, git syncAutostashGit, targets []syncTarget, autostashEnabled bool) (*syncAutostash, error) {
 	paths := make([]string, 0, len(targets))
 	for _, target := range targets {
 		if mirrorOverlapsConfig(target.Mirror.Path) {
-			return fmt.Errorf("mirror path %q overlaps %s", target.Mirror.Path, config.FileName)
+			return nil, fmt.Errorf("mirror path %q overlaps %s", target.Mirror.Path, config.FileName)
 		}
 		paths = append(paths, target.Mirror.Path)
 	}
-	return ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, paths...)
+	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, fmt.Errorf("unresolved git operation state is present: %s", state)
+	}
+	if err := ensureConfigClean(ctx, git, configRoot(h.Options, repo), true); err != nil {
+		return nil, err
+	}
+	if !autostashEnabled {
+		for _, path := range paths {
+			if err := ensureScopedClean(ctx, git, path); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+	status, err := git.StatusPorcelainPathspecsWithIgnored(ctx, paths...)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(status) == "" {
+		return nil, nil
+	}
+	entry, saved, err := git.StashPushAllPathspecs(ctx, syncAutostashMessage, paths...)
+	if err != nil {
+		return nil, err
+	}
+	if !saved {
+		return nil, nil
+	}
+	return &syncAutostash{Entry: entry, Paths: paths}, nil
+}
+
+func (h SyncHandler) restoreSyncAutostash(ctx context.Context, git syncAutostashGit, saved syncAutostash) error {
+	if err := git.StashApply(ctx, saved.Entry.OID); err != nil {
+		return fmt.Errorf("failed to restore braid sync autostash %s: %w. %s", saved.Entry.OID, err, manualAutostashRestoreInstructions(saved))
+	}
+	if err := git.RestoreStashIndexPathspecs(ctx, saved.Entry.OID, saved.Paths...); err != nil {
+		return fmt.Errorf("failed to restore selected-path index state from braid sync autostash %s: %w. %s", saved.Entry.OID, err, manualAutostashRestoreInstructions(saved))
+	}
+	if _, err := git.DropStashEntry(ctx, saved.Entry); err != nil {
+		return fmt.Errorf("restored saved work from braid sync autostash %s, but could not remove the stash entry: %w. %s", saved.Entry.OID, err, manualAutostashCleanupInstructions(saved))
+	}
+	return nil
+}
+
+func (h SyncHandler) autostashConflictError(saved syncAutostash, err error) error {
+	if err == nil {
+		return fmt.Errorf("sync reached update conflict state. %s", manualAutostashConflictInstructions(saved))
+	}
+	return fmt.Errorf("%w. %s", err, manualAutostashConflictInstructions(saved))
+}
+
+func manualAutostashConflictInstructions(saved syncAutostash) string {
+	return fmt.Sprintf("Braid preserved autostash %s. Resolve the Braid update conflict first, then restore your saved work manually: %s", saved.Entry.OID, manualAutostashRestoreCommands(saved))
+}
+
+func manualAutostashRestoreInstructions(saved syncAutostash) string {
+	return fmt.Sprintf("The saved work remains in stash %s. To restore it manually, run: %s", saved.Entry.OID, manualAutostashRestoreCommands(saved))
+}
+
+func manualAutostashCleanupInstructions(saved syncAutostash) string {
+	return fmt.Sprintf("The saved stash %s remains recoverable. Inspect `git stash list` and drop the Braid autostash entry manually after verifying your work is restored.", saved.Entry.OID)
+}
+
+func manualAutostashRestoreCommands(saved syncAutostash) string {
+	quotedPaths := make([]string, 0, len(saved.Paths))
+	for _, path := range saved.Paths {
+		quotedPaths = append(quotedPaths, shellQuote(":(top)"+path))
+	}
+	return fmt.Sprintf("git stash apply %s && git restore --source=%s^2 --staged -- %s", saved.Entry.OID, saved.Entry.OID, strings.Join(quotedPaths, " "))
 }
 
 func (h SyncHandler) hydrateMissingRecordedRevisions(ctx context.Context, git PushGit, cache CacheConfig, targets []syncTarget, keep bool, verbose bool, trace io.Writer) error {
