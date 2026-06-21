@@ -320,8 +320,9 @@ autostash is created.
 
 Autostash does not push uncommitted mirror changes. The push phase still uses
 only the mirror content recorded in downstream `HEAD`. When sync pushes a
-changed branch mirror, the upstream commit editor receives the same commented
-downstream provenance guidance described for `braid push`.
+changed branch mirror, each upstream push uses the same commit-message review
+flow described for `braid push`, including optional generated-message prompts
+when configured.
 
 If sync reaches a Braid update conflict after creating an autostash, Braid
 leaves the stash intact instead of applying it over conflict markers. Resolve
@@ -344,6 +345,11 @@ needed, commit, then rerun `braid sync`. If the selected mirror path itself was
 deleted from downstream `HEAD`, `sync` also fails rather than trying to push the
 deletion of the mirror root; deletions inside an existing mirror directory are
 ordinary local mirror changes.
+
+`sync` pushes mirrors sequentially. If an earlier mirror push succeeds and a
+later mirror's generator or commit editor fails, the earlier upstream commit may
+already exist and the update phase is skipped. Rerun `braid sync` after resolving
+the failure to update downstream mirror revisions.
 
 Use `--pull-only` to run only the update phase with the same scoped precheck:
 
@@ -376,6 +382,38 @@ This guidance is best-effort. If Braid cannot compute it safely, or if
 `core.commentChar` is set to `auto`, Braid prints a warning and opens the editor
 without the provenance block; the push still proceeds through the normal commit
 and push checks.
+
+To prefill the editor with a generated draft message, set
+`BRAID_PUSH_COMMIT_MESSAGE_COMMAND` to a trusted local POSIX shell command. Empty
+or unset disables generation. Braid substitutes these placeholders with
+shell-quoted paths and leaves unknown placeholder-like text unchanged:
+
+- `{REPO_DIR}`: downstream repository root.
+- `{CONTEXT_DIR}`: temporary prompt context directory.
+- `{PROMPT_FILE}`: generated prompt file.
+- `{MESSAGE_FILE}`: file where the command must write the proposed message.
+
+Example:
+
+```bash
+BRAID_PUSH_COMMIT_MESSAGE_COMMAND='codex exec -C {REPO_DIR} --add-dir {CONTEXT_DIR} --model gpt-5.5 -c '\''model_reasoning_effort="low"'\'' -o {MESSAGE_FILE} < {PROMPT_FILE}'
+```
+
+The command runs as `/bin/sh -c` from the downstream repository root with the
+current process environment. The prompt includes mirror metadata, downstream
+commit provenance when it can be collected, and the staged upstream diff. Diffs
+up to 5 KiB are included inline; larger diffs are written under
+`{CONTEXT_DIR}` and referenced from the prompt. The configured command is
+trusted local shell code and is not sandboxed by Braid. On Windows, configured
+generation is not supported; leave the environment variable unset or empty to
+use the normal editor flow.
+
+When generation succeeds, Git's editor opens with the generated message followed
+by commented provenance guidance when available. The editor-reviewed content is
+the message Braid commits. If the generator exits nonzero, does not create the
+message file, or writes only whitespace, Braid opens the normal editor template
+with commented diagnostics and provenance guidance when available. Those
+comments are stripped from the final commit message if left in place.
 
 For branch mirrors, pushing without `--branch` targets the tracked branch:
 

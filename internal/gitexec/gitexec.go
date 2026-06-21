@@ -584,6 +584,10 @@ func (g Git) ReadTreeUpdateMerge(ctx context.Context, treeish string) error {
 	return err
 }
 
+func (g Git) WriteTree(ctx context.Context) (string, error) {
+	return g.Output(ctx, "write-tree")
+}
+
 func (g Git) RestorePathspecsFromHead(ctx context.Context, pathspecs ...string) error {
 	return g.RestorePathspecsFromTree(ctx, "HEAD", true, true, pathspecs...)
 }
@@ -612,6 +616,14 @@ func (g Git) CommitVerboseTemplate(ctx context.Context, templatePath string, std
 		return errors.New("commit template path is required")
 	}
 	_, err := g.Runner.RunInteractiveOK(ctx, stdin, stdout, stderr, "commit", "--cleanup=strip", "-v", "-t", templatePath)
+	return err
+}
+
+func (g Git) CommitVerboseMessageFile(ctx context.Context, messagePath string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if messagePath == "" {
+		return errors.New("commit message path is required")
+	}
+	_, err := g.Runner.RunInteractiveOK(ctx, stdin, stdout, stderr, "commit", "--cleanup=strip", "-v", "-F", messagePath, "-e")
 	return err
 }
 

@@ -18,6 +18,12 @@ type pushProvenanceTemplate struct {
 	Content     string
 }
 
+type pushProvenance struct {
+	Commits       []pushProvenanceCommit
+	Omitted       int
+	NoCleanAnchor bool
+}
+
 type pushProvenanceCommit struct {
 	Hash    string
 	Message string
@@ -29,15 +35,34 @@ type pushProvenanceWindow struct {
 }
 
 func buildPushProvenanceTemplate(ctx context.Context, git PushGit, m mirror.Mirror) (pushProvenanceTemplate, bool, error) {
+	provenance, ok, err := buildPushProvenance(ctx, git, m)
+	if err != nil || !ok {
+		return pushProvenanceTemplate{}, false, err
+	}
+	return buildPushProvenanceTemplateFromRaw(ctx, git, m, provenance)
+}
+
+func buildPushProvenance(ctx context.Context, git PushGit, m mirror.Mirror) (pushProvenance, bool, error) {
 	window, err := findPushProvenanceWindow(ctx, git, m)
 	if err != nil {
-		return pushProvenanceTemplate{}, false, err
+		return pushProvenance{}, false, err
 	}
 	commits, omitted, err := collectPushProvenanceCommits(ctx, git, m, window.Range)
 	if err != nil {
-		return pushProvenanceTemplate{}, false, err
+		return pushProvenance{}, false, err
 	}
 	if len(commits) == 0 {
+		return pushProvenance{}, false, nil
+	}
+	return pushProvenance{
+		Commits:       commits,
+		Omitted:       omitted,
+		NoCleanAnchor: window.NoCleanAnchor,
+	}, true, nil
+}
+
+func buildPushProvenanceTemplateFromRaw(ctx context.Context, git PushGit, m mirror.Mirror, provenance pushProvenance) (pushProvenanceTemplate, bool, error) {
+	if len(provenance.Commits) == 0 {
 		return pushProvenanceTemplate{}, false, nil
 	}
 	commentChar, err := pushProvenanceCommentChar(ctx, git)
@@ -46,7 +71,7 @@ func buildPushProvenanceTemplate(ctx context.Context, git PushGit, m mirror.Mirr
 	}
 	return pushProvenanceTemplate{
 		CommentChar: commentChar,
-		Content:     formatPushProvenanceTemplate(m, commits, omitted, window.NoCleanAnchor, commentChar),
+		Content:     formatPushProvenanceTemplate(m, provenance.Commits, provenance.Omitted, provenance.NoCleanAnchor, commentChar),
 	}, true, nil
 }
 

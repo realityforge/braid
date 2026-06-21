@@ -84,6 +84,81 @@ func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
 	assertFile(t, upstreamB, "README.md", "b local\n")
 }
 
+func TestSyncCommandGeneratedMessagesArePerPushedMirror(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	testutil.Git(t, upstreamA, "config", "receive.denyCurrentBranch", "updateInstead")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	testutil.CommitAll(t, upstreamB, "b base")
+	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
+	testutil.CommitAll(t, repo, "local a generated")
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
+	testutil.CommitAll(t, repo, "local b generated")
+	generator := writeGenerator(t, "#!/bin/sh\nprompt=$1\nmessage=$2\nif grep -q 'Local mirror path: vendor/a' \"$prompt\"; then\n  printf 'Generated for vendor/a\\n' > \"$message\"\nelif grep -q 'Local mirror path: vendor/b' \"$prompt\"; then\n  printf 'Generated for vendor/b\\n' > \"$message\"\nelse\n  exit 18\nfi\n")
+	t.Setenv(pushMessageCommandEnv, shellQuote(generator)+" {PROMPT_FILE} {MESSAGE_FILE}")
+	captureDir, editor := writeSequenceCapturingEditor(t, "Sync reviewed")
+	t.Setenv("GIT_EDITOR", editor)
+
+	runCommandOK(t, repo, []string{"sync", "vendor/a", "vendor/b"})
+
+	first := readTestFile(t, filepath.Join(captureDir, "template-1.txt"))
+	second := readTestFile(t, filepath.Join(captureDir, "template-2.txt"))
+	assertContains(t, first, "Generated for vendor/a")
+	assertNotContains(t, first, "Generated for vendor/b")
+	assertContains(t, second, "Generated for vendor/b")
+	assertNotContains(t, second, "Generated for vendor/a")
+	assertFile(t, upstreamA, "README.md", "a local\n")
+	assertFile(t, upstreamB, "README.md", "b local\n")
+	assertCommitSubject(t, upstreamA, "Sync reviewed 1")
+	assertCommitSubject(t, upstreamB, "Sync reviewed 2")
+}
+
+func TestSyncCommandDoesNotRunGeneratorWhenPullOnlyOrNoPushAction(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "pull only", args: []string{"sync", "--pull-only", "vendor/basic"}},
+		{name: "unchanged push phase", args: []string{"sync", "vendor/basic"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, "README.md", "base\n")
+			testutil.CommitAll(t, upstream, "base")
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+			testutil.WriteFile(t, upstream, "README.md", test.name+" remote\n")
+			remoteRevision := testutil.CommitAll(t, upstream, test.name+" remote")
+			marker := filepath.Join(t.TempDir(), "generator-ran")
+			generator := writeGenerator(t, "#!/bin/sh\nprintf ran > \"$BRAID_GENERATOR_MARKER\"\nexit 99\n")
+			t.Setenv("BRAID_GENERATOR_MARKER", marker)
+			t.Setenv(pushMessageCommandEnv, shellQuote(generator)+" {PROMPT_FILE} {MESSAGE_FILE}")
+			t.Setenv("GIT_EDITOR", writeFailingEditor(t))
+
+			runCommandOK(t, repo, test.args)
+
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatalf("generator marker %s exists, want generator not run", marker)
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("stat generator marker: %v", err)
+			}
+			assertFile(t, repo, "vendor/basic/README.md", test.name+" remote\n")
+			if got := loadMirror(t, repo, "vendor/basic").Revision; got != remoteRevision {
+				t.Fatalf("revision = %q, want %q", got, remoteRevision)
+			}
+		})
+	}
+}
+
 func TestSyncCommandPullOnlyUpdatesWithoutPushing(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -753,6 +828,43 @@ func TestSyncCommandStopsBeforePullPhaseWhenPushFails(t *testing.T) {
 		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
 	}
 	assertFile(t, repo, "vendor/b/README.md", "b base\n")
+}
+
+func TestSyncCommandLaterEditorFailureLeavesEarlierGeneratedPushComplete(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	aBase := testutil.CommitAll(t, upstreamA, "a base")
+	testutil.Git(t, upstreamA, "config", "receive.denyCurrentBranch", "updateInstead")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	bBase := testutil.CommitAll(t, upstreamB, "b base")
+	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
+	testutil.CommitAll(t, repo, "local a partial")
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
+	testutil.CommitAll(t, repo, "local b partial")
+	generator := writeGenerator(t, "#!/bin/sh\nprintf 'Generated partial\\n' > \"$2\"\n")
+	t.Setenv(pushMessageCommandEnv, shellQuote(generator)+" {PROMPT_FILE} {MESSAGE_FILE}")
+	t.Setenv("GIT_EDITOR", writeSequenceCapturingEditorFailAt(t, "Sync partial", 2))
+
+	runCommandError(t, repo, []string{"sync", "vendor/a", "vendor/b"})
+
+	assertFile(t, upstreamA, "README.md", "a local\n")
+	assertCommitSubject(t, upstreamA, "Sync partial 1")
+	assertFile(t, upstreamB, "README.md", "b base\n")
+	if got := testutil.CurrentRevision(t, upstreamB); got != bBase {
+		t.Fatalf("upstream b revision = %q, want unchanged %q", got, bBase)
+	}
+	if got := loadMirror(t, repo, "vendor/a").Revision; got != aBase {
+		t.Fatalf("vendor/a revision = %q, want original %q because update phase was skipped", got, aBase)
+	}
+	if got := loadMirror(t, repo, "vendor/b").Revision; got != bBase {
+		t.Fatalf("vendor/b revision = %q, want original %q", got, bBase)
+	}
 }
 
 func TestSyncCommandUnchangedMovedBranchUpdatesNormally(t *testing.T) {

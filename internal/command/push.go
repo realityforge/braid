@@ -135,30 +135,37 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 		return pushResult{Status: pushStatusNoLocalChanges}, nil
 	}
 
-	provenanceTemplate, ok, provenanceErr := buildPushProvenanceTemplate(ctx, git, m)
+	provenance, provenanceOK, provenanceErr := buildPushProvenance(ctx, git, m)
 	if provenanceErr != nil {
 		warnPushProvenance(stderr, provenanceErr)
 	}
-	if !ok {
-		provenanceTemplate = pushProvenanceTemplate{}
-	}
+	messageGeneration := configuredPushMessageGeneration()
 
-	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr, provenanceTemplate); err != nil {
+	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr, provenance, provenanceOK, provenanceErr, messageGeneration); err != nil {
 		return pushResult{}, err
 	}
 	return pushResult{Status: pushStatusPushed}, nil
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer, provenanceTemplate pushProvenanceTemplate) error {
-	tempDir, err := os.MkdirTemp("", "braid-push")
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
+	workspaceDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = os.RemoveAll(tempDir)
+		_ = os.RemoveAll(workspaceDir)
 	}()
 
-	tempGit := gitexec.New(tempDir, verbose, stderr)
+	pushRepoDir := filepath.Join(workspaceDir, "push-repo")
+	contextDir := filepath.Join(workspaceDir, "context")
+	if err := os.Mkdir(pushRepoDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Mkdir(contextDir, 0o755); err != nil {
+		return err
+	}
+
+	tempGit := gitexec.New(pushRepoDir, verbose, stderr)
 	if err := tempGit.Init(ctx); err != nil {
 		return err
 	}
@@ -167,7 +174,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 		return err
 	}
 	// Alternates let the temporary repository reuse already-fetched objects without copying packs.
-	if err := writeAlternates(ctx, source, tempDir, repo.GitWorkTreeRoot); err != nil {
+	if err := writeAlternates(ctx, source, pushRepoDir, repo.GitWorkTreeRoot); err != nil {
 		return err
 	}
 	if err := tempGit.UpdateRef(ctx, "--no-deref", "HEAD", baseRevision); err != nil {
@@ -177,19 +184,44 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 		return err
 	}
 	// An empty sparse-checkout avoids checking out files outside the mirror and running their filters.
-	if err := os.WriteFile(filepath.Join(tempDir, ".git", "info", "sparse-checkout"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pushRepoDir, ".git", "info", "sparse-checkout"), nil, 0o644); err != nil {
 		return err
 	}
 	if err := tempGit.ReadTreeUpdateMerge(ctx, newTree); err != nil {
 		return err
 	}
-	templatePath := preparePushProvenanceTemplate(ctx, tempGit, tempDir, provenanceTemplate, stderr)
-	if templatePath != "" {
-		if err := tempGit.CommitVerboseTemplate(ctx, templatePath, stdin, stdout, stderr); err != nil {
+
+	if messageGeneration.Enabled {
+		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, provenance, provenanceOK, provenanceErr)
+		if err != nil {
 			return err
 		}
-	} else if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
-		return err
+		if err := verifyTempPushIndex(ctx, tempGit, newTree); err != nil {
+			return err
+		}
+		if err := tempGit.CommitVerboseMessageFile(ctx, seedPath, stdin, stdout, stderr); err != nil {
+			return err
+		}
+	} else {
+		var provenanceTemplate pushProvenanceTemplate
+		if provenanceOK {
+			if template, ok, err := buildPushProvenanceTemplateFromRaw(ctx, source, m, provenance); err != nil {
+				warnPushProvenance(stderr, err)
+			} else if ok {
+				provenanceTemplate = template
+			}
+		}
+		templatePath := preparePushProvenanceTemplate(ctx, tempGit, pushRepoDir, provenanceTemplate, stderr)
+		if err := verifyTempPushIndex(ctx, tempGit, newTree); err != nil {
+			return err
+		}
+		if templatePath != "" {
+			if err := tempGit.CommitVerboseTemplate(ctx, templatePath, stdin, stdout, stderr); err != nil {
+				return err
+			}
+		} else if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
+			return err
+		}
 	}
 	return tempGit.Push(ctx, m.URL, "HEAD:refs/heads/"+branch)
 }

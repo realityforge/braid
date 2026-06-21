@@ -234,7 +234,7 @@ func TestGitPreflightWrappers(t *testing.T) {
 	}
 }
 
-func TestCommitVerboseTemplateForcesCommentStrippingCleanup(t *testing.T) {
+func TestCommitVerboseTemplateAndMessageFileForcesCommentStrippingCleanup(t *testing.T) {
 	git := Git{Runner: helperRunner(t, nil)}
 
 	var stdout, stderr bytes.Buffer
@@ -253,6 +253,42 @@ func TestCommitVerboseTemplateForcesCommentStrippingCleanup(t *testing.T) {
 	want := []string{"commit", "--cleanup=strip", "-v", "-t", "/tmp/template.txt"}
 	if got := strings.Split(strings.TrimSpace(stdout.String()), "\n"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CommitVerboseTemplate args = %#v, want %#v", got, want)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := git.CommitVerboseMessageFile(context.Background(), "/tmp/message.txt", strings.NewReader("message input\n"), &stdout, &stderr); err != nil {
+		t.Fatalf("CommitVerboseMessageFile returned error: %v", err)
+	}
+	want = []string{"commit", "--cleanup=strip", "-v", "-F", "/tmp/message.txt", "-e"}
+	if got := strings.Split(strings.TrimSpace(stdout.String()), "\n"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("CommitVerboseMessageFile args = %#v, want %#v", got, want)
+	}
+}
+
+func TestCommitVerboseMessageFileRequiresPath(t *testing.T) {
+	git := Git{Runner: helperRunner(t, nil)}
+
+	err := git.CommitVerboseMessageFile(context.Background(), "", strings.NewReader("input\n"), io.Discard, io.Discard)
+
+	if err == nil || !strings.Contains(err.Error(), "commit message path is required") {
+		t.Fatalf("CommitVerboseMessageFile error = %v, want required path", err)
+	}
+}
+
+func TestWriteTree(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, "tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	want := realGitOutput(t, repo, "write-tree")
+
+	got, err := New(repo, false, nil).WriteTree(context.Background())
+
+	if err != nil {
+		t.Fatalf("WriteTree returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("WriteTree = %q, want %q", got, want)
 	}
 }
 
