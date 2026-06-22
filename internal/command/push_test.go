@@ -323,11 +323,11 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 	}
 	prompt := readTestFile(t, promptCapture)
 	for _, want := range []string{
+		"Respond only with the proposed commit message.",
 		"Local mirror path: vendor/basic",
 		"Upstream URL: " + upstream,
 		"Upstream path: (repository root)",
 		"Target branch: main",
-		"Message output file:",
 		"Commit " + localCommit,
 		"local generated change",
 		"body from downstream",
@@ -336,6 +336,7 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 	} {
 		assertContains(t, prompt, want)
 	}
+	assertNotContains(t, prompt, "Message output file:")
 	seed := readTestFile(t, seedCapture)
 	assertContains(t, seed, "Generated upstream subject")
 	assertContains(t, seed, "Generated body")

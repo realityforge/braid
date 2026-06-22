@@ -52,7 +52,6 @@ type pushMessagePromptData struct {
 	BaseRevision  string
 	NewTree       string
 	RepoDir       string
-	MessageFile   string
 	Diff          pushMessageDiffContext
 	Provenance    pushProvenance
 	ProvenanceOK  bool
@@ -109,7 +108,6 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 		BaseRevision:  baseRevision,
 		NewTree:       newTree,
 		RepoDir:       repo.GitWorkTreeRoot,
-		MessageFile:   messagePath,
 		Diff:          diffContext,
 		Provenance:    provenance,
 		ProvenanceOK:  provenanceOK,
@@ -188,7 +186,7 @@ func writePushMessageDiffContext(contextDir, diff string) (pushMessageDiffContex
 func formatPushMessagePrompt(data pushMessagePromptData) string {
 	var b strings.Builder
 	b.WriteString("Generate a Git commit message for an upstream commit created by braid push.\n")
-	b.WriteString("Write only the proposed commit message to the message output file. The user will review it in Git's editor before Braid commits.\n\n")
+	b.WriteString("Respond only with the proposed commit message. Do not include commentary, Markdown fences, explanations, or any other content. The user will review the message in Git's editor before Braid commits.\n\n")
 	b.WriteString("Mirror metadata:\n")
 	fmt.Fprintf(&b, "- Local mirror path: %s\n", data.Mirror.Path)
 	fmt.Fprintf(&b, "- Upstream URL: %s\n", data.Mirror.URL)
@@ -200,8 +198,7 @@ func formatPushMessagePrompt(data pushMessagePromptData) string {
 	fmt.Fprintf(&b, "- Recorded base revision: %s\n", data.BaseRevision)
 	fmt.Fprintf(&b, "- Synthetic upstream tree: %s\n", data.NewTree)
 	fmt.Fprintf(&b, "- Target branch: %s\n", data.Branch)
-	fmt.Fprintf(&b, "- Downstream repository root: %s\n", data.RepoDir)
-	fmt.Fprintf(&b, "- Message output file: %s\n\n", data.MessageFile)
+	fmt.Fprintf(&b, "- Downstream repository root: %s\n\n", data.RepoDir)
 
 	b.WriteString("Downstream commit provenance:\n")
 	b.WriteString(formatPushMessagePromptProvenance(data.Provenance, data.ProvenanceOK, data.ProvenanceErr))
