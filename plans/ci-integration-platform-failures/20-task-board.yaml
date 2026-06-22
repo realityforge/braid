@@ -1,0 +1,256 @@
+meta:
+  project: ci integration platform failures
+  plan_status: accepted
+  last_updated: "2026-06-22"
+  active_plan_tree: plans/ci-integration-platform-failures
+  required_full_gates:
+    - bazel run @rules_go//go -- fmt ./...
+    - git diff --exit-code
+    - bazel test //...
+    - bazel run @rules_go//go -- vet ./...
+    - bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+    - bazel test //integration:braid_integration_test
+  targeted_gates:
+    - bazel test //internal/gitexec:gitexec_test
+    - bazel test //internal/command:command_test
+    - bazel test //integration:conflict_test
+    - bazel test //integration:lifecycle_test
+    - bazel test //integration:subdirectory_test
+    - bazel test //integration:sync_test
+    - bazel test //integration:scoped_state_test
+    - bazel test //integration:braid_integration_test --test_output=errors --nocache_test_results
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: T04
+
+tasks:
+  - id: PLAN-CONTEXT
+    title: Collect CI failure context and draft plan
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Failure run metadata is inspected.
+      - CI workflow parity commands are identified.
+      - Existing plan conventions are inspected.
+      - Update, merge-tree, push provenance, and integration helper code paths are read.
+      - Draft requirements, implementation plan, task board, and test strategy are created.
+    files_touched:
+      - plans/ci-integration-platform-failures/00-requirements.md
+      - plans/ci-integration-platform-failures/10-implementation-plan.md
+      - plans/ci-integration-platform-failures/20-task-board.yaml
+      - plans/ci-integration-platform-failures/40-test-strategy.md
+    evidence:
+      - command: "sed -n '1,520p' /Users/peter/.codex/skills/structured-delivery-workflow/SKILL.md"
+        result: "pass: skill instructions read"
+      - command: "find plans -maxdepth 2 -type f | sort"
+        result: "pass: existing plans use plans/<initiative> convention"
+      - command: "sed -n '1,220p' .github/workflows/ci.yml"
+        result: "pass: CI parity commands identified"
+      - command: "gh run view 27927786035 --repo realityforge/braid --json conclusion,status,headSha,url,jobs"
+        result: "pass: run failed at 6bd080b02ab7381be14e752e273734094c7add92; darwin and windows integration jobs failed"
+      - command: "gh run view 27927786035 --repo realityforge/braid --log-failed | rg -n -- '--- FAIL:|value does not contain|result stdout/stderr|latest commit metadata|push stderr|exit = 1|Braid: conflicts written|The system cannot find'"
+        result: "pass: exact failing assertions recorded"
+      - command: "git --version"
+        result: "pass: local git version 2.51.0"
+      - command: "bazel test //integration:braid_integration_test --test_output=errors --nocache_test_results"
+        result: "pass: local uncached integration target passed"
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: PLAN-QUESTIONS
+    title: Resolve conflict output contract question
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-CONTEXT
+    acceptance_criteria:
+      - Q-01 in `00-requirements.md` is resolved.
+      - The selected option is reflected in `10-implementation-plan.md`.
+      - The decision log maps Q-01 to concrete implementation changes.
+    files_touched:
+      - plans/ci-integration-platform-failures/00-requirements.md
+      - plans/ci-integration-platform-failures/10-implementation-plan.md
+      - plans/ci-integration-platform-failures/20-task-board.yaml
+    evidence:
+      - command: "User selected Q-01 option A"
+        result: "pass: Braid will print a deterministic conflict summary line derived from structured conflict paths"
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: PLAN-APPROVAL
+    title: Review and accept CI integration failure plan
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-QUESTIONS
+    acceptance_criteria:
+      - User review of the latest plan is explicitly requested.
+      - User feedback is incorporated into planning artifacts.
+      - Approval outcome is recorded before implementation starts.
+      - Plan status is updated to accepted only after review outcome is recorded.
+    files_touched:
+      - plans/ci-integration-platform-failures/00-requirements.md
+      - plans/ci-integration-platform-failures/10-implementation-plan.md
+      - plans/ci-integration-platform-failures/20-task-board.yaml
+      - plans/ci-integration-platform-failures/40-test-strategy.md
+    evidence:
+      - command: "Iterative plan review"
+        result: "pass: three rounds completed; final findings none"
+      - command: "User requested implementation in subagent"
+        result: "pass: plan accepted for implementation"
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T01
+    title: Implement update fast-path classification
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - Update compares `HEAD` mirror item against recorded base and selected remote items.
+      - Update represents current mirror item state as present, absent, or error.
+      - Local-equals-base updates bypass `merge-tree` and commit remote mirror content plus config.
+      - Local-equals-remote updates bypass `merge-tree` and commit config-only revision updates.
+      - Command tests fail if `MergeTreeWrite` is invoked for local-equals-base or local-equals-remote fast paths.
+      - Divergent local/base/remote updates continue through synthetic merge.
+      - Committed local mirror deletions are classified as divergent and covered by tests.
+      - Existing scoped cleanliness and unrelated state preservation remain covered.
+    files_touched:
+      - internal/command/update.go
+      - internal/command/update_test.go
+      - internal/command/sync_test.go
+      - integration/lifecycle_test.go
+      - integration/subdirectory_test.go
+      - integration/sync_test.go
+      - integration/scoped_state_test.go
+    evidence:
+      - command: "bazel test //internal/command:command_test --nocache_test_results --test_output=errors"
+        result: "pass: fast-path and sync command coverage executed"
+      - command: "bazel test //integration:braid_integration_test --test_output=errors --nocache_test_results"
+        result: "pass: executable update/sync integration aggregate executed"
+    commit:
+      hash: 804669a
+      message: "fix(update): stabilize platform integration behavior"
+
+  - id: T02
+    title: Implement structured merge-tree conflict parsing
+    status: completed
+    priority: high
+    depends_on:
+      - T01
+    acceptance_criteria:
+      - "`internal/gitexec.MergeTreeWrite` exposes structured conflict paths."
+      - Parser boundaries distinguish tree OID, conflicted path records, and informational message records.
+      - Parser treats the first empty NUL record after the tree OID as the end of the conflicted-path section.
+      - Conflict status comes from Git exit status, not from whether the structured path list is empty.
+      - Conflict paths are deduplicated with deterministic output order.
+      - Conflict status with no structured path still produces deterministic Braid conflict output.
+      - Conflict parsing handles paths with spaces.
+      - Braid no longer depends on Git free-form `merge-tree --messages` text for machine behavior.
+      - Q-01 conflict output decision is implemented.
+      - "True conflict integration tests still verify conflict markers, recovery commands, staged config, and `MERGE_MSG`."
+    files_touched:
+      - internal/gitexec/gitexec.go
+      - internal/gitexec/gitexec_test.go
+      - internal/command/update.go
+      - internal/command/update_test.go
+      - integration/conflict_test.go
+    evidence:
+      - command: "bazel test //internal/gitexec:gitexec_test --nocache_test_results --test_output=errors"
+        result: "pass: structured merge-tree parser tests executed"
+      - command: "bazel test //internal/command:command_test --nocache_test_results --test_output=errors"
+        result: "pass: update conflict behavior executed"
+      - command: "bazel test //integration:braid_integration_test --test_output=errors --nocache_test_results"
+        result: "pass: executable conflict integration aggregate executed"
+    commit:
+      hash: 804669a
+      message: "fix(update): stabilize platform integration behavior"
+
+  - id: T03
+    title: Harden Windows integration editor capture
+    status: completed
+    priority: high
+    depends_on:
+      - PLAN-APPROVAL
+    acceptance_criteria:
+      - Windows capture editor reliably copies Git's commit message file before writing the final message.
+      - The helper reports a useful diagnostic if Git invokes it without a message-file argument.
+      - Non-Windows editor helpers retain current behavior unless shared simplification is required.
+      - Push provenance template integration coverage remains intact.
+    files_touched:
+      - integration/support.go
+      - integration/sync_test.go
+    evidence:
+      - command: "bazel test //integration:braid_integration_test --test_output=errors --nocache_test_results"
+        result: "pass: executable integration aggregate executed locally; Windows CI verification remains in T04"
+    commit:
+      hash: 804669a
+      message: "fix(update): stabilize platform integration behavior"
+
+  - id: T04
+    title: Run full local gates and verify remote CI
+    status: in_progress
+    priority: high
+    depends_on:
+      - T01
+      - T02
+      - T03
+    acceptance_criteria:
+      - All required local CI parity gates pass.
+      - "`git diff --exit-code` is run after formatting."
+      - A GitHub Actions rerun or successor run verifies the named Windows and both macOS integration failures are fixed.
+      - Any check that cannot be run locally is explicitly documented with reason.
+    files_touched:
+      - plans/ci-integration-platform-failures/20-task-board.yaml
+      - plans/ci-integration-platform-failures/40-test-strategy.md
+    evidence:
+      - command: "bazel run @rules_go//go -- fmt ./..."
+        result: "pass"
+      - command: "git diff --check"
+        result: "pass"
+      - command: "bazel test //..."
+        result: "pass"
+      - command: "bazel run @rules_go//go -- vet ./..."
+        result: "pass"
+      - command: "bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run"
+        result: "pass: 0 issues"
+      - command: "bazel test //integration:braid_integration_test"
+        result: "pass"
+    commit:
+      hash: pending
+      message: pending
+
+history:
+  - timestamp: "2026-06-22"
+    task: PLAN-CONTEXT
+    note: "Collected CI run evidence, local baseline, code context, and created draft plan artifacts."
+  - timestamp: "2026-06-22"
+    task: PLAN-QUESTIONS
+    note: "Resolved Q-01 with option A: Braid owns deterministic conflict summary output."
+  - timestamp: "2026-06-22"
+    task: PLAN-APPROVAL
+    note: "Round 1 plan review found four valid gaps; plan updated for conflict parse contract, fast-path bypass tests, absent mirror item classification, and target CI completion criteria."
+  - timestamp: "2026-06-22"
+    task: PLAN-APPROVAL
+    note: "Round 2 plan review found one valid parser-boundary gap; plan updated to specify the empty NUL conflicted-section terminator."
+  - timestamp: "2026-06-22"
+    task: PLAN-APPROVAL
+    note: "Plan accepted after user requested implementation in subagent."
+  - timestamp: "2026-06-22"
+    task: T01
+    note: "Implemented update fast-path classification and committed in 804669a."
+  - timestamp: "2026-06-22"
+    task: T02
+    note: "Implemented structured merge-tree conflict parsing and deterministic conflict output in 804669a."
+  - timestamp: "2026-06-22"
+    task: T03
+    note: "Hardened Windows integration capture editor in 804669a."
