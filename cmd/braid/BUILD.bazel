@@ -19,4 +19,5 @@ go_test(
     name = "braid_test",
     srcs = ["main_test.go"],
     embed = [":braid_lib"],
+    timeout = "short",
 )

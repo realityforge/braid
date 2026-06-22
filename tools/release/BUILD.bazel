@@ -4,4 +4,5 @@ go_test(
     name = "version_test",
     srcs = ["version_test.go"],
     data = ["version.sh"],
+    timeout = "short",
 )

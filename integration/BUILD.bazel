@@ -13,6 +13,7 @@ go_test(
     srcs = ["lifecycle_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )
 
 go_test(
@@ -21,6 +22,7 @@ go_test(
     srcs = ["sync_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )
 
 go_test(
@@ -29,6 +31,7 @@ go_test(
     srcs = ["subdirectory_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )
 
 go_test(
@@ -37,6 +40,7 @@ go_test(
     srcs = ["setup_failure_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )
 
 go_test(
@@ -45,6 +49,7 @@ go_test(
     srcs = ["scoped_state_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )
 
 go_test(
@@ -53,4 +58,5 @@ go_test(
     srcs = ["conflict_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
+    timeout = "short",
 )

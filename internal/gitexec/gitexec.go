@@ -753,18 +753,44 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 }
 
 func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (MergeTreeResult, error) {
-	result, runErr := g.Run(ctx, "merge-tree", "--write-tree", "--name-only", "-z", "--messages", "--merge-base="+baseTreeish, localTreeish, remoteTreeish)
+	result, runErr := g.Run(ctx, mergeTreeWriteArgs(baseTreeish, localTreeish, remoteTreeish, true)...)
 	parsed := parseMergeTreeOutput(result.Stdout)
 	if runErr != nil {
 		return parsed, runErr
 	}
 	if result.ExitCode != 0 {
 		if len(parsed.ConflictPaths) == 0 {
+			parsed = g.mergeTreeConflictPathFallback(ctx, parsed, baseTreeish, localTreeish, remoteTreeish)
+		}
+		if len(parsed.ConflictPaths) == 0 {
 			parsed.ConflictPaths = []string{"(unknown path)"}
 		}
 		return parsed, &ExitError{Result: result}
 	}
 	return parsed, nil
+}
+
+func mergeTreeWriteArgs(baseTreeish, localTreeish, remoteTreeish string, messages bool) []string {
+	messageArg := "--no-messages"
+	if messages {
+		messageArg = "--messages"
+	}
+	return []string{"merge-tree", "--write-tree", "--name-only", "-z", messageArg, "--merge-base=" + baseTreeish, localTreeish, remoteTreeish}
+}
+
+func (g Git) mergeTreeConflictPathFallback(ctx context.Context, parsed MergeTreeResult, baseTreeish, localTreeish, remoteTreeish string) MergeTreeResult {
+	result, runErr := g.Run(ctx, mergeTreeWriteArgs(baseTreeish, localTreeish, remoteTreeish, false)...)
+	if runErr != nil {
+		return parsed
+	}
+	fallback := parseMergeTreeOutput(result.Stdout)
+	if parsed.Tree == "" {
+		parsed.Tree = fallback.Tree
+	}
+	if len(fallback.ConflictPaths) != 0 {
+		parsed.ConflictPaths = fallback.ConflictPaths
+	}
+	return parsed
 }
 
 func (g Git) MergeTrees(ctx context.Context, env map[string]string, baseTreeish, localTreeish, remoteTreeish string) (string, error) {

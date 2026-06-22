@@ -11,4 +11,5 @@ go_test(
     name = "gitexec_test",
     srcs = ["gitexec_test.go"],
     embed = [":gitexec"],
+    timeout = "short",
 )

@@ -11,4 +11,5 @@ go_test(
     name = "mirror_test",
     srcs = ["mirror_test.go"],
     embed = [":mirror"],
+    timeout = "short",
 )

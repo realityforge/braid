@@ -13,4 +13,5 @@ go_test(
     srcs = ["git_test.go"],
     data = ["//testdata/fixtures"],
     embed = [":testutil"],
+    timeout = "short",
 )

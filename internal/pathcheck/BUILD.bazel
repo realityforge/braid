@@ -12,5 +12,6 @@ go_test(
     name = "pathcheck_test",
     srcs = ["pathcheck_test.go"],
     embed = [":pathcheck"],
+    timeout = "short",
     deps = ["//internal/mirror"],
 )

@@ -12,5 +12,6 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":config"],
+    timeout = "short",
     deps = ["//internal/mirror"],
 )
