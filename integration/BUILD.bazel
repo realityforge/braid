@@ -1,8 +1,77 @@
-load("@rules_go//go:def.bzl", "go_test")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "test_support",
+    srcs = ["support.go"],
+    importpath = "braid/integration",
+    testonly = True,
+)
 
 go_test(
     name = "braid_integration_test",
     size = "medium",
-    srcs = ["braid_integration_test.go"],
+    srcs = [
+        "conflict_test.go",
+        "lifecycle_test.go",
+        "scoped_state_test.go",
+        "setup_failure_test.go",
+        "subdirectory_test.go",
+        "sync_test.go",
+    ],
     data = ["//cmd/braid"],
+    embed = [":test_support"],
+)
+
+go_test(
+    name = "lifecycle_test",
+    size = "medium",
+    srcs = ["lifecycle_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
+)
+
+go_test(
+    name = "sync_test",
+    size = "medium",
+    srcs = ["sync_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
+)
+
+go_test(
+    name = "subdirectory_test",
+    size = "medium",
+    srcs = ["subdirectory_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
+)
+
+go_test(
+    name = "setup_failure_test",
+    size = "medium",
+    srcs = ["setup_failure_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
+)
+
+go_test(
+    name = "scoped_state_test",
+    size = "medium",
+    srcs = ["scoped_state_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
+)
+
+go_test(
+    name = "conflict_test",
+    size = "medium",
+    srcs = ["conflict_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    tags = ["manual"],
 )
