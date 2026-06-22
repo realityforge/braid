@@ -86,7 +86,8 @@ jobs:
             --stamp \
             --embed_label="${VERSION}" \
             --test_env=BRAID_EXPECTED_VERSION="${VERSION}" \
-            //integration:braid_integration_test
+            --test_env=PATH \
+            //integration/...
 
       - name: Build artifact
         shell: bash
