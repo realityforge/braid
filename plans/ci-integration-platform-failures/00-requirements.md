@@ -180,6 +180,9 @@ Cross-platform validation:
 - Plan reviewed through three iterative plan-review rounds.
 - User approved implementation by requesting "implement in subagent" on
   2026-06-22.
+- Approval sequencing evidence is the conversation event above, not commit
+  chronology: the implementation commit was created before the plan-document
+  commit, after the accepted plan had existed in the working tree.
 
 ## Open Questions Register
 

@@ -874,6 +874,28 @@ func TestMergeTreeWriteConflictWithoutStructuredPathsUsesFallback(t *testing.T) 
 	}
 }
 
+func TestMergeTreeWriteConflictWithEmptyStructuredPathSectionUsesFallback(t *testing.T) {
+	git := Git{Runner: helperRunner(t, map[string]string{
+		"GITEXEC_HELPER_EXIT":                        "1",
+		"GITEXEC_HELPER_EMPTY_CONFLICT_PATH_SECTION": "1",
+	})}
+
+	merged, err := git.MergeTreeWrite(context.Background(), "base", "local", "remote")
+
+	if err == nil {
+		t.Fatal("MergeTreeWrite returned nil error for conflict exit")
+	}
+	if merged.Tree != "merged-tree" {
+		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
+	}
+	if !reflect.DeepEqual(merged.ConflictPaths, []string{"(unknown path)"}) {
+		t.Fatalf("conflict paths = %#v, want fallback unknown path", merged.ConflictPaths)
+	}
+	if !strings.Contains(merged.Details, "CONFLICT (content): Merge conflict in message-only.txt") {
+		t.Fatalf("details = %q, want informational conflict message", merged.Details)
+	}
+}
+
 func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t *testing.T) {
 	repo := initRealRepo(t)
 	writeRealFile(t, repo, "mirror.txt", "base\n")
@@ -1036,7 +1058,14 @@ func TestHelperProcess(t *testing.T) {
 		helperFprintln(os.Stderr, "helper stderr")
 		os.Exit(helperExitCode())
 	case "merge-tree":
-		helperFprint(os.Stdout, os.Getenv("GITEXEC_HELPER_STDOUT"))
+		if os.Getenv("GITEXEC_HELPER_EMPTY_CONFLICT_PATH_SECTION") == "1" {
+			helperFprint(os.Stdout,
+				"merged-tree\x00"+
+					"\x00"+
+					"1\x00message-only.txt\x00CONFLICT (contents)\x00CONFLICT (content): Merge conflict in message-only.txt\n\x00")
+		} else {
+			helperFprint(os.Stdout, os.Getenv("GITEXEC_HELPER_STDOUT"))
+		}
 		os.Exit(helperExitCode())
 	case "interactive":
 		input, err := io.ReadAll(os.Stdin)

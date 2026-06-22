@@ -136,6 +136,140 @@ func TestUpdateCommandLocalEqualsRemoteBypassesMergeTree(t *testing.T) {
 	}
 }
 
+func TestUpdateCommandLocalEqualsBasePathMirrorsBypassMergeTree(t *testing.T) {
+	tests := []struct {
+		name        string
+		localPath   string
+		remotePath  string
+		remoteFile  string
+		localFile   string
+		updateArg   string
+		commandDir  func(t *testing.T, repo string) string
+		baseText    string
+		remoteText  string
+		wantChanged []string
+	}{
+		{
+			name:       "remote subdirectory from process subdirectory",
+			localPath:  "vendor/lib",
+			remotePath: "lib",
+			remoteFile: "lib/component.txt",
+			localFile:  "vendor/lib/component.txt",
+			updateArg:  "../../vendor/lib",
+			commandDir: func(t *testing.T, repo string) string {
+				t.Helper()
+				dir := filepath.Join(repo, "tools", "work")
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatalf("create command dir: %v", err)
+				}
+				return dir
+			},
+			baseText:    "base subdir\n",
+			remoteText:  "remote subdir\n",
+			wantChanged: []string{".braids.json", "vendor/lib/component.txt"},
+		},
+		{
+			name:        "single file mirror",
+			localPath:   "licenses/THIRD_PARTY.txt",
+			remotePath:  "LICENSE.txt",
+			remoteFile:  "LICENSE.txt",
+			localFile:   "licenses/THIRD_PARTY.txt",
+			updateArg:   "licenses/THIRD_PARTY.txt",
+			commandDir:  func(_ *testing.T, repo string) string { return repo },
+			baseText:    "base license\n",
+			remoteText:  "remote license\n",
+			wantChanged: []string{".braids.json", "licenses/THIRD_PARTY.txt"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, test.remoteFile, test.baseText)
+			testutil.CommitAll(t, upstream, "base")
+
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, test.localPath, "--path", test.remotePath})
+			testutil.WriteFile(t, upstream, test.remoteFile, test.remoteText)
+			revision := testutil.CommitAll(t, upstream, "remote")
+			commandDir := test.commandDir(t, repo)
+			var git Git = forbidMergeTreeGit(t, repo)
+			if commandDir != repo {
+				git = forbidMergeTreeGitFromProcessDir(t, repo, commandDir)
+			}
+
+			runCommandOKInDirWithOptions(t, repo, commandDir, Options{Git: git}, []string{"update", test.updateArg})
+
+			assertFile(t, repo, test.localFile, test.remoteText)
+			if got := loadMirror(t, repo, test.localPath).Revision; got != revision {
+				t.Fatalf("revision = %q, want %q", got, revision)
+			}
+			changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+			if strings.Join(changed, "\n") != strings.Join(test.wantChanged, "\n") {
+				t.Fatalf("Braid commit changed %#v, want %#v", changed, test.wantChanged)
+			}
+		})
+	}
+}
+
+func TestUpdateCommandLocalEqualsRemotePathMirrorsBypassMergeTree(t *testing.T) {
+	tests := []struct {
+		name       string
+		localPath  string
+		remotePath string
+		remoteFile string
+		localFile  string
+		baseText   string
+		remoteText string
+	}{
+		{
+			name:       "remote subdirectory",
+			localPath:  "vendor/lib",
+			remotePath: "lib",
+			remoteFile: "lib/component.txt",
+			localFile:  "vendor/lib/component.txt",
+			baseText:   "base subdir\n",
+			remoteText: "remote subdir\n",
+		},
+		{
+			name:       "single file mirror",
+			localPath:  "licenses/THIRD_PARTY.txt",
+			remotePath: "LICENSE.txt",
+			remoteFile: "LICENSE.txt",
+			localFile:  "licenses/THIRD_PARTY.txt",
+			baseText:   "base license\n",
+			remoteText: "remote license\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := testutil.InitRepo(t)
+			testutil.WriteFile(t, upstream, test.remoteFile, test.baseText)
+			testutil.CommitAll(t, upstream, "base")
+
+			repo := initDownstream(t)
+			runCommandOK(t, repo, []string{"add", upstream, test.localPath, "--path", test.remotePath})
+			testutil.WriteFile(t, upstream, test.remoteFile, test.remoteText)
+			revision := testutil.CommitAll(t, upstream, "remote")
+			testutil.WriteFile(t, repo, test.localFile, test.remoteText)
+			testutil.CommitAll(t, repo, "manual mirror update")
+			git := forbidMergeTreeGit(t, repo)
+
+			runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", test.localPath})
+
+			assertFile(t, repo, test.localFile, test.remoteText)
+			if got := loadMirror(t, repo, test.localPath).Revision; got != revision {
+				t.Fatalf("revision = %q, want %q", got, revision)
+			}
+			changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+			if got := strings.Join(changed, "\n"); got != ".braids.json" {
+				t.Fatalf("Braid commit changed %#v, want only .braids.json", changed)
+			}
+		})
+	}
+}
+
 func TestUpdateCommandAbsentLocalMirrorItemUsesMergeTree(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -800,6 +934,39 @@ func (g *mergeTreeForbiddenGit) MergeTreeWrite(context.Context, string, string, 
 	g.t.Helper()
 	g.t.Fatal("MergeTreeWrite was called for update fast path")
 	return gitexec.MergeTreeResult{}, nil
+}
+
+type processAwareMergeTreeForbiddenGit struct {
+	*mergeTreeForbiddenGit
+	processGit gitexec.Git
+}
+
+func forbidMergeTreeGitFromProcessDir(t *testing.T, repo, processDir string) *processAwareMergeTreeForbiddenGit {
+	t.Helper()
+	return &processAwareMergeTreeForbiddenGit{
+		mergeTreeForbiddenGit: forbidMergeTreeGit(t, repo),
+		processGit:            gitexec.New(processDir, false, nil),
+	}
+}
+
+func (g *processAwareMergeTreeForbiddenGit) RequireVersion(ctx context.Context, required string) error {
+	return g.processGit.RequireVersion(ctx, required)
+}
+
+func (g *processAwareMergeTreeForbiddenGit) IsInsideWorkTree(ctx context.Context) (bool, error) {
+	return g.processGit.IsInsideWorkTree(ctx)
+}
+
+func (g *processAwareMergeTreeForbiddenGit) RelativeWorkingDir(ctx context.Context) (string, error) {
+	return g.processGit.RelativeWorkingDir(ctx)
+}
+
+func (g *processAwareMergeTreeForbiddenGit) WorkTreeRoot(ctx context.Context) (string, error) {
+	return g.processGit.WorkTreeRoot(ctx)
+}
+
+func (g *processAwareMergeTreeForbiddenGit) RepoFilePath(ctx context.Context, path string) (string, error) {
+	return g.processGit.RepoFilePath(ctx, path)
 }
 
 type mergeTreeCountingGit struct {
