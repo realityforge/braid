@@ -782,6 +782,9 @@ func TestMergeTreeWriteReturnsMergedTreeAndConflictDetails(t *testing.T) {
 		if merged.Tree == "" {
 			t.Fatal("conflicted merged tree is empty")
 		}
+		if !reflect.DeepEqual(merged.ConflictPaths, []string{"file.txt"}) {
+			t.Fatalf("conflict paths = %#v, want file.txt", merged.ConflictPaths)
+		}
 		if !strings.Contains(merged.Details, "CONFLICT") || !strings.Contains(merged.Details, "file.txt") {
 			t.Fatalf("conflict details = %q, want conflict path", merged.Details)
 		}
@@ -790,6 +793,85 @@ func TestMergeTreeWriteReturnsMergedTreeAndConflictDetails(t *testing.T) {
 			t.Fatalf("status changed from %q to %q", before, after)
 		}
 	})
+}
+
+func TestParseMergeTreeOutputZUsesStructuredConflictPaths(t *testing.T) {
+	output := "merged-tree\x00" +
+		"file.txt\x00" +
+		"dir/path with spaces.txt\x00" +
+		"file.txt\x00" +
+		"\x00" +
+		"1\x00message-only.txt\x00Auto-merging\x00Auto-merging message-only.txt\n\x00" +
+		"1\x00message-only.txt\x00CONFLICT (contents)\x00CONFLICT (content): Merge conflict in message-only.txt\n\x00"
+
+	merged := parseMergeTreeOutput(output)
+
+	if merged.Tree != "merged-tree" {
+		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
+	}
+	wantPaths := []string{"file.txt", "dir/path with spaces.txt"}
+	if !reflect.DeepEqual(merged.ConflictPaths, wantPaths) {
+		t.Fatalf("conflict paths = %#v, want %#v", merged.ConflictPaths, wantPaths)
+	}
+	if strings.Contains(strings.Join(merged.ConflictPaths, "\n"), "message-only.txt") {
+		t.Fatalf("message path was parsed as conflict path: %#v", merged.ConflictPaths)
+	}
+	if !strings.Contains(merged.Details, "Auto-merging message-only.txt") || !strings.Contains(merged.Details, "CONFLICT (content): Merge conflict in message-only.txt") {
+		t.Fatalf("details = %q, want informational messages", merged.Details)
+	}
+}
+
+func TestParseMergeTreeOutputZEmptyConflictPathSection(t *testing.T) {
+	output := "merged-tree\x00" +
+		"\x00" +
+		"1\x00message-only.txt\x00CONFLICT (contents)\x00CONFLICT (content): Merge conflict in message-only.txt\n\x00"
+
+	merged := parseMergeTreeOutput(output)
+
+	if merged.Tree != "merged-tree" {
+		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
+	}
+	if len(merged.ConflictPaths) != 0 {
+		t.Fatalf("conflict paths = %#v, want none from empty structured section", merged.ConflictPaths)
+	}
+	if !strings.Contains(merged.Details, "CONFLICT (content): Merge conflict in message-only.txt") {
+		t.Fatalf("details = %q, want informational conflict message", merged.Details)
+	}
+}
+
+func TestParseMergeTreeOutputZMessageRecordWithMultiplePaths(t *testing.T) {
+	output := "merged-tree\x00" +
+		"file.txt\x00" +
+		"\x00" +
+		"2\x00ours.txt\x00theirs.txt\x00CONFLICT (rename/delete)\x00CONFLICT (rename/delete): ours.txt renamed to theirs.txt\n\x00"
+
+	merged := parseMergeTreeOutput(output)
+
+	if !reflect.DeepEqual(merged.ConflictPaths, []string{"file.txt"}) {
+		t.Fatalf("conflict paths = %#v, want file.txt", merged.ConflictPaths)
+	}
+	if merged.Details != "CONFLICT (rename/delete): ours.txt renamed to theirs.txt\n" {
+		t.Fatalf("details = %q, want multi-path message text", merged.Details)
+	}
+}
+
+func TestMergeTreeWriteConflictWithoutStructuredPathsUsesFallback(t *testing.T) {
+	git := Git{Runner: helperRunner(t, map[string]string{
+		"GITEXEC_HELPER_EXIT":   "1",
+		"GITEXEC_HELPER_STDOUT": "merged-tree\n",
+	})}
+
+	merged, err := git.MergeTreeWrite(context.Background(), "base", "local", "remote")
+
+	if err == nil {
+		t.Fatal("MergeTreeWrite returned nil error for conflict exit")
+	}
+	if merged.Tree != "merged-tree" {
+		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
+	}
+	if !reflect.DeepEqual(merged.ConflictPaths, []string{"(unknown path)"}) {
+		t.Fatalf("conflict paths = %#v, want fallback unknown path", merged.ConflictPaths)
+	}
 }
 
 func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t *testing.T) {
@@ -952,6 +1034,9 @@ func TestHelperProcess(t *testing.T) {
 	case "mock-output":
 		helperFprintln(os.Stdout, "helper stdout")
 		helperFprintln(os.Stderr, "helper stderr")
+		os.Exit(helperExitCode())
+	case "merge-tree":
+		helperFprint(os.Stdout, os.Getenv("GITEXEC_HELPER_STDOUT"))
 		os.Exit(helperExitCode())
 	case "interactive":
 		input, err := io.ReadAll(os.Stdin)

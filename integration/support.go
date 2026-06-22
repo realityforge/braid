@@ -379,7 +379,16 @@ func capturingEditorCommand(t *testing.T, root, message string) (string, string)
 	capture := filepath.Join(root, "captured-commit-message.txt")
 	if runtime.GOOS == "windows" {
 		path := filepath.Join(root, "capturing-editor.cmd")
-		body := "@echo off\r\ncopy /Y \"%~1\" \"" + capture + "\" >NUL\r\n> \"%~1\" echo " + message + "\r\n"
+		body := "@echo off\r\n" +
+			"setlocal\r\n" +
+			"if \"%~1\"==\"\" (\r\n" +
+			"  echo capturing editor expected Git commit message file argument 1>&2\r\n" +
+			"  exit /b 2\r\n" +
+			")\r\n" +
+			"set \"message_file=%~1\"\r\n" +
+			"copy /Y \"%message_file%\" \"" + capture + "\" >NUL\r\n" +
+			"if errorlevel 1 exit /b %errorlevel%\r\n" +
+			"> \"%message_file%\" echo " + message + "\r\n"
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatalf("write capturing editor script: %v", err)
 		}

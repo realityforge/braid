@@ -27,8 +27,9 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
 	testutil.CommitAll(t, repo, "local mirror change")
 	t.Setenv("GIT_EDITOR", writeEditor(t, "Sync push"))
+	git := forbidMergeTreeGit(t, repo)
 
-	out := runCommandOK(t, repo, []string{"sync", "vendor/basic"})
+	out := runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"sync", "vendor/basic"})
 
 	assertContains(t, out, "Sync push")
 	assertNotContains(t, out, "No local changes")
@@ -539,7 +540,7 @@ func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
 
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
 
-	assertContains(t, stdout, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
 	assertContains(t, stderr, "Braid preserved autostash")
 	assertContains(t, stderr, "Resolve the Braid update conflict first")
 	assertContains(t, stderr, "git stash apply")
@@ -575,7 +576,7 @@ func TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash(t *testing.T)
 
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
 
-	assertContains(t, stdout, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
 	assertContains(t, stderr, "update vendor/basic:")
 	assertContains(t, stderr, "MERGE_MSG")
 	assertContains(t, stderr, "Braid preserved autostash")

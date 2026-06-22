@@ -2,12 +2,14 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"braid/internal/config"
+	"braid/internal/gitexec"
 	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
@@ -82,6 +84,75 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	gotHead := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
 	if gotHead != head {
 		t.Fatalf("up-to-date update created commit %s, want HEAD %s", gotHead, head)
+	}
+}
+
+func TestUpdateCommandLocalEqualsBaseBypassesMergeTree(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	revision := testutil.CommitAll(t, upstream, "remote")
+	git := forbidMergeTreeGit(t, repo)
+
+	runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", "vendor/basic"})
+
+	assertFile(t, repo, "vendor/basic/README.md", "remote\n")
+	if got := loadMirror(t, repo, "vendor/basic").Revision; got != revision {
+		t.Fatalf("revision = %q, want %q", got, revision)
+	}
+	changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+	wantChanged := []string{".braids.json", "vendor/basic/README.md"}
+	if strings.Join(changed, "\n") != strings.Join(wantChanged, "\n") {
+		t.Fatalf("Braid commit changed %#v, want %#v", changed, wantChanged)
+	}
+}
+
+func TestUpdateCommandLocalEqualsRemoteBypassesMergeTree(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	revision := testutil.CommitAll(t, upstream, "remote")
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "remote\n")
+	testutil.CommitAll(t, repo, "manual mirror update")
+	git := forbidMergeTreeGit(t, repo)
+
+	runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", "vendor/basic"})
+
+	assertFile(t, repo, "vendor/basic/README.md", "remote\n")
+	if got := loadMirror(t, repo, "vendor/basic").Revision; got != revision {
+		t.Fatalf("revision = %q, want %q", got, revision)
+	}
+	changed := strings.Fields(testutil.Git(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Stdout)
+	if got := strings.Join(changed, "\n"); got != ".braids.json" {
+		t.Fatalf("Braid commit changed %#v, want only .braids.json", changed)
+	}
+}
+
+func TestUpdateCommandAbsentLocalMirrorItemUsesMergeTree(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.Git(t, repo, "rm", "-r", "vendor/basic")
+	testutil.Git(t, repo, "commit", "-m", "delete mirror")
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	testutil.CommitAll(t, upstream, "remote")
+	git := countMergeTreeGit(repo)
+
+	runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", "vendor/basic"})
+
+	if git.mergeTreeCalls == 0 {
+		t.Fatal("MergeTreeWrite was not called for absent committed mirror path")
 	}
 }
 
@@ -605,7 +676,7 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote change")
 	out := runCommandOK(t, repo, []string{"update", "vendor/basic"})
-	assertContains(t, out, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, out, "CONFLICT: vendor/basic/README.md")
 	assertContains(t, out, "Braid: warning: unrelated staged changes are present")
 	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, out, "git commit -F '.git/MERGE_MSG'")
@@ -688,7 +759,7 @@ func TestUpdateCommandConflictInstructionsFromSubdirectory(t *testing.T) {
 	}
 
 	out := runCommandOKInDir(t, repo, workDir, []string{"update", "../../vendor/basic"})
-	assertContains(t, out, "CONFLICT (content): Merge conflict in vendor/basic/README.md")
+	assertContains(t, out, "CONFLICT: vendor/basic/README.md")
 	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, out, "git commit -F '../../.git/MERGE_MSG'")
 
@@ -713,4 +784,48 @@ func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {
 	if m.Tag != "v2" || m.Branch != "" {
 		t.Fatalf("mirror tracking = branch %q tag %q, want tag v2", m.Branch, m.Tag)
 	}
+}
+
+type mergeTreeForbiddenGit struct {
+	gitexec.Git
+	t *testing.T
+}
+
+func forbidMergeTreeGit(t *testing.T, repo string) *mergeTreeForbiddenGit {
+	t.Helper()
+	return &mergeTreeForbiddenGit{Git: gitexec.New(repo, false, nil), t: t}
+}
+
+func (g *mergeTreeForbiddenGit) MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error) {
+	g.t.Helper()
+	g.t.Fatal("MergeTreeWrite was called for update fast path")
+	return gitexec.MergeTreeResult{}, nil
+}
+
+type mergeTreeCountingGit struct {
+	gitexec.Git
+	mergeTreeCalls int
+}
+
+func countMergeTreeGit(repo string) *mergeTreeCountingGit {
+	return &mergeTreeCountingGit{Git: gitexec.New(repo, false, nil)}
+}
+
+func (g *mergeTreeCountingGit) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (gitexec.MergeTreeResult, error) {
+	g.mergeTreeCalls++
+	return g.Git.MergeTreeWrite(ctx, baseTreeish, localTreeish, remoteTreeish)
+}
+
+func runCommandOKInDirWithOptions(t *testing.T, repo, dir string, options Options, args []string) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Chdir(dir)
+	options.WorkDir = dir
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(options).Run(args, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("braid %v exit = %d, stderr = %q", args, code, stderr.String())
+	}
+	return stdout.String()
 }

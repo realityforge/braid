@@ -68,6 +68,20 @@ type TreeItem struct {
 	Hash string
 }
 
+type TreeItemNotFoundError struct {
+	Treeish string
+	Path    string
+}
+
+func (e *TreeItemNotFoundError) Error() string {
+	return fmt.Sprintf("no tree item exists at %q in %s", e.Path, e.Treeish)
+}
+
+func IsTreeItemNotFound(err error) bool {
+	var notFound *TreeItemNotFoundError
+	return errors.As(err, &notFound)
+}
+
 type Commit struct {
 	Hash    string
 	Subject string
@@ -75,8 +89,9 @@ type Commit struct {
 }
 
 type MergeTreeResult struct {
-	Tree    string
-	Details string
+	Tree          string
+	ConflictPaths []string
+	Details       string
 }
 
 type StashEntry struct {
@@ -435,9 +450,12 @@ func (g Git) LsTreeItem(ctx context.Context, treeish, path string) (TreeItem, er
 	if err != nil {
 		return TreeItem{}, err
 	}
+	if strings.TrimSpace(out) == "" {
+		return TreeItem{}, &TreeItemNotFoundError{Treeish: treeish, Path: path}
+	}
 	meta, _, ok := strings.Cut(out, "\t")
 	if !ok {
-		return TreeItem{}, fmt.Errorf("no tree item exists at %q in %s", path, treeish)
+		return TreeItem{}, fmt.Errorf("could not parse tree item %q", out)
 	}
 	fields := strings.Fields(meta)
 	if len(fields) != 3 {
@@ -735,12 +753,15 @@ func (g Git) MakeTreeWithItemIn(ctx context.Context, mainContent, itemPath strin
 }
 
 func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (MergeTreeResult, error) {
-	result, runErr := g.Run(ctx, "merge-tree", "--write-tree", "--messages", "--merge-base="+baseTreeish, localTreeish, remoteTreeish)
+	result, runErr := g.Run(ctx, "merge-tree", "--write-tree", "--name-only", "-z", "--messages", "--merge-base="+baseTreeish, localTreeish, remoteTreeish)
 	parsed := parseMergeTreeOutput(result.Stdout)
 	if runErr != nil {
 		return parsed, runErr
 	}
 	if result.ExitCode != 0 {
+		if len(parsed.ConflictPaths) == 0 {
+			parsed.ConflictPaths = []string{"(unknown path)"}
+		}
 		return parsed, &ExitError{Result: result}
 	}
 	return parsed, nil
@@ -891,14 +912,73 @@ func workDir(value string) string {
 }
 
 func parseMergeTreeOutput(output string) MergeTreeResult {
+	if strings.Contains(output, "\x00") {
+		return parseMergeTreeOutputZ(output)
+	}
 	first, rest, ok := strings.Cut(output, "\n")
 	if !ok {
 		return MergeTreeResult{Tree: strings.TrimSpace(output)}
 	}
 	return MergeTreeResult{
-		Tree:    strings.TrimSpace(first),
-		Details: rest,
+		Tree:          strings.TrimSpace(first),
+		ConflictPaths: nil,
+		Details:       rest,
 	}
+}
+
+func parseMergeTreeOutputZ(output string) MergeTreeResult {
+	records := strings.Split(output, "\x00")
+	if len(records) == 0 {
+		return MergeTreeResult{}
+	}
+	result := MergeTreeResult{Tree: strings.TrimSpace(records[0])}
+	seenPaths := map[string]bool{}
+
+	i := 1
+	for ; i < len(records); i++ {
+		path := records[i]
+		if path == "" {
+			i++
+			break
+		}
+		if !seenPaths[path] {
+			seenPaths[path] = true
+			result.ConflictPaths = append(result.ConflictPaths, path)
+		}
+	}
+	result.Details = parseMergeTreeMessageDetails(records[i:])
+	return result
+}
+
+func parseMergeTreeMessageDetails(records []string) string {
+	var lines []string
+	for i := 0; i < len(records); {
+		record := records[i]
+		if record == "" {
+			i++
+			continue
+		}
+		if pathCount, err := strconv.Atoi(record); err == nil && pathCount >= 0 {
+			messageIndex := i + pathCount + 2
+			if messageIndex >= len(records) {
+				lines = append(lines, strings.TrimRight(record, "\n"))
+				i++
+				continue
+			}
+			message := strings.TrimRight(records[messageIndex], "\n")
+			if message != "" {
+				lines = append(lines, message)
+			}
+			i = messageIndex + 1
+			continue
+		}
+		lines = append(lines, strings.TrimRight(record, "\n"))
+		i++
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {

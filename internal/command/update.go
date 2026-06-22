@@ -31,6 +31,20 @@ type updateResult struct {
 	Status updateStatus
 }
 
+type mirrorItemStatus int
+
+const (
+	mirrorItemPresent mirrorItemStatus = iota
+	mirrorItemAbsent
+	mirrorItemError
+)
+
+type mirrorItemState struct {
+	Status mirrorItemStatus
+	Item   gitexec.TreeItem
+	Err    error
+}
+
 type scopedCleanGit interface {
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
@@ -199,18 +213,48 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 		_ = cleanupRemote()
 		return updateResult{}, err
 	}
-	baseTree, err := git.MakeTreeWithItemIn(ctx, "HEAD", m.Path, baseItem)
+	localItem := currentMirrorItem(ctx, git, m.Path)
+	if localItem.Status == mirrorItemError {
+		_ = cleanupRemote()
+		return updateResult{}, localItem.Err
+	}
+	baseCompareItem, err := comparableItemAtRevision(ctx, git, original, baseRevision)
 	if err != nil {
 		_ = cleanupRemote()
 		return updateResult{}, err
 	}
-	remoteTree, err := git.MakeTreeWithItemIn(ctx, "HEAD", m.Path, remoteItem)
+	remoteCompareItem, err := comparableItemAtRevision(ctx, git, m, newRevision)
 	if err != nil {
 		_ = cleanupRemote()
 		return updateResult{}, err
 	}
 
-	mergedTree, mergeErr := git.MergeTreeWrite(ctx, baseTree, localHash, remoteTree)
+	var contentTree string
+	mergedTree := gitexec.MergeTreeResult{Tree: localHash}
+	var mergeErr error
+	switch {
+	case localItem.Status == mirrorItemPresent && sameTreeItem(localItem.Item, remoteCompareItem):
+		contentTree = localHash
+	case localItem.Status == mirrorItemPresent && sameTreeItem(localItem.Item, baseCompareItem):
+		contentTree, err = git.MakeTreeWithItemIn(ctx, localHash, m.Path, remoteItem)
+		if err != nil {
+			_ = cleanupRemote()
+			return updateResult{}, err
+		}
+	default:
+		baseTree, err := git.MakeTreeWithItemIn(ctx, localHash, m.Path, baseItem)
+		if err != nil {
+			_ = cleanupRemote()
+			return updateResult{}, err
+		}
+		remoteTree, err := git.MakeTreeWithItemIn(ctx, localHash, m.Path, remoteItem)
+		if err != nil {
+			_ = cleanupRemote()
+			return updateResult{}, err
+		}
+		mergedTree, mergeErr = git.MergeTreeWrite(ctx, baseTree, localHash, remoteTree)
+		contentTree = mergedTree.Tree
+	}
 
 	m.Revision = newRevision
 	if err := cfg.Update(m); err != nil {
@@ -233,6 +277,9 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 	subject := updateCommitSubject(m)
 	if mergeErr != nil {
 		result := updateResult{Status: updateStatusConflict}
+		if err := writeConflictSummary(stdout, mergedTree.ConflictPaths); err != nil {
+			return result, err
+		}
 		if _, err := io.WriteString(stdout, mergedTree.Details); err != nil {
 			return result, err
 		}
@@ -253,7 +300,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 		return result, h.writeMergeMessage(ctx, repo, processGit, subject)
 	}
 
-	finalTree, err := git.MakeTreeWithItemIn(ctx, mergedTree.Tree, config.FileName, configItem)
+	finalTree, err := git.MakeTreeWithItemIn(ctx, contentTree, config.FileName, configItem)
 	if err != nil {
 		_ = cleanupRemote()
 		return updateResult{}, err
@@ -306,11 +353,50 @@ type treeItemGit interface {
 	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
 }
 
+type revisionItemGit interface {
+	RevParse(context.Context, string) (string, error)
+	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
+}
+
 func itemAtRevision(ctx context.Context, git treeItemGit, m mirror.Mirror, revision string) (gitexec.TreeItem, error) {
 	if m.RemotePath == "" {
 		return gitexec.TreeItem{Type: "tree", Hash: revision}, nil
 	}
 	return git.LsTreeItem(ctx, revision, m.RemotePath)
+}
+
+func comparableItemAtRevision(ctx context.Context, git revisionItemGit, m mirror.Mirror, revision string) (gitexec.TreeItem, error) {
+	if m.RemotePath == "" {
+		tree, err := git.RevParse(ctx, revision+"^{tree}")
+		if err != nil {
+			return gitexec.TreeItem{}, err
+		}
+		return gitexec.TreeItem{Mode: "040000", Type: "tree", Hash: tree}, nil
+	}
+	return git.LsTreeItem(ctx, revision, m.RemotePath)
+}
+
+func currentMirrorItem(ctx context.Context, git treeItemGit, path string) mirrorItemState {
+	item, err := git.LsTreeItem(ctx, "HEAD", path)
+	if err == nil {
+		return mirrorItemState{Status: mirrorItemPresent, Item: item}
+	}
+	if gitexec.IsTreeItemNotFound(err) {
+		return mirrorItemState{Status: mirrorItemAbsent}
+	}
+	return mirrorItemState{Status: mirrorItemError, Err: err}
+}
+
+func writeConflictSummary(stdout io.Writer, paths []string) error {
+	if len(paths) == 0 {
+		paths = []string{"(unknown path)"}
+	}
+	for _, path := range paths {
+		if _, err := fmt.Fprintf(stdout, "CONFLICT: %s\n", path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func updateCommitSubject(m mirror.Mirror) string {
