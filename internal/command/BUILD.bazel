@@ -28,10 +28,6 @@ go_library(
     ],
 )
 
-COMMAND_TEST_SUPPORT_SRCS = [
-    "test_support_test.go",
-]
-
 COMMAND_TEST_DEPS = [
     "//internal/cli",
     "//internal/config",
@@ -40,90 +36,99 @@ COMMAND_TEST_DEPS = [
     "//internal/testutil",
 ]
 
+go_library(
+    name = "command_test_support",
+    srcs = ["test_support_test.go"],
+    embed = [":command"],
+    importpath = "braid/internal/command",
+    testonly = True,
+    deps = COMMAND_TEST_DEPS,
+)
+
 go_test(
     name = "add_test",
-    srcs = ["add_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["add_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "cache_test",
-    srcs = ["cache_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["cache_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "diff_test",
-    srcs = ["diff_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["diff_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "path_test",
-    srcs = ["path_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["path_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "preflight_test",
-    srcs = ["preflight_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["preflight_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "push_test",
-    srcs = ["push_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["push_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "remove_test",
-    srcs = ["remove_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["remove_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "setup_test",
-    srcs = ["setup_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["setup_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "status_test",
-    srcs = ["status_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["status_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "sync_test",
-    srcs = ["sync_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["sync_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )
 
 go_test(
     name = "update_test",
-    srcs = ["update_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
-    embed = [":command"],
+    srcs = ["update_test.go"],
+    embed = [":command_test_support"],
     timeout = "long",
     deps = COMMAND_TEST_DEPS,
 )

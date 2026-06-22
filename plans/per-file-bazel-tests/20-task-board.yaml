@@ -80,6 +80,7 @@ tasks:
     acceptance_criteria:
       - Shared command test helpers are not defined in feature-specific test files.
       - Helpers remain test-only and in package command.
+      - Shared command test helpers are owned by a test-only support go_library.
       - Helper-only _test.go files do not receive standalone go_test labels unless they contain runnable tests.
       - Existing test bodies are changed only as needed for helper movement.
     files_touched:
@@ -90,6 +91,8 @@ tasks:
         result: pass; shared helpers are defined only in internal/command/test_support_test.go
       - command: rg -n "^func (Test|Benchmark|Fuzz|Example)" internal/command/test_support_test.go
         result: pass; no runnable tests in helper-only source
+      - command: bazel query 'kind("go_library rule", //internal/command:*)'
+        result: pass; command_test_support is present as a test-only support library
     commit:
       hash: not_required
       message: not_required; consolidated final commit requested after review
@@ -105,6 +108,7 @@ tasks:
       - //internal/command:command_test is removed.
       - No converted command test target has the manual tag.
       - Command per-file test targets preserve timeout = "long" unless focused timing supports a narrower timeout.
+      - Command per-file test targets embed //internal/command:command_test_support instead of repeating helper sources directly.
       - Focused command labels and //internal/command/... pass.
     files_touched:
       - internal/command/BUILD.bazel
@@ -251,3 +255,7 @@ history:
     task: IMPLEMENTATION-REVIEW-R1
     commit: not_required
     note: Implementation review reported Findings none after checking current uncommitted implementation against the accepted plan.
+  - timestamp: "2026-06-22"
+    task: POST-COMMIT-FOLLOWUP
+    commit: not_required
+    note: Moved command helper source behind a test-only command_test_support go_library after review of repeated helper source inclusion.

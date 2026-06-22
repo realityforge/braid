@@ -100,11 +100,15 @@ bazel test //integration:conflict_test
 - Shared command-test helpers should move out of feature-specific test files.
 - The support shape must preserve access to unexported `internal/command`
   symbols where tests currently need same-package access.
-- Preferred implementation for `internal/command` is a helper-only
-  `test_support_test.go` source included by every per-file target that needs it.
+- Preferred implementation for `internal/command` is a test-only support
+  `go_library` that embeds `:command` and owns the helper-only
+  `test_support_test.go` source.
 - Helper-only `_test.go` files must not get standalone `go_test` labels unless
   they contain runnable `Test*`, `Benchmark*`, `Fuzz*`, or `Example*`
   functions.
+- Keep `test_support_test.go` as a `_test.go` source so non-Bazel Go tooling
+  does not pull `testing` helpers into the production `internal/command`
+  package.
 - Do not move command test helpers into production libraries unless a concrete
   test target requires it and there is no same-package test-only alternative.
 - Keep helper extraction minimal; do not rewrite test bodies except to compile

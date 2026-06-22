@@ -15,16 +15,16 @@ Date: 2026-06-22
      helper-only `_test.go` sources.
    - Keep helper code in package `command` so tests retain access to unexported
      command internals.
-   - Avoid production helper libraries unless the test-only source approach
-     fails under Bazel.
+   - Put shared helper code behind a test-only support `go_library` that embeds
+     `:command`, matching the integration package's support-library shape while
+     keeping the helper file named `*_test.go` for normal Go tooling.
 3. Command package BUILD split
    - Replace `//internal/command:command_test` with one `go_test` per
      `internal/command/*_test.go` feature file that contains runnable tests.
    - Do not create standalone `go_test` labels for helper-only `_test.go`
      support sources.
-   - Include shared helper `_test.go` sources only where needed or consistently
-     across the per-file command test targets if that keeps BUILD maintenance
-     simpler.
+   - Have command per-file tests embed the test-only support library instead of
+     repeating helper sources directly in each target.
    - Preserve `timeout = "long"` on command per-file targets unless focused
      per-file timing proves a smaller timeout is safe.
    - Run focused per-file command tests and the package pattern.
@@ -72,7 +72,16 @@ Date: 2026-06-22
   - Mitigation: keep command helpers in package `command` as test-only sources.
 - Helper source inclusion
   - Impact: a per-file target may fail to compile if a helper source is omitted.
-  - Mitigation: build each per-file target explicitly after the split.
+  - Mitigation: embed a shared test-only support library from each per-file test
+    target and build each per-file target explicitly after the split.
+- Support library expectations
+  - Impact: `rules_go` embeds same-package sources into internal test archives,
+    so the support library matches the integration package pattern but does not
+    make white-box test helpers behave like a separately linked external
+    dependency.
+  - Mitigation: keep the support-library shape for BUILD maintainability and
+    normal Go tooling hygiene; use Bazel action evidence to document the
+    remaining same-package internal-test compilation behavior.
 - Duplicate test execution
   - Impact: keeping aggregates while removing `manual` tags would run the same
     tests more than once under `bazel test //...`.
@@ -172,3 +181,4 @@ Tasks are tracked in `20-task-board.yaml`.
 | R1 | Command timeout policy was missing. | Valid. | Required command per-file targets to preserve `timeout = "long"` unless focused timing justifies narrowing. |
 | R1 | Documentation scope could rewrite historical plans. | Valid. | Limited docs updates to current developer-facing docs and explicitly excluded historical plan rewrites. |
 | R1 | Final CI parity timing was underspecified. | Valid. | Required re-reading `.github/workflows/ci.yml` after edits and recording exact `git diff --exit-code` timing. |
+| Post-commit | Command test support was repeated as raw source in every test target. | Valid. | Switched `internal/command` to a test-only `command_test_support` `go_library` embedded by each per-file `go_test`, while keeping the helper file as `_test.go` to avoid normal Go tooling pollution. |
