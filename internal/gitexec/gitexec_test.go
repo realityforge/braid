@@ -811,7 +811,7 @@ func TestParseMergeTreeOutputZUsesStructuredConflictPaths(t *testing.T) {
 	}
 }
 
-func TestParseMergeTreeOutputZEmptyConflictPathSection(t *testing.T) {
+func TestParseMergeTreeOutputZEmptyConflictPathSectionUsesConflictMessagePaths(t *testing.T) {
 	output := "merged-tree\x00" +
 		"\x00" +
 		"1\x00message-only.txt\x00CONFLICT (contents)\x00CONFLICT (content): Merge conflict in message-only.txt\n\x00"
@@ -821,8 +821,8 @@ func TestParseMergeTreeOutputZEmptyConflictPathSection(t *testing.T) {
 	if merged.Tree != "merged-tree" {
 		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
 	}
-	if len(merged.ConflictPaths) != 0 {
-		t.Fatalf("conflict paths = %#v, want none from empty structured section", merged.ConflictPaths)
+	if !reflect.DeepEqual(merged.ConflictPaths, []string{"message-only.txt"}) {
+		t.Fatalf("conflict paths = %#v, want message-only.txt", merged.ConflictPaths)
 	}
 	if !strings.Contains(merged.Details, "CONFLICT (content): Merge conflict in message-only.txt") {
 		t.Fatalf("details = %q, want informational conflict message", merged.Details)
@@ -884,7 +884,25 @@ func TestMergeTreeWriteConflictWithoutMessagePathsRetriesWithoutMessages(t *test
 	}
 }
 
-func TestMergeTreeWriteConflictWithEmptyStructuredPathSectionUsesFallback(t *testing.T) {
+func TestParseMergeTreeOutputZEmptyConflictPathSectionIgnoresNonConflictMessagePaths(t *testing.T) {
+	output := "merged-tree\x00" +
+		"\x00" +
+		"1\x00message-only.txt\x00Auto-merging\x00Auto-merging message-only.txt\n\x00"
+
+	merged := parseMergeTreeOutput(output)
+
+	if merged.Tree != "merged-tree" {
+		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
+	}
+	if len(merged.ConflictPaths) != 0 {
+		t.Fatalf("conflict paths = %#v, want none from non-conflict messages", merged.ConflictPaths)
+	}
+	if !strings.Contains(merged.Details, "Auto-merging message-only.txt") {
+		t.Fatalf("details = %q, want informational auto-merge message", merged.Details)
+	}
+}
+
+func TestMergeTreeWriteConflictWithEmptyStructuredPathSectionUsesMessagePaths(t *testing.T) {
 	git := Git{Runner: helperRunner(t, map[string]string{
 		"GITEXEC_HELPER_EXIT":                        "1",
 		"GITEXEC_HELPER_EMPTY_CONFLICT_PATH_SECTION": "1",
@@ -898,8 +916,8 @@ func TestMergeTreeWriteConflictWithEmptyStructuredPathSectionUsesFallback(t *tes
 	if merged.Tree != "merged-tree" {
 		t.Fatalf("tree = %q, want merged-tree", merged.Tree)
 	}
-	if !reflect.DeepEqual(merged.ConflictPaths, []string{"(unknown path)"}) {
-		t.Fatalf("conflict paths = %#v, want fallback unknown path", merged.ConflictPaths)
+	if !reflect.DeepEqual(merged.ConflictPaths, []string{"message-only.txt"}) {
+		t.Fatalf("conflict paths = %#v, want message-only.txt", merged.ConflictPaths)
 	}
 	if !strings.Contains(merged.Details, "CONFLICT (content): Merge conflict in message-only.txt") {
 		t.Fatalf("details = %q, want informational conflict message", merged.Details)

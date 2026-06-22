@@ -386,7 +386,8 @@ func capturingEditorCommand(t *testing.T, root, message string) (string, string)
 			"  exit /b 2\r\n" +
 			")\r\n" +
 			"set \"message_file=%~1\"\r\n" +
-			"copy /Y \"%message_file%\" \"" + capture + "\" >NUL\r\n" +
+			"set \"capture_file=" + capture + "\"\r\n" +
+			"powershell -NoProfile -Command \"$ErrorActionPreference = 'Stop'; $deadline = (Get-Date).AddSeconds(2); while (-not (Test-Path -LiteralPath $env:message_file)) { if ((Get-Date) -ge $deadline) { throw ('Git commit message file not found: ' + $env:message_file) }; Start-Sleep -Milliseconds 50 }; Copy-Item -LiteralPath $env:message_file -Destination $env:capture_file -Force\"\r\n" +
 			"if errorlevel 1 exit /b %errorlevel%\r\n" +
 			"> \"%message_file%\" echo " + message + "\r\n"
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {

@@ -964,12 +964,18 @@ func parseMergeTreeOutputZ(output string) MergeTreeResult {
 			result.ConflictPaths = append(result.ConflictPaths, path)
 		}
 	}
-	result.Details = parseMergeTreeMessageDetails(records[i:])
+	details, messageConflictPaths := parseMergeTreeMessageDetails(records[i:])
+	result.Details = details
+	if len(result.ConflictPaths) == 0 {
+		result.ConflictPaths = messageConflictPaths
+	}
 	return result
 }
 
-func parseMergeTreeMessageDetails(records []string) string {
+func parseMergeTreeMessageDetails(records []string) (string, []string) {
 	var lines []string
+	var conflictPaths []string
+	seenConflictPaths := map[string]bool{}
 	for i := 0; i < len(records); {
 		record := records[i]
 		if record == "" {
@@ -977,15 +983,26 @@ func parseMergeTreeMessageDetails(records []string) string {
 			continue
 		}
 		if pathCount, err := strconv.Atoi(record); err == nil && pathCount >= 0 {
-			messageIndex := i + pathCount + 2
+			pathStart := i + 1
+			reasonIndex := i + pathCount + 1
+			messageIndex := reasonIndex + 1
 			if messageIndex >= len(records) {
 				lines = append(lines, strings.TrimRight(record, "\n"))
 				i++
 				continue
 			}
+			reason := records[reasonIndex]
 			message := strings.TrimRight(records[messageIndex], "\n")
 			if message != "" {
 				lines = append(lines, message)
+			}
+			if isMergeTreeConflictMessage(reason, message) {
+				for _, path := range records[pathStart:reasonIndex] {
+					if path != "" && !seenConflictPaths[path] {
+						seenConflictPaths[path] = true
+						conflictPaths = append(conflictPaths, path)
+					}
+				}
 			}
 			i = messageIndex + 1
 			continue
@@ -994,9 +1011,13 @@ func parseMergeTreeMessageDetails(records []string) string {
 		i++
 	}
 	if len(lines) == 0 {
-		return ""
+		return "", conflictPaths
 	}
-	return strings.Join(lines, "\n") + "\n"
+	return strings.Join(lines, "\n") + "\n", conflictPaths
+}
+
+func isMergeTreeConflictMessage(reason, message string) bool {
+	return strings.HasPrefix(reason, "CONFLICT") || strings.HasPrefix(message, "CONFLICT")
 }
 
 func (r Runner) RunOK(ctx context.Context, args ...string) (Result, error) {
