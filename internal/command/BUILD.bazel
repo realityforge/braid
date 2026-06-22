@@ -102,7 +102,7 @@ go_test(
 )
 
 go_test(
-    name = "setup_test",
+    name = "configure_command_test",
     srcs = ["setup_test.go"],
     embed = [":command_test_support"],
     timeout = "short",
@@ -126,7 +126,7 @@ go_test(
 )
 
 go_test(
-    name = "update_test",
+    name = "refresh_command_test",
     srcs = ["update_test.go"],
     embed = [":command_test_support"],
     timeout = "moderate",

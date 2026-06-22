@@ -35,7 +35,7 @@ go_test(
 )
 
 go_test(
-    name = "setup_failure_test",
+    name = "configure_failure_command_test",
     size = "medium",
     srcs = ["setup_failure_test.go"],
     data = ["//cmd/braid"],
