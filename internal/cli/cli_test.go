@@ -148,7 +148,7 @@ func TestParseUsageErrors(t *testing.T) {
 		want string
 	}{
 		{name: "missing command", args: nil, want: "missing command"},
-		{name: "unknown command", args: []string{"upgrade-config"}, want: "unknown command upgrade-config"},
+		{name: "unknown command", args: []string{"unknown-command"}, want: "unknown command unknown-command"},
 		{name: "unknown global flag", args: []string{"--bogus", "version"}, want: "unknown global flag --bogus"},
 		{name: "global no cache after command", args: []string{"add", "--no-cache", "url"}, want: "unknown flag for add: --no-cache"},
 		{name: "global verbose after command", args: []string{"add", "url", "--verbose"}, want: "unknown flag for add: --verbose"},
@@ -158,7 +158,6 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
 		{name: "update all strategy flag", args: []string{"update", "--branch", "main"}, want: "update without local_path cannot use --branch, --tag, or --revision"},
-		{name: "update head removed", args: []string{"update", "vendor/repo", "--head"}, want: "unknown flag for update: --head"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},

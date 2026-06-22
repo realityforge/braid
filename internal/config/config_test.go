@@ -1,8 +1,6 @@
 package config
 
 import (
-	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,7 +52,7 @@ func TestParseRejectsUnsupportedConfigs(t *testing.T) {
 		{name: "missing version", json: `{"mirrors":{}}`, want: "missing config_version"},
 		{name: "missing mirrors", json: `{"config_version":1}`, want: "missing mirrors"},
 		{name: "unknown root field", json: `{"config_version":1,"mirrors":{},"extra":true}`, want: "unknown field"},
-		{name: "unknown mirror field", json: `{"config_version":1,"mirrors":{"x":{"url":"u","revision":"r","remote":"old"}}}`, want: "unknown field"},
+		{name: "unknown mirror field", json: `{"config_version":1,"mirrors":{"x":{"url":"u","revision":"r","extra":true}}}`, want: "unknown field"},
 		{name: "missing url", json: `{"config_version":1,"mirrors":{"x":{"revision":"r"}}}`, want: "missing url"},
 		{name: "missing revision", json: `{"config_version":1,"mirrors":{"x":{"url":"u"}}}`, want: "missing revision"},
 		{name: "branch tag conflict", json: `{"config_version":1,"mirrors":{"x":{"url":"u","branch":"main","tag":"v1","revision":"r"}}}`, want: "cannot specify both branch and tag"},
@@ -70,19 +68,6 @@ func TestParseRejectsUnsupportedConfigs(t *testing.T) {
 				t.Fatalf("error = %q, want containing %q", err.Error(), test.want)
 			}
 		})
-	}
-}
-
-func TestLoadRejectsLegacyBraids(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, LegacyFileName), []byte("legacy"), 0o644); err != nil {
-		t.Fatalf("write legacy config: %v", err)
-	}
-
-	_, err := Load(root)
-	var legacyErr *UnsupportedLegacyError
-	if !errors.As(err, &legacyErr) {
-		t.Fatalf("Load error = %T %v, want UnsupportedLegacyError", err, err)
 	}
 }
 

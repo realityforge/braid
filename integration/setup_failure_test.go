@@ -78,17 +78,6 @@ func TestExecutableFailurePaths(t *testing.T) {
 	assertEmpty(t, "missing config stdout", missingConfig.stdout)
 	assertContains(t, missingConfig.stderr, "missing .braids.json")
 
-	legacyRepo := filepath.Join(root, "legacy-config")
-	initRepo(t, env, legacyRepo)
-	writeFile(t, legacyRepo, "README.md", "downstream\n")
-	commitAll(t, env, legacyRepo, "seed downstream")
-	writeFile(t, legacyRepo, ".braids", "legacy: true\n")
-	legacy := runBraid(t, env, legacyRepo, braid, "add", upstream, "vendor/basic")
-	assertExit(t, legacy, 1)
-	assertEmpty(t, "legacy stdout", legacy.stdout)
-	assertContains(t, legacy.stderr, "legacy .braids config is unsupported")
-	assertPathMissing(t, legacyRepo, ".braids.json")
-
 	subdirRepo := filepath.Join(root, "subdir")
 	initRepo(t, env, subdirRepo)
 	writeFile(t, subdirRepo, "README.md", "downstream\n")

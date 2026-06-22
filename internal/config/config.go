@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	FileName          = ".braids.json"
-	LegacyFileName    = ".braids"
-	CurrentVersion    = 1
-	unsupportedLegacy = "legacy .braids config is unsupported"
+	FileName       = ".braids.json"
+	CurrentVersion = 1
 )
 
 type Config struct {
@@ -40,25 +38,11 @@ func (e *PathAlreadyInUseError) Error() string {
 	return "path already in use: " + e.Path
 }
 
-type UnsupportedLegacyError struct {
-	Path string
-}
-
-func (e *UnsupportedLegacyError) Error() string {
-	return unsupportedLegacy + ": " + e.Path
-}
-
 func Empty() Config {
 	return Config{Mirrors: map[string]mirror.Mirror{}}
 }
 
 func Load(root string) (Config, error) {
-	legacyPath := filepath.Join(root, LegacyFileName)
-	if _, err := os.Stat(legacyPath); err == nil {
-		return Config{}, &UnsupportedLegacyError{Path: legacyPath}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Config{}, err
-	}
 	return LoadFile(filepath.Join(root, FileName))
 }
 
