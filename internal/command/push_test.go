@@ -324,6 +324,9 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 	}
 	prompt := readTestFile(t, promptCapture)
 	for _, want := range []string{
+		"The commit will be written to the mirrored/upstream repository, not to the downstream/hosting repository",
+		"Describe the staged mirror changes from the mirrored repository's perspective",
+		"Use downstream commit provenance only as background for intent",
 		"Respond only with the proposed commit message.",
 		"Local mirror path: vendor/basic",
 		"Upstream URL: " + upstream,

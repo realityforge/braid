@@ -193,6 +193,9 @@ func writePushMessageDiffContext(contextDir, diff string) (pushMessageDiffContex
 func formatPushMessagePrompt(data pushMessagePromptData) string {
 	var b strings.Builder
 	b.WriteString("Generate a Git commit message for an upstream commit created by braid push.\n")
+	b.WriteString("The commit will be written to the mirrored/upstream repository, not to the downstream/hosting repository that contains the local mirror.\n")
+	b.WriteString("Describe the staged mirror changes from the mirrored repository's perspective: focus on what changed in the upstream project files at the upstream path below.\n")
+	b.WriteString("Use downstream commit provenance only as background for intent; do not frame the message around vendoring, updating a mirror, syncing from the hosting repository, local mirror paths, or .braids.json unless those are part of the upstream content change itself.\n")
 	b.WriteString("Respond only with the proposed commit message. Do not include commentary, Markdown fences, explanations, or any other content. The user will review the message in Git's editor before Braid commits.\n\n")
 	b.WriteString("Mirror metadata:\n")
 	fmt.Fprintf(&b, "- Local mirror path: %s\n", data.Mirror.Path)
