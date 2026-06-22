@@ -58,7 +58,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.syncGit(repo, inv, stderr)
-	processGit := UpdateHandler{Options: h.Options}.processRepoPathGit(repo, inv, stderr)
+	processGit := UpdateHandler(h).processRepoPathGit(repo, inv, stderr)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	autostash, err := h.prepareSyncAutostash(ctx, repo, git, targets, inv.Sync.Autostash)
+	autostash, autostashOK, err := h.prepareSyncAutostash(ctx, repo, git, targets, inv.Sync.Autostash)
 	if err != nil {
 		return err
 	}
@@ -95,11 +95,11 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if runErr == nil {
-		update := UpdateHandler{Options: h.Options}
+		update := UpdateHandler(h)
 		updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
 		for _, target := range targets {
 			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, stdout, stderr)
-			if result.Status == updateStatusConflict && autostash != nil {
+			if result.Status == updateStatusConflict && autostashOK {
 				updateConflict = true
 				if err != nil {
 					runErr = fmt.Errorf("update %s: %w", target.LocalPath, err)
@@ -115,13 +115,13 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		}
 	}
 
-	if autostash != nil {
+	if autostashOK {
 		if updateConflict {
-			return h.autostashConflictError(*autostash, runErr)
+			return h.autostashConflictError(autostash, runErr)
 		}
-		if restoreErr := h.restoreSyncAutostash(ctx, git, *autostash); restoreErr != nil {
+		if restoreErr := h.restoreSyncAutostash(ctx, git, autostash); restoreErr != nil {
 			if runErr != nil {
-				return fmt.Errorf("%w; additionally, %v", runErr, restoreErr)
+				return fmt.Errorf("%w; additionally, %w", runErr, restoreErr)
 			}
 			return restoreErr
 		}
@@ -177,48 +177,48 @@ func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths
 	return targets, nil, nil
 }
 
-func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext, git syncAutostashGit, targets []syncTarget, autostashEnabled bool) (*syncAutostash, error) {
+func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext, git syncAutostashGit, targets []syncTarget, autostashEnabled bool) (syncAutostash, bool, error) {
 	paths := make([]string, 0, len(targets))
 	for _, target := range targets {
 		if mirrorOverlapsConfig(target.Mirror.Path) {
-			return nil, fmt.Errorf("mirror path %q overlaps %s", target.Mirror.Path, config.FileName)
+			return syncAutostash{}, false, fmt.Errorf("mirror path %q overlaps %s", target.Mirror.Path, config.FileName)
 		}
 		paths = append(paths, target.Mirror.Path)
 	}
 	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
-		return nil, err
+		return syncAutostash{}, false, err
 	} else if blocked {
-		return nil, fmt.Errorf("unresolved git operation state is present: %s", state)
+		return syncAutostash{}, false, fmt.Errorf("unresolved git operation state is present: %s", state)
 	}
 	if err := ensureConfigClean(ctx, git, configRoot(h.Options, repo), true); err != nil {
-		return nil, err
+		return syncAutostash{}, false, err
 	}
 	if !autostashEnabled {
 		for _, path := range paths {
 			if err := ensureScopedClean(ctx, git, path); err != nil {
-				return nil, err
+				return syncAutostash{}, false, err
 			}
 		}
-		return nil, nil
+		return syncAutostash{}, false, nil
 	}
 	if len(paths) == 0 {
-		return nil, nil
+		return syncAutostash{}, false, nil
 	}
 	status, err := git.StatusPorcelainPathspecsWithIgnored(ctx, paths...)
 	if err != nil {
-		return nil, err
+		return syncAutostash{}, false, err
 	}
 	if strings.TrimSpace(status) == "" {
-		return nil, nil
+		return syncAutostash{}, false, nil
 	}
 	entry, saved, err := git.StashPushAllPathspecs(ctx, syncAutostashMessage, paths...)
 	if err != nil {
-		return nil, err
+		return syncAutostash{}, false, err
 	}
 	if !saved {
-		return nil, nil
+		return syncAutostash{}, false, nil
 	}
-	return &syncAutostash{Entry: entry, Paths: paths}, nil
+	return syncAutostash{Entry: entry, Paths: paths}, true, nil
 }
 
 func (h SyncHandler) restoreSyncAutostash(ctx context.Context, git syncAutostashRestoreGit, saved syncAutostash) error {
@@ -339,7 +339,7 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 }
 
 func (h SyncHandler) runPushPlan(ctx context.Context, repo RepoContext, git PushGit, plan syncPushPlan, inv cli.Invocation, stdout, stderr io.Writer) error {
-	push := PushHandler{Options: h.Options}
+	push := PushHandler(h)
 	for _, action := range plan.Actions {
 		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch, inv.Sync.Keep, inv.Global, stdout, stderr)
 		if err != nil {

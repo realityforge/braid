@@ -228,18 +228,18 @@ func ResolveRepoContext(ctx context.Context, inv cli.Invocation, options Options
 
 	inside, err := processGit.IsInsideWorkTree(ctx)
 	if err != nil {
-		return repo, processGit, nil
+		return RepoContext{}, nil, err
 	}
 	if !inside {
 		return repo, processGit, nil
 	}
 	prefix, err := processGit.RelativeWorkingDir(ctx)
 	if err != nil {
-		return repo, processGit, nil
+		return RepoContext{}, nil, err
 	}
 	root, err := processGit.WorkTreeRoot(ctx)
 	if err != nil {
-		return repo, processGit, nil
+		return RepoContext{}, nil, err
 	}
 	repo.GitWorkTreeRoot = root
 	repo.WorkTreePrefix = cleanWorkTreePrefix(prefix)

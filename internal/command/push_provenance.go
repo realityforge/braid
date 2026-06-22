@@ -34,14 +34,6 @@ type pushProvenanceWindow struct {
 	NoCleanAnchor bool
 }
 
-func buildPushProvenanceTemplate(ctx context.Context, git PushGit, m mirror.Mirror) (pushProvenanceTemplate, bool, error) {
-	provenance, ok, err := buildPushProvenance(ctx, git, m)
-	if err != nil || !ok {
-		return pushProvenanceTemplate{}, false, err
-	}
-	return buildPushProvenanceTemplateFromRaw(ctx, git, m, provenance)
-}
-
 func buildPushProvenance(ctx context.Context, git PushGit, m mirror.Mirror) (pushProvenance, bool, error) {
 	window, err := findPushProvenanceWindow(ctx, git, m)
 	if err != nil {

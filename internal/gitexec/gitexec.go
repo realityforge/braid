@@ -161,11 +161,17 @@ func (g Git) RequireVersion(ctx context.Context, required string) error {
 }
 
 func (g Git) IsInsideWorkTree(ctx context.Context) (bool, error) {
-	out, err := g.Output(ctx, "rev-parse", "--is-inside-work-tree")
+	result, err := g.Run(ctx, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
 		return false, err
 	}
-	return out == "true", nil
+	if result.ExitCode != 0 {
+		if result.ExitCode == 128 && strings.Contains(result.Stderr, "not a git repository") {
+			return false, nil
+		}
+		return false, &ExitError{Result: result}
+	}
+	return strings.TrimSpace(result.Stdout) == "true", nil
 }
 
 func (g Git) RelativeWorkingDir(ctx context.Context) (string, error) {

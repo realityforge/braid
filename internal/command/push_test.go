@@ -1016,14 +1016,7 @@ func TestPushMessageGeneratorPlatformSupport(t *testing.T) {
 }
 
 func TestConfiguredPushMessageGenerationTreatsUnsetAndEmptyAsDisabled(t *testing.T) {
-	oldValue, hadValue := os.LookupEnv(pushMessageCommandEnv)
-	t.Cleanup(func() {
-		if hadValue {
-			_ = os.Setenv(pushMessageCommandEnv, oldValue)
-		} else {
-			_ = os.Unsetenv(pushMessageCommandEnv)
-		}
-	})
+	t.Setenv(pushMessageCommandEnv, "temporary")
 
 	if err := os.Unsetenv(pushMessageCommandEnv); err != nil {
 		t.Fatalf("unset %s: %v", pushMessageCommandEnv, err)
@@ -1032,16 +1025,12 @@ func TestConfiguredPushMessageGenerationTreatsUnsetAndEmptyAsDisabled(t *testing
 		t.Fatalf("unset env configured generation = %#v, want disabled", got)
 	}
 
-	if err := os.Setenv(pushMessageCommandEnv, ""); err != nil {
-		t.Fatalf("set empty %s: %v", pushMessageCommandEnv, err)
-	}
+	t.Setenv(pushMessageCommandEnv, "")
 	if got := configuredPushMessageGeneration(); got.Enabled {
 		t.Fatalf("empty env configured generation = %#v, want disabled", got)
 	}
 
-	if err := os.Setenv(pushMessageCommandEnv, "printf message"); err != nil {
-		t.Fatalf("set %s: %v", pushMessageCommandEnv, err)
-	}
+	t.Setenv(pushMessageCommandEnv, "printf message")
 	if got := configuredPushMessageGeneration(); !got.Enabled || got.CommandTemplate != "printf message" {
 		t.Fatalf("configured generation = %#v, want enabled command", got)
 	}

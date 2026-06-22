@@ -234,6 +234,18 @@ func TestGitPreflightWrappers(t *testing.T) {
 	}
 }
 
+func TestIsInsideWorkTreeTreatsNonRepositoryAsFalse(t *testing.T) {
+	git := Git{Runner: helperRunner(t, map[string]string{"GITEXEC_HELPER_NOT_REPO": "1"})}
+
+	inside, err := git.IsInsideWorkTree(context.Background())
+	if err != nil {
+		t.Fatalf("IsInsideWorkTree returned error: %v", err)
+	}
+	if inside {
+		t.Fatal("IsInsideWorkTree = true, want false")
+	}
+}
+
 func TestCommitVerboseTemplateAndMessageFileForcesCommentStrippingCleanup(t *testing.T) {
 	git := Git{Runner: helperRunner(t, nil)}
 
@@ -1087,6 +1099,10 @@ func helperRevParse(args []string) {
 	}
 	switch args[0] {
 	case "--is-inside-work-tree":
+		if os.Getenv("GITEXEC_HELPER_NOT_REPO") == "1" {
+			helperFprintln(os.Stderr, "fatal: not a git repository (or any of the parent directories): .git")
+			os.Exit(128)
+		}
 		helperFprintln(os.Stdout, "true")
 	case "--show-prefix":
 		helperFprintln(os.Stdout, "sub/")
