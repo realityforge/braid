@@ -20,9 +20,9 @@ func TestResolveCacheContract(t *testing.T) {
 			return value, ok
 		}
 	}
-	cwd := filepath.Join(string(filepath.Separator), "work")
-	home := filepath.Join(string(filepath.Separator), "home")
-	userCache := filepath.Join(string(filepath.Separator), "user-cache")
+	cwd := rootedTestPath("work")
+	home := rootedTestPath("home")
+	userCache := rootedTestPath("user-cache")
 	withUserCacheDir(t, userCache, nil)
 
 	tests := []struct {
@@ -60,6 +60,15 @@ func TestResolveCacheContract(t *testing.T) {
 			}
 		})
 	}
+}
+
+func rootedTestPath(elem ...string) string {
+	root := string(filepath.Separator)
+	if wd, err := os.Getwd(); err == nil {
+		root = filepath.VolumeName(wd) + root
+	}
+	parts := append([]string{root}, elem...)
+	return filepath.Join(parts...)
 }
 
 func TestSetupCommandCreatesAllRemotes(t *testing.T) {
