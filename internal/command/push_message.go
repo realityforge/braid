@@ -252,7 +252,7 @@ func runPushMessageGenerator(ctx context.Context, commandTemplate string, values
 		if trace == nil {
 			trace = io.Discard
 		}
-		if _, err := fmt.Fprintf(trace, "Braid: Executing push commit-message generator %s in %s\n", gitexec.FormatArgv([]string{"/bin/sh", "-c", command}), values.RepoDir); err != nil {
+		if _, err := fmt.Fprintf(trace, "Braid: Executing %s in %s\n", gitexec.FormatArgv([]string{"/bin/sh", "-c", command}), values.RepoDir); err != nil {
 			return "", nil, err
 		}
 	}

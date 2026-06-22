@@ -963,7 +963,7 @@ func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
 	if message != "generated" {
 		t.Fatalf("generated message = %q, want generated", message)
 	}
-	assertContains(t, trace.String(), "Braid: Executing push commit-message generator [\"/bin/sh\", \"-c\", ")
+	assertContains(t, trace.String(), "Braid: Executing [\"/bin/sh\", \"-c\", ")
 	assertContains(t, trace.String(), shellQuote(generator))
 	assertContains(t, trace.String(), shellQuote(promptPath))
 	assertContains(t, trace.String(), shellQuote(messagePath))
