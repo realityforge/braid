@@ -246,7 +246,7 @@ func TestIsInsideWorkTreeTreatsNonRepositoryAsFalse(t *testing.T) {
 	}
 }
 
-func TestCommitVerboseTemplateAndMessageFileForcesCommentStrippingCleanup(t *testing.T) {
+func TestCommitVerboseAndMessageFileUseExpectedCleanup(t *testing.T) {
 	git := Git{Runner: helperRunner(t, nil)}
 
 	var stdout, stderr bytes.Buffer
@@ -259,20 +259,10 @@ func TestCommitVerboseTemplateAndMessageFileForcesCommentStrippingCleanup(t *tes
 
 	stdout.Reset()
 	stderr.Reset()
-	if err := git.CommitVerboseTemplate(context.Background(), "/tmp/template.txt", strings.NewReader("template input\n"), &stdout, &stderr); err != nil {
-		t.Fatalf("CommitVerboseTemplate returned error: %v", err)
-	}
-	want := []string{"commit", "--cleanup=strip", "-v", "-t", "/tmp/template.txt"}
-	if got := strings.Split(strings.TrimSpace(stdout.String()), "\n"); !reflect.DeepEqual(got, want) {
-		t.Fatalf("CommitVerboseTemplate args = %#v, want %#v", got, want)
-	}
-
-	stdout.Reset()
-	stderr.Reset()
 	if err := git.CommitVerboseMessageFile(context.Background(), "/tmp/message.txt", strings.NewReader("message input\n"), &stdout, &stderr); err != nil {
 		t.Fatalf("CommitVerboseMessageFile returned error: %v", err)
 	}
-	want = []string{"commit", "--cleanup=strip", "-v", "-F", "/tmp/message.txt", "-e"}
+	want := []string{"commit", "--cleanup=strip", "-v", "-F", "/tmp/message.txt", "-e"}
 	if got := strings.Split(strings.TrimSpace(stdout.String()), "\n"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CommitVerboseMessageFile args = %#v, want %#v", got, want)
 	}

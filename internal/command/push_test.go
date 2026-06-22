@@ -600,7 +600,8 @@ func TestPushCommandProvenanceTemplateGuidesMessageAndStripsComments(t *testing.
 		assertContains(t, template, want)
 	}
 	assertInOrder(t, template, "# Commit "+localOne, "# Commit "+localTwo)
-	assertContains(t, template, "# local two\n# Please enter the commit message")
+	assertContains(t, template, "# Please enter the commit message")
+	assertNotContains(t, template, "BRAID_COMMIT_TEMPLATE")
 	message := strings.TrimSpace(testutil.Git(t, upstream, "log", "-1", "--pretty=%B").Stdout)
 	if message != "Push guided" {
 		t.Fatalf("upstream message = %q, want Push guided", message)

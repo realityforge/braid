@@ -465,6 +465,13 @@ func assertContains(t *testing.T, value, want string) {
 	}
 }
 
+func assertNotContains(t *testing.T, value, unwanted string) {
+	t.Helper()
+	if strings.Contains(value, unwanted) {
+		t.Fatalf("value contains %q:\n%s", unwanted, value)
+	}
+}
+
 func assertFile(t *testing.T, root, relativePath, want string) {
 	t.Helper()
 	got := readFile(t, root, relativePath)

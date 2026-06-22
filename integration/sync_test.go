@@ -76,7 +76,9 @@ func TestExecutablePushProvenanceTemplateTouchesGitDefaultTemplate(t *testing.T)
 	template := readFile(t, root, filepath.Base(capture))
 	assertContains(t, template, "# Braid downstream mirror commit guidance for vendor/basic")
 	assertContains(t, template, "# Commit "+localRevision)
-	assertContains(t, template, "# local mirror change\n# Please enter the commit message")
+	assertContains(t, template, "# local mirror change")
+	assertContains(t, template, "# Please enter the commit message")
+	assertNotContains(t, template, "BRAID_COMMIT_TEMPLATE")
 }
 
 func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {

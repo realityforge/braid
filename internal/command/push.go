@@ -211,12 +211,12 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 				provenanceTemplate = template
 			}
 		}
-		templatePath := preparePushProvenanceTemplate(ctx, tempGit, pushRepoDir, provenanceTemplate, stderr)
+		templatePath := preparePushProvenanceTemplate(ctx, tempGit, contextDir, provenanceTemplate, stderr)
 		if err := verifyTempPushIndex(ctx, tempGit, newTree); err != nil {
 			return err
 		}
 		if templatePath != "" {
-			if err := tempGit.CommitVerboseTemplate(ctx, templatePath, stdin, stdout, stderr); err != nil {
+			if err := tempGit.CommitVerboseMessageFile(ctx, templatePath, stdin, stdout, stderr); err != nil {
 				return err
 			}
 		} else if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
