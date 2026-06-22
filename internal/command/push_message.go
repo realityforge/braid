@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +79,7 @@ func configuredPushMessageGeneration() pushMessageGeneration {
 	return pushMessageGeneration{Enabled: true, CommandTemplate: value}
 }
 
-func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGit, tempGit gitexec.Git, m mirror.Mirror, branch, baseRevision, newTree, contextDir string, generation pushMessageGeneration, provenance pushProvenance, provenanceOK bool, provenanceErr error) (string, error) {
+func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGit, tempGit gitexec.Git, m mirror.Mirror, branch, baseRevision, newTree, contextDir string, generation pushMessageGeneration, verbose bool, trace io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error) (string, error) {
 	if err := validatePushMessageGeneratorPlatform(runtime.GOOS); err != nil {
 		return "", err
 	}
@@ -123,7 +124,7 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 		ContextDir:  contextDir,
 		PromptFile:  promptPath,
 		MessageFile: messagePath,
-	})
+	}, verbose, trace)
 	if err != nil {
 		return "", err
 	}
@@ -248,8 +249,16 @@ func formatPushMessagePromptProvenance(provenance pushProvenance, ok bool, err e
 	return b.String()
 }
 
-func runPushMessageGenerator(ctx context.Context, commandTemplate string, values pushMessageCommandValues) (string, *pushMessageGeneratorFailure, error) {
+func runPushMessageGenerator(ctx context.Context, commandTemplate string, values pushMessageCommandValues, verbose bool, trace io.Writer) (string, *pushMessageGeneratorFailure, error) {
 	command := expandPushMessageCommand(commandTemplate, values)
+	if verbose {
+		if trace == nil {
+			trace = io.Discard
+		}
+		if _, err := fmt.Fprintf(trace, "Braid: Executing push commit-message generator %s in %s\n", gitexec.FormatArgv([]string{"/bin/sh", "-c", command}), values.RepoDir); err != nil {
+			return "", nil, err
+		}
+	}
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = values.RepoDir
 	var stdout, stderr limitedOutput

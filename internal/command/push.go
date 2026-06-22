@@ -192,7 +192,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 	}
 
 	if messageGeneration.Enabled {
-		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, provenance, provenanceOK, provenanceErr)
+		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, stderr, provenance, provenanceOK, provenanceErr)
 		if err != nil {
 			return err
 		}

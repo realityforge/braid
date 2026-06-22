@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -354,8 +355,8 @@ func TestPushCommandGeneratorFailuresOpenEditorWithDiagnostics(t *testing.T) {
 		wantOutput bool
 	}{
 		{
-			name: "nonzero",
-			body: "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt 5000 ]; do printf o; i=$((i + 1)); done\ni=0\nwhile [ \"$i\" -lt 5000 ]; do printf e >&2; i=$((i + 1)); done\nexit 17\n",
+			name:       "nonzero",
+			body:       "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt 5000 ]; do printf o; i=$((i + 1)); done\ni=0\nwhile [ \"$i\" -lt 5000 ]; do printf e >&2; i=$((i + 1)); done\nexit 17\n",
 			wantReason: "generator exited with status 17",
 			wantOutput: true,
 		},
@@ -923,6 +924,49 @@ func TestPushMessageCommandSubstitutionQuotesDocumentedPlaceholders(t *testing.T
 	if got != want {
 		t.Fatalf("expanded command = %q, want %q", got, want)
 	}
+}
+
+func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
+	repoDir := t.TempDir()
+	contextDir := t.TempDir()
+	promptPath := filepath.Join(contextDir, pushMessagePromptFileName)
+	messagePath := filepath.Join(contextDir, pushMessageOutputFileName)
+	if err := os.WriteFile(promptPath, []byte("prompt\n"), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+	generator := writeGenerator(t, "#!/bin/sh\nprintf 'generated\\n' > \"$2\"\n")
+	template := shellQuote(generator) + " {PROMPT_FILE} {MESSAGE_FILE}"
+	values := pushMessageCommandValues{
+		RepoDir:     repoDir,
+		ContextDir:  contextDir,
+		PromptFile:  promptPath,
+		MessageFile: messagePath,
+	}
+
+	var quietTrace bytes.Buffer
+	if _, _, err := runPushMessageGenerator(context.Background(), template, values, false, &quietTrace); err != nil {
+		t.Fatalf("runPushMessageGenerator quiet returned error: %v", err)
+	}
+	if quietTrace.String() != "" {
+		t.Fatalf("quiet trace = %q, want empty", quietTrace.String())
+	}
+
+	var trace bytes.Buffer
+	message, failure, err := runPushMessageGenerator(context.Background(), template, values, true, &trace)
+	if err != nil {
+		t.Fatalf("runPushMessageGenerator verbose returned error: %v", err)
+	}
+	if failure != nil {
+		t.Fatalf("runPushMessageGenerator verbose failure = %#v, want nil", failure)
+	}
+	if message != "generated" {
+		t.Fatalf("generated message = %q, want generated", message)
+	}
+	assertContains(t, trace.String(), "Braid: Executing push commit-message generator [\"/bin/sh\", \"-c\", ")
+	assertContains(t, trace.String(), shellQuote(generator))
+	assertContains(t, trace.String(), shellQuote(promptPath))
+	assertContains(t, trace.String(), shellQuote(messagePath))
+	assertContains(t, trace.String(), " in "+repoDir+"\n")
 }
 
 func TestPushMessageDiffArgs(t *testing.T) {
