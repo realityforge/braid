@@ -21,6 +21,8 @@ func InitRepo(tb testing.TB) string {
 	Git(tb, dir, "config", "--local", "user.name", DefaultName)
 	Git(tb, dir, "config", "--local", "user.email", DefaultEmail)
 	Git(tb, dir, "config", "--local", "commit.gpgsign", "false")
+	Git(tb, dir, "config", "--local", "core.autocrlf", "false")
+	Git(tb, dir, "config", "--local", "core.eol", "lf")
 	return dir
 }
 

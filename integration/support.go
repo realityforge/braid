@@ -247,6 +247,8 @@ func initRepo(t *testing.T, env processEnv, repo string) {
 	gitOK(t, env, repo, "config", "--local", "user.name", defaultName)
 	gitOK(t, env, repo, "config", "--local", "user.email", defaultEmail)
 	gitOK(t, env, repo, "config", "--local", "commit.gpgsign", "false")
+	gitOK(t, env, repo, "config", "--local", "core.autocrlf", "false")
+	gitOK(t, env, repo, "config", "--local", "core.eol", "lf")
 }
 
 func processWorkingDir(t *testing.T, path string) string {

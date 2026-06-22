@@ -1186,6 +1186,8 @@ func initRealRepo(t *testing.T) string {
 	realGit(t, dir, "config", "--local", "user.name", "Braid Test")
 	realGit(t, dir, "config", "--local", "user.email", "braid-test@example.invalid")
 	realGit(t, dir, "config", "--local", "commit.gpgsign", "false")
+	realGit(t, dir, "config", "--local", "core.autocrlf", "false")
+	realGit(t, dir, "config", "--local", "core.eol", "lf")
 	return dir
 }
 
