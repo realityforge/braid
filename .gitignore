@@ -1,5 +1,8 @@
 .DS_Store
 
+# Ignore Idea project files
+/.idea
+
 # Ignore release distribution directory
 /dist
 
