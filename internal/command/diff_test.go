@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"braid/internal/gitexec"
@@ -214,18 +213,4 @@ func TestDiffCommandFetchesMissingBaseRevision(t *testing.T) {
 	out := runCommandOK(t, clone, []string{"diff", "vendor/basic"})
 	assertContains(t, out, "diff --git a/README.md b/README.md")
 	assertContains(t, out, "changed")
-}
-
-func assertContains(t *testing.T, value, want string) {
-	t.Helper()
-	if !strings.Contains(value, want) {
-		t.Fatalf("output does not contain %q:\n%s", want, value)
-	}
-}
-
-func assertNotContains(t *testing.T, value, unwanted string) {
-	t.Helper()
-	if strings.Contains(value, unwanted) {
-		t.Fatalf("output contains %q unexpectedly:\n%s", unwanted, value)
-	}
 }

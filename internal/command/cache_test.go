@@ -149,21 +149,3 @@ func TestCachePathUsesStableWindowsSafeHashKey(t *testing.T) {
 		t.Fatalf("cache key %q contains Windows-invalid filename characters", key)
 	}
 }
-
-func withUserCacheDir(t *testing.T, dir string, err error) {
-	t.Helper()
-	previous := userCacheDir
-	userCacheDir = func() (string, error) {
-		return dir, err
-	}
-	t.Cleanup(func() {
-		userCacheDir = previous
-	})
-}
-
-func envLookup(values map[string]string) EnvLookup {
-	return func(key string) (string, bool) {
-		value, ok := values[key]
-		return value, ok
-	}
-}

@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -13,49 +12,6 @@ import (
 	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
-
-func skippedLockedOutput(paths ...string) string {
-	var out strings.Builder
-	out.WriteString("Braid: skipped revision-locked mirrors:\n")
-	for _, path := range paths {
-		out.WriteString("  ")
-		out.WriteString(path)
-		out.WriteString("\n")
-	}
-	return out.String()
-}
-
-func runCommandErrorWithOutput(t *testing.T, repo string, args []string) (string, string) {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
-	t.Chdir(repo)
-	var stdout, stderr bytes.Buffer
-	code := NewAppWithOptions(Options{WorkDir: repo}).Run(args, &stdout, &stderr)
-	if code == 0 {
-		t.Fatalf("braid %v succeeded unexpectedly, stdout = %q", args, stdout.String())
-	}
-	return stdout.String(), stderr.String()
-}
-
-func writeLockedMirrorConfig(t *testing.T, repo string, paths ...string) {
-	t.Helper()
-	cfg := config.Empty()
-	for _, path := range paths {
-		if err := cfg.Add(mirror.Mirror{
-			Path:     path,
-			URL:      filepath.Join(t.TempDir(), "missing-upstream"),
-			Revision: strings.Repeat("1", 40),
-		}); err != nil {
-			t.Fatalf("add locked mirror config: %v", err)
-		}
-	}
-	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	testutil.Git(t, repo, "add", config.FileName)
-	testutil.Git(t, repo, "commit", "-m", "configure locked mirrors")
-}
 
 func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	upstream := testutil.InitRepo(t)
@@ -920,55 +876,6 @@ func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {
 	}
 }
 
-type mergeTreeForbiddenGit struct {
-	gitexec.Git
-	t *testing.T
-}
-
-func forbidMergeTreeGit(t *testing.T, repo string) *mergeTreeForbiddenGit {
-	t.Helper()
-	return &mergeTreeForbiddenGit{Git: gitexec.New(repo, false, nil), t: t}
-}
-
-func (g *mergeTreeForbiddenGit) MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error) {
-	g.t.Helper()
-	g.t.Fatal("MergeTreeWrite was called for update fast path")
-	return gitexec.MergeTreeResult{}, nil
-}
-
-type processAwareMergeTreeForbiddenGit struct {
-	*mergeTreeForbiddenGit
-	processGit gitexec.Git
-}
-
-func forbidMergeTreeGitFromProcessDir(t *testing.T, repo, processDir string) *processAwareMergeTreeForbiddenGit {
-	t.Helper()
-	return &processAwareMergeTreeForbiddenGit{
-		mergeTreeForbiddenGit: forbidMergeTreeGit(t, repo),
-		processGit:            gitexec.New(processDir, false, nil),
-	}
-}
-
-func (g *processAwareMergeTreeForbiddenGit) RequireVersion(ctx context.Context, required string) error {
-	return g.processGit.RequireVersion(ctx, required)
-}
-
-func (g *processAwareMergeTreeForbiddenGit) IsInsideWorkTree(ctx context.Context) (bool, error) {
-	return g.processGit.IsInsideWorkTree(ctx)
-}
-
-func (g *processAwareMergeTreeForbiddenGit) RelativeWorkingDir(ctx context.Context) (string, error) {
-	return g.processGit.RelativeWorkingDir(ctx)
-}
-
-func (g *processAwareMergeTreeForbiddenGit) WorkTreeRoot(ctx context.Context) (string, error) {
-	return g.processGit.WorkTreeRoot(ctx)
-}
-
-func (g *processAwareMergeTreeForbiddenGit) RepoFilePath(ctx context.Context, path string) (string, error) {
-	return g.processGit.RepoFilePath(ctx, path)
-}
-
 type mergeTreeCountingGit struct {
 	gitexec.Git
 	mergeTreeCalls int
@@ -981,18 +888,4 @@ func countMergeTreeGit(repo string) *mergeTreeCountingGit {
 func (g *mergeTreeCountingGit) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (gitexec.MergeTreeResult, error) {
 	g.mergeTreeCalls++
 	return g.Git.MergeTreeWrite(ctx, baseTreeish, localTreeish, remoteTreeish)
-}
-
-func runCommandOKInDirWithOptions(t *testing.T, repo, dir string, options Options, args []string) string {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
-	t.Chdir(dir)
-	options.WorkDir = dir
-	var stdout, stderr bytes.Buffer
-	code := NewAppWithOptions(options).Run(args, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("braid %v exit = %d, stderr = %q", args, code, stderr.String())
-	}
-	return stdout.String()
 }

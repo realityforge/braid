@@ -28,26 +28,102 @@ go_library(
     ],
 )
 
+COMMAND_TEST_SUPPORT_SRCS = [
+    "test_support_test.go",
+]
+
+COMMAND_TEST_DEPS = [
+    "//internal/cli",
+    "//internal/config",
+    "//internal/gitexec",
+    "//internal/mirror",
+    "//internal/testutil",
+]
+
 go_test(
-    name = "command_test",
-    srcs = [
-        "add_test.go",
-        "cache_test.go",
-        "diff_test.go",
-        "path_test.go",
-        "preflight_test.go",
-        "push_test.go",
-        "remove_test.go",
-        "setup_test.go",
-        "status_test.go",
-        "sync_test.go",
-        "update_test.go",
-    ],
+    name = "add_test",
+    srcs = ["add_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
     embed = [":command"],
     timeout = "long",
-    deps = [
-        "//internal/cli",
-        "//internal/config",
-        "//internal/testutil",
-    ],
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "cache_test",
+    srcs = ["cache_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "diff_test",
+    srcs = ["diff_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "path_test",
+    srcs = ["path_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "preflight_test",
+    srcs = ["preflight_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "push_test",
+    srcs = ["push_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "remove_test",
+    srcs = ["remove_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "setup_test",
+    srcs = ["setup_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "status_test",
+    srcs = ["status_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "sync_test",
+    srcs = ["sync_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "update_test",
+    srcs = ["update_test.go"] + COMMAND_TEST_SUPPORT_SRCS,
+    embed = [":command"],
+    timeout = "long",
+    deps = COMMAND_TEST_DEPS,
 )

@@ -24,6 +24,6 @@
   - `bazel test //...`
   - `bazel run @rules_go//go -- vet ./...`
   - `bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run`
-  - `bazel test //integration:braid_integration_test`
+  - `bazel test //integration/...`
 - If a CI check cannot be run locally, state exactly which check was not run and
   why. Do not claim the code passes CI unless every required check has passed.

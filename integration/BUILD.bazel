@@ -8,27 +8,11 @@ go_library(
 )
 
 go_test(
-    name = "braid_integration_test",
-    size = "medium",
-    srcs = [
-        "conflict_test.go",
-        "lifecycle_test.go",
-        "scoped_state_test.go",
-        "setup_failure_test.go",
-        "subdirectory_test.go",
-        "sync_test.go",
-    ],
-    data = ["//cmd/braid"],
-    embed = [":test_support"],
-)
-
-go_test(
     name = "lifecycle_test",
     size = "medium",
     srcs = ["lifecycle_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )
 
 go_test(
@@ -37,7 +21,6 @@ go_test(
     srcs = ["sync_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )
 
 go_test(
@@ -46,7 +29,6 @@ go_test(
     srcs = ["subdirectory_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )
 
 go_test(
@@ -55,7 +37,6 @@ go_test(
     srcs = ["setup_failure_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )
 
 go_test(
@@ -64,7 +45,6 @@ go_test(
     srcs = ["scoped_state_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )
 
 go_test(
@@ -73,5 +53,4 @@ go_test(
     srcs = ["conflict_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    tags = ["manual"],
 )

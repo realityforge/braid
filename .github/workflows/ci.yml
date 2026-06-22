@@ -67,4 +67,4 @@ jobs:
           repository-cache: true
 
       - name: Test integration
-        run: bazel test //integration:braid_integration_test
+        run: bazel test //integration/...
