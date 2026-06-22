@@ -117,6 +117,13 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 		return "", fmt.Errorf("write push commit-message prompt: %w", err)
 	}
 
+	progress := trace
+	if progress == nil {
+		progress = io.Discard
+	}
+	if _, err := fmt.Fprintf(progress, "Braid: generating push commit message for %s using external tool\n", m.Path); err != nil {
+		return "", err
+	}
 	generated, failure, err := runPushMessageGenerator(ctx, generation.CommandTemplate, pushMessageCommandValues{
 		RepoDir:     repo.GitWorkTreeRoot,
 		ContextDir:  contextDir,

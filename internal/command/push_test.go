@@ -312,6 +312,7 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"push", "vendor/basic"})
 
 	assertNotContains(t, stdout, "hidden stdout")
+	assertContains(t, stderr, "Braid: generating push commit message for vendor/basic using external tool")
 	assertNotContains(t, stderr, "hidden stderr")
 	assertNotContains(t, stderr, "core.commentChar=auto")
 	expectedRepo, err := filepath.EvalSymlinks(repo)
