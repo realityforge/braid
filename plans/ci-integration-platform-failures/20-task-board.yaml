@@ -217,6 +217,8 @@ tasks:
         result: "pass"
       - command: "git diff --check"
         result: "pass"
+      - command: "git diff --exit-code"
+        result: "pass"
       - command: "bazel test //..."
         result: "pass"
       - command: "bazel run @rules_go//go -- vet ./..."
@@ -254,3 +256,6 @@ history:
   - timestamp: "2026-06-22"
     task: T03
     note: "Hardened Windows integration capture editor in 804669a."
+  - timestamp: "2026-06-22"
+    task: T04
+    note: "All local CI parity gates passed after commits; remote GitHub Actions platform verification remains open."
