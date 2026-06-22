@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -283,6 +284,10 @@ func TestPushCommandDoesNotPushWhenEditorFails(t *testing.T) {
 }
 
 func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("push message generation requires POSIX /bin/sh")
+	}
+
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -353,6 +358,10 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 }
 
 func TestPushCommandGeneratorFailuresOpenEditorWithDiagnostics(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("push message generation requires POSIX /bin/sh")
+	}
+
 	tests := []struct {
 		name       string
 		body       string
@@ -420,6 +429,10 @@ func TestPushCommandGeneratorFailuresOpenEditorWithDiagnostics(t *testing.T) {
 }
 
 func TestPushCommandGeneratorReadsLargeDiffFromContextDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("push message generation requires POSIX /bin/sh")
+	}
+
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -455,6 +468,10 @@ func TestPushCommandGeneratorReadsLargeDiffFromContextDir(t *testing.T) {
 }
 
 func TestPushCommandGenerationContinuesWhenProvenanceFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("push message generation requires POSIX /bin/sh")
+	}
+
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -933,6 +950,10 @@ func TestPushMessageCommandSubstitutionQuotesDocumentedPlaceholders(t *testing.T
 }
 
 func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("push message generation requires POSIX /bin/sh")
+	}
+
 	repoDir := t.TempDir()
 	contextDir := t.TempDir()
 	promptPath := filepath.Join(contextDir, pushMessagePromptFileName)

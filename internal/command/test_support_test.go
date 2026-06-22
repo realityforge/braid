@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -245,7 +246,7 @@ func writeEditor(t *testing.T, message string) string {
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write editor: %v", err)
 	}
-	return path
+	return gitEditorCommand(path)
 }
 
 func writeGenerator(t *testing.T, body string) string {
@@ -264,7 +265,7 @@ func writeStdinEditor(t *testing.T) string {
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write stdin editor: %v", err)
 	}
-	return path
+	return gitEditorCommand(path)
 }
 
 func writeFailingEditor(t *testing.T) string {
@@ -286,7 +287,7 @@ func writeCapturingEditor(t *testing.T, message string) (string, string) {
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write capturing editor: %v", err)
 	}
-	return capture, path
+	return capture, gitEditorCommand(path)
 }
 
 func writePrependCapturingEditor(t *testing.T, message string) (string, string) {
@@ -299,7 +300,7 @@ func writePrependCapturingEditor(t *testing.T, message string) (string, string) 
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write prepend editor: %v", err)
 	}
-	return capture, path
+	return capture, gitEditorCommand(path)
 }
 
 func writeSequenceCapturingEditor(t *testing.T, messagePrefix string) (string, string) {
@@ -312,7 +313,7 @@ func writeSequenceCapturingEditor(t *testing.T, messagePrefix string) (string, s
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write sequence editor: %v", err)
 	}
-	return captureDir, path
+	return captureDir, gitEditorCommand(path)
 }
 
 func writeSequenceCapturingEditorFailAt(t *testing.T, messagePrefix string, failAt int) string {
@@ -325,6 +326,13 @@ func writeSequenceCapturingEditorFailAt(t *testing.T, messagePrefix string, fail
 	body := "#!/bin/sh\ndir=\"$BRAID_EDITOR_CAPTURE_DIR\"\ncount_file=\"$dir/count\"\nif [ -f \"$count_file\" ]; then count=$(cat \"$count_file\"); else count=0; fi\ncount=$((count + 1))\nprintf '%s\\n' \"$count\" > \"$count_file\" || exit 1\ncp \"$1\" \"$dir/template-$count.txt\" || exit 1\nif [ \"$count\" = \"$BRAID_EDITOR_FAIL_AT\" ]; then exit 1; fi\nprintf '%s %s\\n' \"$BRAID_EDITOR_MESSAGE_PREFIX\" \"$count\" > \"$1\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write failing sequence editor: %v", err)
+	}
+	return gitEditorCommand(path)
+}
+
+func gitEditorCommand(path string) string {
+	if runtime.GOOS == "windows" {
+		return shellQuote(path)
 	}
 	return path
 }

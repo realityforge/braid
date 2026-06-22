@@ -4,11 +4,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestVersionScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("version.sh is a POSIX release helper")
+	}
+
 	script := versionScript(t)
 
 	assertStdout(t, script, "0.1.0", "normalize", "0.1.0")
