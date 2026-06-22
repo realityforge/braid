@@ -31,7 +31,10 @@ jobs:
           git diff --exit-code
 
       - name: Test
-        run: bazel test //...
+        run: |
+          git --version
+          git merge-tree --write-tree "--merge-base=HEAD^{tree}" "HEAD^{tree}" "HEAD^{tree}"
+          bazel test --test_env=PATH //...
 
       - name: Vet
         run: bazel run @rules_go//go -- vet ./...
@@ -67,4 +70,7 @@ jobs:
           repository-cache: true
 
       - name: Test integration
-        run: bazel test //integration/...
+        run: |
+          git --version
+          git merge-tree --write-tree "--merge-base=HEAD^{tree}" "HEAD^{tree}" "HEAD^{tree}"
+          bazel test --test_env=PATH //integration/...

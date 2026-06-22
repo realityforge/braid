@@ -193,8 +193,11 @@ func TestParseAndCompareVersions(t *testing.T) {
 	if CompareVersions("2.38.9", MinimumGitVersion) >= 0 {
 		t.Fatal("expected 2.38.9 to be less than minimum")
 	}
-	if CompareVersions("2.39.0", MinimumGitVersion) != 0 {
-		t.Fatal("expected 2.39.0 to equal minimum")
+	if CompareVersions("2.44.9", MinimumGitVersion) >= 0 {
+		t.Fatal("expected 2.44.9 to be less than minimum")
+	}
+	if CompareVersions("2.45.0", MinimumGitVersion) != 0 {
+		t.Fatal("expected 2.45.0 to equal minimum")
 	}
 }
 
