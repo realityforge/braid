@@ -751,6 +751,9 @@ func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remo
 		return parsed, runErr
 	}
 	if result.ExitCode != 0 {
+		if result.ExitCode != 1 {
+			return parsed, &ExitError{Result: result}
+		}
 		if len(parsed.ConflictPaths) == 0 {
 			parsed = g.mergeTreeConflictPathFallback(ctx, parsed, baseTreeish, localTreeish, remoteTreeish)
 		}
@@ -760,6 +763,11 @@ func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remo
 		return parsed, &ExitError{Result: result}
 	}
 	return parsed, nil
+}
+
+func IsMergeTreeConflict(err error) bool {
+	var exitErr *ExitError
+	return errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1
 }
 
 func mergeTreeWriteArgs(baseTreeish, localTreeish, remoteTreeish string, messages bool) []string {

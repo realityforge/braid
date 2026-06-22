@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -798,6 +799,47 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	}
 }
 
+func TestUpdateCommandMergeTreeCommandFailureDoesNotWriteConflictState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	m := loadMirror(t, repo, "vendor/basic")
+	baseRevision := m.Revision
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
+	testutil.CommitAll(t, repo, "local change")
+	testutil.WriteFile(t, upstream, "README.md", "remote\n")
+	testutil.CommitAll(t, upstream, "remote change")
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Chdir(repo)
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{
+		WorkDir: repo,
+		Git:     &mergeTreeFailingGit{Git: gitexec.New(repo, false, nil)},
+	}).Run([]string{"update", "vendor/basic"}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("braid update succeeded unexpectedly, stdout = %q", stdout.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	assertContains(t, stderr.String(), "fatal: synthetic merge-tree failure")
+	if strings.Contains(stderr.String(), "conflicts written") || strings.Contains(stderr.String(), "(unknown path)") {
+		t.Fatalf("stderr = %q, want command failure without conflict recovery text", stderr.String())
+	}
+	assertFile(t, repo, "vendor/basic/README.md", "local\n")
+	if got := loadMirror(t, repo, "vendor/basic").Revision; got != baseRevision {
+		t.Fatalf("revision = %q, want unchanged %q", got, baseRevision)
+	}
+	assertNoFile(t, repo, ".git/MERGE_MSG")
+	assertNoRemote(t, repo, m.Remote())
+}
+
 func TestUpdateCommandNoPathWritesSkippedMirrorsAfterConflictOutput(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -888,4 +930,18 @@ func countMergeTreeGit(repo string) *mergeTreeCountingGit {
 func (g *mergeTreeCountingGit) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remoteTreeish string) (gitexec.MergeTreeResult, error) {
 	g.mergeTreeCalls++
 	return g.Git.MergeTreeWrite(ctx, baseTreeish, localTreeish, remoteTreeish)
+}
+
+type mergeTreeFailingGit struct {
+	gitexec.Git
+}
+
+func (g *mergeTreeFailingGit) MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error) {
+	return gitexec.MergeTreeResult{}, &gitexec.ExitError{Result: gitexec.Result{
+		Command:  []string{"git", "merge-tree"},
+		GitArgs:  []string{"merge-tree"},
+		WorkDir:  g.Runner.WorkDir,
+		Stderr:   "fatal: synthetic merge-tree failure\n",
+		ExitCode: 129,
+	}}
 }

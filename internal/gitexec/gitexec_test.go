@@ -884,6 +884,35 @@ func TestMergeTreeWriteConflictWithoutMessagePathsRetriesWithoutMessages(t *test
 	}
 }
 
+func TestMergeTreeWriteNonConflictExitReturnsGitError(t *testing.T) {
+	git := Git{Runner: helperRunner(t, map[string]string{
+		"GITEXEC_HELPER_EXIT":   "129",
+		"GITEXEC_HELPER_STDERR": "fatal: synthetic merge-tree failure\n",
+	})}
+
+	merged, err := git.MergeTreeWrite(context.Background(), "base", "local", "remote")
+
+	if err == nil {
+		t.Fatal("MergeTreeWrite returned nil error for non-conflict exit")
+	}
+	if IsMergeTreeConflict(err) {
+		t.Fatalf("IsMergeTreeConflict(%v) = true, want false", err)
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("error = %T %v, want *ExitError", err, err)
+	}
+	if exitErr.Result.ExitCode != 129 {
+		t.Fatalf("exit code = %d, want 129", exitErr.Result.ExitCode)
+	}
+	if !strings.Contains(err.Error(), "fatal: synthetic merge-tree failure") {
+		t.Fatalf("error = %q, want stderr details", err.Error())
+	}
+	if len(merged.ConflictPaths) != 0 {
+		t.Fatalf("conflict paths = %#v, want none", merged.ConflictPaths)
+	}
+}
+
 func TestParseMergeTreeOutputZEmptyConflictPathSectionIgnoresNonConflictMessagePaths(t *testing.T) {
 	output := "merged-tree\x00" +
 		"\x00" +
@@ -1102,6 +1131,7 @@ func TestHelperProcess(t *testing.T) {
 		} else {
 			helperFprint(os.Stdout, os.Getenv("GITEXEC_HELPER_STDOUT"))
 		}
+		helperFprint(os.Stderr, os.Getenv("GITEXEC_HELPER_STDERR"))
 		os.Exit(helperExitCode())
 	case "interactive":
 		input, err := io.ReadAll(os.Stdin)

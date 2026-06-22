@@ -253,6 +253,10 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 			return updateResult{}, err
 		}
 		mergedTree, mergeErr = git.MergeTreeWrite(ctx, baseTree, localHash, remoteTree)
+		if mergeErr != nil && !gitexec.IsMergeTreeConflict(mergeErr) {
+			_ = cleanupRemote()
+			return updateResult{}, mergeErr
+		}
 		contentTree = mergedTree.Tree
 	}
 
