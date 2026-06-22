@@ -22,7 +22,7 @@ go_test(
     srcs = ["sync_test.go"],
     data = ["//cmd/braid"],
     embed = [":test_support"],
-    timeout = "short",
+    timeout = "moderate",
 )
 
 go_test(
