@@ -7,6 +7,9 @@ into a downstream repository.
 This is a port of the [Ruby Braid](https://github.com/cristibalan/braid) implemented in
 Go and built with Bazel.
 
+For migration-impacting differences from Ruby Braid, see
+[`docs/migration-from-ruby-braid.md`](docs/migration-from-ruby-braid.md).
+
 ## Motivation
 
 Vendoring allows you take the source code of an external library and ensure it's
