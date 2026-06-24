@@ -44,6 +44,41 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	}
 }
 
+func TestUpdateCommandAliasesUpdateSameMirror(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/libs/replicant"})
+
+	tests := []struct {
+		name    string
+		command string
+		path    string
+		content string
+	}{
+		{name: "update", command: "update", path: "vendor/libs/replicant", content: "update\n"},
+		{name: "up", command: "up", path: "vendor/libs/replicant/", content: "up\n"},
+		{name: "pull", command: "pull", path: "vendor/libs/replicant/", content: "pull\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			testutil.WriteFile(t, upstream, "README.md", test.content)
+			revision := testutil.CommitAll(t, upstream, test.name)
+
+			runCommandOK(t, repo, []string{test.command, test.path})
+
+			assertFile(t, repo, "vendor/libs/replicant/README.md", test.content)
+			if got := loadMirror(t, repo, "vendor/libs/replicant").Revision; got != revision {
+				t.Fatalf("mirror revision = %q, want %q", got, revision)
+			}
+			assertClean(t, repo)
+		})
+	}
+}
+
 func TestUpdateCommandLocalEqualsBaseBypassesMergeTree(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -746,7 +781,7 @@ func TestUpdateCommandStopsAllOnFirstFailure(t *testing.T) {
 	testutil.WriteFile(t, upstreamB, "README.md", "b updated\n")
 	testutil.CommitAll(t, upstreamB, "b updated")
 	stderr := runCommandError(t, repo, []string{"update"})
-	assertContains(t, stderr, "update vendor/a")
+	assertContains(t, stderr, "pull vendor/a")
 	if got := loadMirror(t, repo, "vendor/b").Revision; got != bBase {
 		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
 	}

@@ -41,18 +41,28 @@ func TestParseCommands(t *testing.T) {
 			},
 		},
 		{
-			name: "update one mirror",
-			args: []string{"-v", "update", "vendor/repo", "-r", "abc123", "--keep"},
+			name: "pull one mirror",
+			args: []string{"-v", "pull", "vendor/repo", "-r", "abc123", "--keep"},
 			want: Invocation{
 				Global:  GlobalOptions{Verbose: true},
-				Command: CommandUpdate,
+				Command: CommandPull,
 				Update:  UpdateOptions{LocalPath: "vendor/repo", Revision: "abc123", Keep: true},
 			},
 		},
 		{
-			name: "update all",
-			args: []string{"update"},
-			want: Invocation{Command: CommandUpdate},
+			name: "pull all",
+			args: []string{"pull"},
+			want: Invocation{Command: CommandPull},
+		},
+		{
+			name: "update alias",
+			args: []string{"update", "vendor/repo"},
+			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo"}},
+		},
+		{
+			name: "up alias",
+			args: []string{"up", "vendor/repo"},
+			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo"}},
 		},
 		{
 			name: "remove",
@@ -152,12 +162,12 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "unknown global flag", args: []string{"--bogus", "version"}, want: "unknown global flag --bogus"},
 		{name: "global no cache after command", args: []string{"add", "--no-cache", "url"}, want: "unknown flag for add: --no-cache"},
 		{name: "global verbose after command", args: []string{"add", "url", "--verbose"}, want: "unknown flag for add: --verbose"},
-		{name: "global verbose short after command", args: []string{"update", "vendor/repo", "-v"}, want: "unknown flag for update: -v"},
+		{name: "global verbose short after command", args: []string{"pull", "vendor/repo", "-v"}, want: "unknown flag for pull: -v"},
 		{name: "cache flags conflict", args: []string{"--no-cache", "--cache-dir", "cache", "version"}, want: "--no-cache and --cache-dir cannot be used together"},
 		{name: "empty cache dir", args: []string{"--cache-dir=", "version"}, want: "--cache-dir requires a non-empty value"},
 		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
-		{name: "update all strategy flag", args: []string{"update", "--branch", "main"}, want: "update without local_path cannot use --branch, --tag, or --revision"},
+		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},
@@ -183,7 +193,9 @@ func TestParseNormalizesLocalPathArguments(t *testing.T) {
 		want string
 	}{
 		{name: "add explicit local path", args: []string{"add", "url", `vendor\repo`}, want: "vendor/repo"},
-		{name: "update selector", args: []string{"update", `vendor\repo`}, want: "vendor/repo"},
+		{name: "pull selector", args: []string{"pull", `vendor\repo`}, want: "vendor/repo"},
+		{name: "update selector alias", args: []string{"update", `vendor\repo`}, want: "vendor/repo"},
+		{name: "up selector alias", args: []string{"up", `vendor\repo`}, want: "vendor/repo"},
 		{name: "remove selector", args: []string{"remove", `vendor\repo`}, want: "vendor/repo"},
 		{name: "diff selector", args: []string{"diff", `vendor\repo`}, want: "vendor/repo"},
 		{name: "push selector", args: []string{"push", `vendor\repo`}, want: "vendor/repo"},
@@ -209,7 +221,7 @@ func gotLocalPath(inv Invocation) string {
 	switch inv.Command {
 	case CommandAdd:
 		return inv.Add.LocalPath
-	case CommandUpdate:
+	case CommandPull:
 		return inv.Update.LocalPath
 	case CommandRemove:
 		return inv.Remove.LocalPath
@@ -241,6 +253,9 @@ func TestHelpParsing(t *testing.T) {
 		{args: []string{"--verbose", "help"}},
 		{args: []string{"-v", "help"}},
 		{args: []string{"add", "help"}, wantCommand: CommandAdd},
+		{args: []string{"pull", "help"}, wantCommand: CommandPull},
+		{args: []string{"update", "--help"}, wantCommand: CommandPull},
+		{args: []string{"up", "-h"}, wantCommand: CommandPull},
 		{args: []string{"diff", "--help"}, wantCommand: CommandDiff},
 	}
 
@@ -265,15 +280,24 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage missing global verbose syntax:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then update mirrors") {
+	if !strings.Contains(Usage(), "  pull      Pull one mirror or every eligible mirror") {
+		t.Fatalf("top-level usage missing pull command:\n%s", Usage())
+	}
+	if strings.Contains(Usage(), "  update") || strings.Contains(Usage(), "  up") {
+		t.Fatalf("top-level usage exposes update aliases:\n%s", Usage())
+	}
+	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull mirrors") {
 		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
+	}
+	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"; got != want {
+		t.Fatalf("CommandUsage(pull) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
 	}
 	for _, command := range []Command{
 		CommandAdd,
-		CommandUpdate,
+		CommandPull,
 		CommandRemove,
 		CommandDiff,
 		CommandPush,

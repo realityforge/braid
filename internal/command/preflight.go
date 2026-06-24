@@ -131,7 +131,7 @@ func NewAppWithOptions(options Options) cli.App {
 	app := cli.New()
 	app.Handler = map[cli.Command]cli.Handler{
 		cli.CommandAdd:    AddHandler{Options: options},
-		cli.CommandUpdate: UpdateHandler{Options: options},
+		cli.CommandPull:   UpdateHandler{Options: options},
 		cli.CommandRemove: RemoveHandler{Options: options},
 		cli.CommandDiff:   DiffHandler{Options: options},
 		cli.CommandPush:   PushHandler{Options: options},
@@ -347,7 +347,7 @@ func RequirementsFor(command cli.Command) Requirements {
 		return Requirements{Git: true, Root: true, Config: true}
 	case cli.CommandAdd:
 		return Requirements{Git: true, Root: true, MayWrite: true}
-	case cli.CommandUpdate:
+	case cli.CommandPull:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandRemove:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}

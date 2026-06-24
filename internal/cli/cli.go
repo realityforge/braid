@@ -12,7 +12,7 @@ type Command string
 
 const (
 	CommandAdd     Command = "add"
-	CommandUpdate  Command = "update"
+	CommandPull    Command = "pull"
 	CommandRemove  Command = "remove"
 	CommandDiff    Command = "diff"
 	CommandPush    Command = "push"
@@ -114,7 +114,7 @@ func New() App {
 		Version: DefaultVersion,
 		Handler: map[Command]Handler{
 			CommandAdd:    notImplemented(CommandAdd),
-			CommandUpdate: notImplemented(CommandUpdate),
+			CommandPull:   notImplemented(CommandPull),
 			CommandRemove: notImplemented(CommandRemove),
 			CommandDiff:   notImplemented(CommandDiff),
 			CommandPush:   notImplemented(CommandPush),
@@ -231,7 +231,7 @@ func Parse(args []string) (Invocation, error) {
 	switch command {
 	case CommandAdd:
 		return inv, parseAdd(commandArgs, &inv.Add)
-	case CommandUpdate:
+	case CommandPull:
 		return inv, parseUpdate(commandArgs, &inv.Update)
 	case CommandRemove:
 		return inv, parseRemove(commandArgs, &inv.Remove)
@@ -319,7 +319,7 @@ func parseAdd(args []string, options *AddOptions) error {
 
 func parseUpdate(args []string, options *UpdateOptions) error {
 	var positionals []string
-	err := parseCommandArgs(CommandUpdate, args, []flagSpec{
+	err := parseCommandArgs(CommandPull, args, []flagSpec{
 		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
@@ -330,19 +330,19 @@ func parseUpdate(args []string, options *UpdateOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("update", positionals, 0, 1); err != nil {
+	if err := requireArgRange("pull", positionals, 0, 1); err != nil {
 		return err
 	}
 	if len(positionals) == 1 {
 		options.LocalPath = normalizeLocalPathArg(positionals[0])
 	} else if options.Branch != "" || options.Tag != "" || options.Revision != "" {
-		return usageError("update without local_path cannot use --branch, --tag, or --revision")
+		return usageError("pull without local_path cannot use --branch, --tag, or --revision")
 	}
 	if options.Tag != "" && options.Branch != "" {
-		return usageError("update cannot combine --tag and --branch")
+		return usageError("pull cannot combine --tag and --branch")
 	}
 	if options.Tag != "" && options.Revision != "" {
-		return usageError("update cannot combine --tag and --revision")
+		return usageError("pull cannot combine --tag and --revision")
 	}
 	return nil
 }
@@ -534,10 +534,25 @@ func matchFlag(arg string, flags []flagSpec) (flagSpec, string, bool) {
 }
 
 func parseCommand(value string) (Command, bool) {
-	command := Command(value)
-	switch command {
-	case CommandAdd, CommandUpdate, CommandRemove, CommandDiff, CommandPush, CommandSync, CommandSetup, CommandVersion, CommandStatus:
-		return command, true
+	switch value {
+	case string(CommandAdd):
+		return CommandAdd, true
+	case string(CommandPull), "update", "up":
+		return CommandPull, true
+	case string(CommandRemove):
+		return CommandRemove, true
+	case string(CommandDiff):
+		return CommandDiff, true
+	case string(CommandPush):
+		return CommandPush, true
+	case string(CommandSync):
+		return CommandSync, true
+	case string(CommandSetup):
+		return CommandSetup, true
+	case string(CommandVersion):
+		return CommandVersion, true
+	case string(CommandStatus):
+		return CommandStatus, true
 	default:
 		return "", false
 	}
@@ -574,11 +589,11 @@ usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options
 
 commands:
   add       Add a new mirror
-  update    Update one mirror or every eligible mirror
+  pull      Pull one mirror or every eligible mirror
   remove    Remove a mirror
   diff      Show local mirror changes
   push      Push local mirror changes upstream
-  sync      Push local mirror changes, then update mirrors
+  sync      Push local mirror changes, then pull mirrors
   setup     Set up mirror remotes
   status    Show mirror status
   version   Show braid version
@@ -591,8 +606,8 @@ func CommandUsage(command Command) string {
 	switch command {
 	case CommandAdd:
 		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>]\n"
-	case CommandUpdate:
-		return "usage: braid update [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"
+	case CommandPull:
+		return "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"
 	case CommandRemove:
 		return "usage: braid remove <local_path> [--keep]\n"
 	case CommandDiff:

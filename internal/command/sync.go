@@ -102,14 +102,14 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 			if result.Status == updateStatusConflict && autostashOK {
 				updateConflict = true
 				if err != nil {
-					runErr = fmt.Errorf("update %s: %w", target.LocalPath, err)
+					runErr = fmt.Errorf("pull %s: %w", target.LocalPath, err)
 				} else {
-					runErr = fmt.Errorf("update %s reached conflict state", target.LocalPath)
+					runErr = fmt.Errorf("pull %s reached conflict state", target.LocalPath)
 				}
 				break
 			}
 			if err != nil {
-				runErr = fmt.Errorf("update %s: %w", target.LocalPath, err)
+				runErr = fmt.Errorf("pull %s: %w", target.LocalPath, err)
 				break
 			}
 		}
@@ -236,13 +236,13 @@ func (h SyncHandler) restoreSyncAutostash(ctx context.Context, git syncAutostash
 
 func (h SyncHandler) autostashConflictError(saved syncAutostash, err error) error {
 	if err == nil {
-		return fmt.Errorf("sync reached update conflict state. %s", manualAutostashConflictInstructions(saved))
+		return fmt.Errorf("sync reached pull conflict state. %s", manualAutostashConflictInstructions(saved))
 	}
 	return fmt.Errorf("%w. %s", err, manualAutostashConflictInstructions(saved))
 }
 
 func manualAutostashConflictInstructions(saved syncAutostash) string {
-	return fmt.Sprintf("Braid preserved autostash %s. Resolve the Braid update conflict first, then restore your saved work manually: %s", saved.Entry.OID, manualAutostashRestoreCommands(saved))
+	return fmt.Sprintf("Braid preserved autostash %s. Resolve the Braid pull conflict first, then restore your saved work manually: %s", saved.Entry.OID, manualAutostashRestoreCommands(saved))
 }
 
 func manualAutostashRestoreInstructions(saved syncAutostash) string {
@@ -377,11 +377,11 @@ func isMissingTreeItemError(err error) bool {
 }
 
 func syncNotUpToDateError(localPath string) error {
-	return fmt.Errorf("sync cannot push %s because the upstream branch is not up to date; run braid update %s, resolve conflicts if needed, commit, then rerun braid sync", localPath, localPath)
+	return fmt.Errorf("sync cannot push %s because the upstream branch is not up to date; run braid pull %s, resolve conflicts if needed, commit, then rerun braid sync", localPath, localPath)
 }
 
 func syncNonBranchLocalChangeError(localPath string) error {
-	return fmt.Errorf("sync cannot push committed local changes for non-branch mirror %s; run braid push %s --branch <branch> or rerun braid sync --pull-only %s if you only intended to update", localPath, localPath, localPath)
+	return fmt.Errorf("sync cannot push committed local changes for non-branch mirror %s; run braid push %s --branch <branch> or rerun braid sync --pull-only %s if you only intended to pull", localPath, localPath, localPath)
 }
 
 func syncMirrorPathDeletedError(localPath string) error {

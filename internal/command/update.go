@@ -56,7 +56,7 @@ type repoPathGit interface {
 
 func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	ctx := context.Background()
-	repo, err := Preflight(ctx, cli.CommandUpdate, inv, h.Options, stderr)
+	repo, err := Preflight(ctx, cli.CommandPull, inv, h.Options, stderr)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git Upda
 
 	for _, localPath := range targets {
 		if _, err := h.updateOne(ctx, repo, git, processGit, cache, localPath, options, verbose, stdout, trace); err != nil {
-			return fmt.Errorf("update %s: %w", localPath, err)
+			return fmt.Errorf("pull %s: %w", localPath, err)
 		}
 	}
 	return writeSkippedLockedMirrors(stdout, skippedLocked)
@@ -316,7 +316,7 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 	}
 	if !committed {
 		_ = cleanupRemote()
-		return updateResult{}, errors.New("update produced no commit")
+		return updateResult{}, errors.New("pull produced no commit")
 	}
 	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
 		_ = cleanupRemote()

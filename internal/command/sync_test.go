@@ -547,7 +547,7 @@ func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
 
 	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
 	assertContains(t, stderr, "Braid preserved autostash")
-	assertContains(t, stderr, "Resolve the Braid update conflict first")
+	assertContains(t, stderr, "Resolve the Braid pull conflict first")
 	assertContains(t, stderr, "git stash apply")
 	assertContains(t, stderr, "git restore --source=")
 	assertNoFile(t, repo, "vendor/basic/note.txt")
@@ -582,10 +582,10 @@ func TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash(t *testing.T)
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
 
 	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
-	assertContains(t, stderr, "update vendor/basic:")
+	assertContains(t, stderr, "pull vendor/basic:")
 	assertContains(t, stderr, "MERGE_MSG")
 	assertContains(t, stderr, "Braid preserved autostash")
-	assertContains(t, stderr, "Resolve the Braid update conflict first")
+	assertContains(t, stderr, "Resolve the Braid pull conflict first")
 	assertNoFile(t, repo, "vendor/basic/note.txt")
 	stashList := testutil.Git(t, repo, "stash", "list").Stdout
 	assertContains(t, stashList, "braid sync autostash")
@@ -800,7 +800,7 @@ func TestSyncCommandPushPlanValidationPreventsEarlierPush(t *testing.T) {
 		stderr := runCommandError(t, repo, []string{"sync", "vendor/a", "vendor/b"})
 
 		assertContains(t, stderr, "sync cannot push vendor/b because the upstream branch is not up to date")
-		assertContains(t, stderr, "run braid update vendor/b")
+		assertContains(t, stderr, "run braid pull vendor/b")
 		if got := testutil.CurrentRevision(t, upstreamA); got != aBase {
 			t.Fatalf("upstream a revision = %q, want unchanged %q", got, aBase)
 		}

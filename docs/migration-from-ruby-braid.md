@@ -15,9 +15,10 @@ Comparison baseline:
 
 The Go tool keeps the core modern Braid model: mirrors are recorded in
 `.braids.json`, mirror content is copied into the downstream repository, and the
-main workflows are `add`, `status`, `diff`, `update`, `push`, `setup`, and
-`remove`. The differences below are the parts most likely to matter in day to
-day use or automation.
+main workflows are `add`, `status`, `diff`, `pull`, `push`, `setup`, and
+`remove`. `pull` is the documented spelling for updating mirror content;
+`update` and `up` are accepted aliases. The differences below are the parts most
+likely to matter in day to day use or automation.
 
 ## High-Impact Changes
 
@@ -38,7 +39,7 @@ Migration impact:
   project setup if they only existed for Braid.
 - Install the platform binary on `PATH` and verify it with `SHA256SUMS`.
 - Check the Git version. Ruby Braid required Git 2.8.0 or newer; current Go
-  Braid requires Git 2.45.0 or newer because update conflict handling uses newer
+  Braid requires Git 2.45.0 or newer because pull conflict handling uses newer
   `git merge-tree` behavior.
 
 ### Commands can run from subdirectories
@@ -50,7 +51,7 @@ worktree.
 When a command takes a mirror path, the path is resolved relative to the
 directory where Braid was invoked and stored in `.braids.json` as a
 repo-root-relative path. Commands without a path, such as `braid status`,
-`braid diff`, `braid update`, `braid sync`, and `braid setup`, still operate on
+`braid diff`, `braid pull`, `braid sync`, and `braid setup`, still operate on
 the repository-wide mirror set.
 
 Migration impact:
@@ -68,7 +69,7 @@ and used `git reset --hard` to recover from some errors. Current Go Braid scopes
 its preflight checks and automatic commits to the Braid-owned paths for the
 command.
 
-For `add`, `update`, and `remove`, unrelated staged, unstaged, and untracked
+For `add`, `pull`, and `remove`, unrelated staged, unstaged, and untracked
 work outside `.braids.json` and the selected mirror paths is preserved and is not
 included in Braid's automatic commit. The selected mirror paths and
 `.braids.json` still have to be clean unless the command explicitly supports a
@@ -77,9 +78,9 @@ different flow.
 Migration impact:
 
 - You can run Braid with unrelated work in progress more safely.
-- Dirty selected mirror paths still stop `add`, `update`, `remove`, and `sync`
+- Dirty selected mirror paths still stop `add`, `pull`, `remove`, and `sync`
   unless `sync --autostash` is used.
-- On update conflict, unrelated staged files remain staged. Go Braid warns about
+- On pull conflict, unrelated staged files remain staged. Go Braid warns about
   that because a manual `git commit` after conflict resolution could include
   those files unless you unstage them.
 
@@ -92,10 +93,10 @@ braid sync [local_path...] [--pull-only] [--autostash] [--keep]
 ```
 
 The default `sync` workflow pushes committed local changes for branch-tracking
-mirrors and then updates the downstream mirror revision. `--pull-only` skips the
-push phase and only updates. With no paths, `sync` selects all branch and tag
-mirrors in lexicographic path order and skips revision-locked mirrors, matching
-no-path `update` selection.
+mirrors and then pulls the downstream mirror to the new upstream revision.
+`--pull-only` skips the push phase and only pulls. With no paths, `sync` selects
+all branch and tag mirrors in lexicographic path order and skips revision-locked
+mirrors, matching no-path `pull` selection.
 
 `--autostash` is path-scoped to selected mirrors. It saves selected mirror-path
 tracked changes, untracked files, ignored files, and selected-path index state,
@@ -105,9 +106,9 @@ changes; the push phase still uses the mirror content recorded in downstream
 
 Migration impact:
 
-- Use `sync` for the common "push local mirror commits upstream, then update the
+- Use `sync` for the common "push local mirror commits upstream, then pull the
   downstream recorded revision" workflow.
-- Use `sync --pull-only` as a stricter, scoped update workflow when you do not
+- Use `sync --pull-only` as a stricter, scoped pull workflow when you do not
   want any push attempt.
 - Do not expect `sync` to push tag or revision mirrors with local changes unless
   you use `braid push <path> --branch <branch>` explicitly.
@@ -142,13 +143,13 @@ Migration impact:
 
 | Area | Ruby Braid | Current Go Braid | Migration impact |
 | --- | --- | --- | --- |
-| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | Same core commands, plus `sync`; no `upgrade-config` | Scripts using `upgrade-config` must run Ruby Braid before migration or be removed. |
+| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; same other core commands, plus `sync`; no `upgrade-config` | Prefer `pull` in new docs and scripts. Scripts using `upgrade-config` must run Ruby Braid before migration or be removed. |
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
-| Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v update ...`, not `braid update -v ...`. |
+| Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
 | Cache flags | Environment variables only | Global `--no-cache` or `--cache-dir <path>` before the command, plus environment variables | Put cache flags before the command name. |
-| `update --head` | Accepted as an option, then errors with a deprecation message | Unknown flag | Remove it; use `--branch`, `--tag`, or `--revision` with an explicit mirror path. |
-| `update` without path | Updates all configured mirrors through Ruby's all-update flow | Updates branch/tag mirrors in lexicographic path order; skips revision-locked mirrors and reports skipped paths | Locked mirrors are no longer touched by all-update. |
-| Strategy flags with no-path `update` | Accepted by the Ruby parser, with inconsistent all-mirror behavior | Rejected | Pass a local path when changing branch, tag, or revision. |
+| `update --head` | Accepted as an option, then errors with a deprecation message | Unknown flag for `pull` and its aliases | Remove it; use `--branch`, `--tag`, or `--revision` with an explicit mirror path. |
+| `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a path updates branch/tag mirrors in lexicographic path order, skips revision-locked mirrors, and reports skipped paths; `update` and `up` behave the same way | Locked mirrors are no longer touched by all-update. |
+| Strategy flags with no-path `update` | Accepted by the Ruby parser, with inconsistent all-mirror behavior | Rejected for no-path `pull` and its aliases | Pass a local path when changing branch, tag, or revision. |
 | `diff` pass-through | Arguments after `--` are passed to `git diff` | Same | Output formatting is not exact Ruby text parity. |
 | `setup --force` and command `--keep` | Supported | Supported where relevant | Remote cleanup behavior is broadly preserved. |
 
@@ -230,9 +231,9 @@ Migration impact:
 - Tag mirrors work when the Go cache is disabled. Ruby Braid could not retrieve
   tag revisions with the cache disabled.
 
-## Update and Conflict Handling
+## Pull and Conflict Handling
 
-Non-conflicting updates still create Braid commits such as:
+Non-conflicting pulls still create Braid commits such as:
 
 ```text
 Braid: Update mirror 'vendor/example' to 'abcdef0'
@@ -240,7 +241,7 @@ Braid: Update mirror 'vendor/example' to 'abcdef0'
 
 Conflict handling differs in details. Ruby Braid documented that users should
 resolve conflicts and manually run `git commit`, or use `git reset --hard` to
-abandon the update. Current Go Braid prints the exact `git add` and
+abandon the pull. Current Go Braid prints the exact `git add` and
 `git commit -F <MERGE_MSG>` commands for the invocation directory.
 
 Current Go Braid stages the updated `.braids.json`, writes `.git/MERGE_MSG`, and
@@ -251,7 +252,7 @@ Migration impact:
 
 - Follow the printed commands after a Go Braid conflict rather than old
   root-only instructions.
-- To abandon a conflicted Go Braid update while preserving unrelated work,
+- To abandon a conflicted Go Braid pull while preserving unrelated work,
   restore only the mirror path and `.braids.json` from `HEAD`, then remove
   `.git/MERGE_MSG`.
 
@@ -289,5 +290,5 @@ Known output differences include:
    `BRAID_LOCAL_CACHE_DIR` or use `--cache-dir` if you need a controlled path.
 8. For push workflows, make sure local mirror edits are committed downstream
    before `braid push` or `braid sync`.
-9. Prefer `braid sync` for the push-then-update workflow once the team has
+9. Prefer `braid sync` for the push-then-pull workflow once the team has
    tested it on the repository.
