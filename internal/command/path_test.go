@@ -21,6 +21,7 @@ func TestNormalizeLocalPathFromSubdirectory(t *testing.T) {
 		want  string
 	}{
 		{name: "relative", value: "vendor/foo", want: "apps/web/vendor/foo"},
+		{name: "trailing slash", value: "vendor/foo/", want: "apps/web/vendor/foo"},
 		{name: "backslash", value: `vendor\foo`, want: "apps/web/vendor/foo"},
 		{name: "parent remains inside", value: "../../vendor/foo", want: "vendor/foo"},
 		{name: "dot at mirror root", value: ".", want: "apps/web"},
