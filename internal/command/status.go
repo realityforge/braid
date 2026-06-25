@@ -24,6 +24,7 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.statusGit(repo, inv, stderr)
+	progress := newProgressReporter(stderr, inv.Global.Quiet)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -45,11 +46,11 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return h.statusOne(ctx, git, cache, m, inv.Global.Verbose, stdout, stderr)
+		return h.statusOne(ctx, git, cache, m, inv.Global.Verbose, progress, stdout, stderr)
 	}
 
 	for _, localPath := range cfg.Paths() {
-		if err := h.statusOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Global.Verbose, stdout, stderr); err != nil {
+		if err := h.statusOne(ctx, git, cache, cfg.Mirrors[localPath], inv.Global.Verbose, progress, stdout, stderr); err != nil {
 			return err
 		}
 	}
@@ -66,9 +67,9 @@ func (h StatusHandler) statusGit(repo RepoContext, inv cli.Invocation, trace io.
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, verbose bool, stdout, trace io.Writer) (err error) {
+func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache CacheConfig, m mirror.Mirror, verbose bool, progress progressReporter, stdout, trace io.Writer) (err error) {
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m, verbose, progress, trace); err != nil {
 			return err
 		}
 	}
@@ -82,7 +83,7 @@ func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache Cache
 		}
 	}()
 
-	if err := fetchMirror(ctx, git, m); err != nil {
+	if err := fetchMirror(ctx, git, m, progress); err != nil {
 		return err
 	}
 	baseRevision, err := git.RevParse(ctx, m.Revision+"^{commit}")

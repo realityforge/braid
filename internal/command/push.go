@@ -82,13 +82,14 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	if branch == "" {
 		return pushResult{}, fmt.Errorf("mirror has no tracked branch; specify --branch to push %s", m.Path)
 	}
+	progress := newProgressReporter(stderr, global.Quiet)
 
 	cache, err := runtimeCache(global)
 	if err != nil {
 		return pushResult{}, err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, global.Verbose, stderr); err != nil {
+		if err := fetchCache(ctx, cache, m, global.Verbose, progress, stderr); err != nil {
 			return pushResult{}, err
 		}
 	}
@@ -103,7 +104,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 			}
 		}()
 	}
-	if err := fetchMirror(ctx, git, m); err != nil {
+	if err := fetchMirror(ctx, git, m, progress); err != nil {
 		return pushResult{}, err
 	}
 
@@ -141,13 +142,26 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	}
 	messageGeneration := configuredPushMessageGeneration()
 
-	if err := h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), stdout, stderr, provenance, provenanceOK, provenanceErr, messageGeneration); err != nil {
+	if err := runProgress(
+		progress,
+		fmt.Sprintf("Braid: pushing mirror %s", m.Path),
+		fmt.Sprintf("Braid: pushed mirror %s", m.Path),
+		func() error {
+			info := stderr
+			commitStdout := stdout
+			if global.Quiet {
+				info = io.Discard
+				commitStdout = io.Discard
+			}
+			return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), commitStdout, stderr, info, provenance, provenanceOK, provenanceErr, messageGeneration)
+		},
+	); err != nil {
 		return pushResult{}, err
 	}
 	return pushResult{Status: pushStatusPushed}, nil
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr, info io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
 	workspaceDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -165,7 +179,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 		return err
 	}
 
-	tempGit := gitexec.New(pushRepoDir, verbose, stderr)
+	tempGit := gitexec.New(pushRepoDir, verbose, info)
 	if err := tempGit.Init(ctx); err != nil {
 		return err
 	}
@@ -192,7 +206,7 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 	}
 
 	if messageGeneration.Enabled {
-		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, stderr, provenance, provenanceOK, provenanceErr)
+		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, info, provenance, provenanceOK, provenanceErr)
 		if err != nil {
 			return err
 		}

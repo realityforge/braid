@@ -94,6 +94,14 @@ go_test(
 )
 
 go_test(
+    name = "progress_integration_test",
+    srcs = ["progress_integration_test.go"],
+    embed = [":command_test_support"],
+    timeout = "moderate",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
     name = "push_test",
     srcs = ["push_test.go"],
     embed = [":command_test_support"],

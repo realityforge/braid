@@ -25,6 +25,7 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 
 	git := h.diffGit(repo, inv, stderr)
 	processGit := h.processDiffGit(repo, inv, stderr)
+	progress := newProgressReporter(stderr, inv.Global.Quiet)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -46,14 +47,14 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, stdout, stderr)
+		return h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, progress, stdout, stderr)
 	}
 
 	for _, localPath := range cfg.Paths() {
 		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing %s\n=======================================================\n", localPath); err != nil {
 			return err
 		}
-		if err := h.diffOne(ctx, git, processGit, cache, cfg.Mirrors[localPath], inv.Diff, inv.Global.Verbose, stdout, stderr); err != nil {
+		if err := h.diffOne(ctx, git, processGit, cache, cfg.Mirrors[localPath], inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
 			return err
 		}
 	}
@@ -80,7 +81,7 @@ func (h DiffHandler) processDiffGit(repo RepoContext, inv cli.Invocation, trace 
 	return gitexec.New(repo.ProcessWorkDir, inv.Global.Verbose, trace)
 }
 
-func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, stdout, trace io.Writer) (err error) {
+func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) (err error) {
 	if err := setupOne(ctx, git, m, true, cache); err != nil {
 		return err
 	}
@@ -93,7 +94,7 @@ func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache
 		}()
 	}
 
-	if err := fetchBaseRevisionIfMissing(ctx, git, cache, m, verbose, trace); err != nil {
+	if err := fetchBaseRevisionIfMissing(ctx, git, cache, m, verbose, progress, trace); err != nil {
 		return err
 	}
 	args, err := buildDiffArgs(ctx, git, m, options.GitDiffArgs)
@@ -108,16 +109,16 @@ func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache
 	return err
 }
 
-func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheConfig, m mirror.Mirror, verbose bool, trace io.Writer) error {
+func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheConfig, m mirror.Mirror, verbose bool, progress progressReporter, trace io.Writer) error {
 	if _, err := git.RevParse(ctx, m.Revision+"^{commit}"); err == nil {
 		return nil
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m, verbose, progress, trace); err != nil {
 			return err
 		}
 	}
-	return fetchMirror(ctx, git, m)
+	return fetchMirror(ctx, git, m, progress)
 }
 
 func buildDiffArgs(ctx context.Context, git DiffGit, m mirror.Mirror, userArgs []string) ([]string, error) {

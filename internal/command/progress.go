@@ -47,6 +47,18 @@ func newProgressReporter(writer io.Writer, quiet bool) progressReporter {
 	}
 }
 
+func runProgress(reporter progressReporter, start, complete string, fn func() error) error {
+	op, err := reporter.Start(start)
+	if err != nil {
+		return err
+	}
+	if err := fn(); err != nil {
+		_ = op.Abort()
+		return err
+	}
+	return op.Complete(complete)
+}
+
 func (r progressReporter) Start(message string) (*progressOperation, error) {
 	op := &progressOperation{}
 	if r.quiet || r.writer == nil {

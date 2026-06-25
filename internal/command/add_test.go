@@ -457,6 +457,7 @@ func TestAddCommandReportsPostCommitRestoreFailure(t *testing.T) {
 			Global: cli.GlobalOptions{NoCache: true},
 			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
 		},
+		progressReporter{},
 		new(bytes.Buffer),
 	)
 	if err == nil || !strings.Contains(err.Error(), "restore failed") {
@@ -478,6 +479,7 @@ func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 			Global: cli.GlobalOptions{NoCache: true},
 			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
 		},
+		progressReporter{},
 		new(bytes.Buffer),
 	)
 	if err == nil || !strings.Contains(err.Error(), `add committed but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {

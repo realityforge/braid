@@ -23,6 +23,7 @@ func (h SetupHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.remoteGit(repo, inv, stderr)
+	progress := newProgressReporter(stderr, inv.Global.Quiet)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -44,11 +45,11 @@ func (h SetupHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		return setupOne(ctx, git, m, inv.Setup.Force, cache)
+		return setupOneWithProgress(ctx, git, m, inv.Setup.Force, cache, progress)
 	}
 
 	for _, localPath := range cfg.Paths() {
-		if err := setupOne(ctx, git, cfg.Mirrors[localPath], inv.Setup.Force, cache); err != nil {
+		if err := setupOneWithProgress(ctx, git, cfg.Mirrors[localPath], inv.Setup.Force, cache, progress); err != nil {
 			return err
 		}
 	}
@@ -66,6 +67,10 @@ func (h SetupHandler) remoteGit(repo RepoContext, inv cli.Invocation, trace io.W
 }
 
 func setupOne(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig) error {
+	return setupOneWithProgress(ctx, git, m, force, cache, progressReporter{})
+}
+
+func setupOneWithProgress(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig, progress progressReporter) error {
 	remote := m.Remote()
 	if _, ok, err := git.RemoteURL(ctx, remote); err != nil {
 		return err
@@ -73,11 +78,31 @@ func setupOne(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, c
 		if !force {
 			return nil
 		}
-		if err := git.RemoteRemove(ctx, remote); err != nil {
-			return err
-		}
+		return runProgress(
+			progress,
+			"Braid: setting up mirror remote "+m.Path,
+			"Braid: set up mirror remote "+m.Path,
+			func() error {
+				if err := git.RemoteRemove(ctx, remote); err != nil {
+					return err
+				}
+				return setupMirrorRemote(ctx, git, m, cache)
+			},
+		)
 	}
 
+	return runProgress(
+		progress,
+		"Braid: setting up mirror remote "+m.Path,
+		"Braid: set up mirror remote "+m.Path,
+		func() error {
+			return setupMirrorRemote(ctx, git, m, cache)
+		},
+	)
+}
+
+func setupMirrorRemote(ctx context.Context, git RemoteGit, m mirror.Mirror, cache CacheConfig) error {
+	remote := m.Remote()
 	url := m.URL
 	if cache.Enabled {
 		url = CachePath(cache.Dir, m.URL)

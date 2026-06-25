@@ -59,6 +59,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 
 	git := h.syncGit(repo, inv, stderr)
 	processGit := UpdateHandler(h).processRepoPathGit(repo, inv, stderr)
+	progress := newProgressReporter(stderr, inv.Global.Quiet)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -81,11 +82,11 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	var runErr error
 	var updateConflict bool
 	if !inv.Sync.PullOnly {
-		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, stderr); err != nil {
+		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr); err != nil {
 			runErr = err
 		}
 		if runErr == nil {
-			plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, stderr)
+			plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr)
 			if err != nil {
 				runErr = err
 			} else if err := h.runPushPlan(ctx, repo, git, plan, inv, stdout, stderr); err != nil {
@@ -98,7 +99,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		update := UpdateHandler(h)
 		updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
 		for _, target := range targets {
-			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, stdout, stderr)
+			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, progress, stdout, stderr)
 			if result.Status == updateStatusConflict && autostashOK {
 				updateConflict = true
 				if err != nil {
@@ -261,12 +262,12 @@ func manualAutostashRestoreCommands(saved syncAutostash) string {
 	return fmt.Sprintf("git stash apply %s && git restore --source=%s^2 --staged -- %s", saved.Entry.OID, saved.Entry.OID, strings.Join(quotedPaths, " "))
 }
 
-func (h SyncHandler) hydrateMissingRecordedRevisions(ctx context.Context, git PushGit, cache CacheConfig, targets []syncTarget, keep bool, verbose bool, trace io.Writer) error {
+func (h SyncHandler) hydrateMissingRecordedRevisions(ctx context.Context, git PushGit, cache CacheConfig, targets []syncTarget, keep bool, verbose bool, progress progressReporter, trace io.Writer) error {
 	for _, target := range targets {
 		if _, err := git.RevParse(ctx, target.Mirror.Revision+"^{commit}"); err == nil {
 			continue
 		}
-		err := h.withFetchedMirrorForPlanning(ctx, git, cache, target.Mirror, keep, verbose, trace, func() error {
+		err := h.withFetchedMirrorForPlanning(ctx, git, cache, target.Mirror, keep, verbose, progress, trace, func() error {
 			if _, err := git.RevParse(ctx, target.Mirror.Revision+"^{commit}"); err != nil {
 				return fmt.Errorf("recorded revision %s for %s is unavailable after hydration", target.Mirror.Revision, target.LocalPath)
 			}
@@ -279,7 +280,7 @@ func (h SyncHandler) hydrateMissingRecordedRevisions(ctx context.Context, git Pu
 	return nil
 }
 
-func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache CacheConfig, targets []syncTarget, keep bool, verbose bool, trace io.Writer) (syncPushPlan, error) {
+func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache CacheConfig, targets []syncTarget, keep bool, verbose bool, progress progressReporter, trace io.Writer) (syncPushPlan, error) {
 	actions := make([]syncPushAction, 0, len(targets))
 	for _, target := range targets {
 		changed, baseRevision, err := committedLocalMirrorChange(ctx, git, target.Mirror)
@@ -300,7 +301,7 @@ func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache Cache
 
 	for _, action := range actions {
 		var upstreamRevision string
-		err := h.withFetchedMirrorForPlanning(ctx, git, cache, action.Target.Mirror, keep, verbose, trace, func() error {
+		err := h.withFetchedMirrorForPlanning(ctx, git, cache, action.Target.Mirror, keep, verbose, progress, trace, func() error {
 			var err error
 			upstreamRevision, err = resolveAddRevision(ctx, git, action.Target.Mirror, "")
 			return err
@@ -315,9 +316,9 @@ func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache Cache
 	return syncPushPlan{Actions: actions}, nil
 }
 
-func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushGit, cache CacheConfig, m mirror.Mirror, keep bool, verbose bool, trace io.Writer, fn func() error) (err error) {
+func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushGit, cache CacheConfig, m mirror.Mirror, keep bool, verbose bool, progress progressReporter, trace io.Writer, fn func() error) (err error) {
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m, verbose, progress, trace); err != nil {
 			return err
 		}
 	}
@@ -332,7 +333,7 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 			}
 		}()
 	}
-	if err := fetchMirror(ctx, git, m); err != nil {
+	if err := fetchMirror(ctx, git, m, progress); err != nil {
 		return err
 	}
 	return fn()

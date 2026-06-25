@@ -28,7 +28,8 @@ func (h AddHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.addGit(repo, inv, stderr)
-	return h.add(ctx, repo, git, inv, stderr)
+	progress := newProgressReporter(stderr, inv.Global.Quiet)
+	return h.add(ctx, repo, git, inv, progress, stderr)
 }
 
 func (h AddHandler) addGit(repo RepoContext, inv cli.Invocation, trace io.Writer) AddGit {
@@ -41,7 +42,7 @@ func (h AddHandler) addGit(repo RepoContext, inv cli.Invocation, trace io.Writer
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv cli.Invocation, trace io.Writer) error {
+func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv cli.Invocation, progress progressReporter, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -83,7 +84,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 	}
 
 	if addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
-		branch, err := defaultBranch(ctx, git, addOptions.URL)
+		branch, err := defaultBranch(ctx, git, addOptions.URL, m.Path, progress)
 		if err != nil {
 			return err
 		}
@@ -99,7 +100,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m.URL, inv.Global.Verbose, trace); err != nil {
+		if err := fetchCache(ctx, cache, m, inv.Global.Verbose, progress, trace); err != nil {
 			return err
 		}
 	}
@@ -118,7 +119,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return cause
 	}
 
-	if err := fetchMirror(ctx, git, m); err != nil {
+	if err := fetchMirror(ctx, git, m, progress); err != nil {
 		return cleanupRemote(err)
 	}
 
@@ -165,9 +166,14 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 	return cleanupRemote(nil)
 }
 
-func defaultBranch(ctx context.Context, git AddGit, url string) (string, error) {
+func defaultBranch(ctx context.Context, git AddGit, url, localPath string, progress progressReporter) (branch string, err error) {
+	op, err := progress.Start(fmt.Sprintf("Braid: detecting default branch for mirror %s", localPath))
+	if err != nil {
+		return "", err
+	}
 	out, err := git.LsRemote(ctx, "--symref", url, "HEAD")
 	if err != nil {
+		_ = op.Abort()
 		return "", err
 	}
 	var targets []string
@@ -181,7 +187,11 @@ func defaultBranch(ctx context.Context, git AddGit, url string) (string, error) 
 		}
 	}
 	if len(targets) != 1 || targets[0] == "" {
+		_ = op.Abort()
 		return "", errors.New("failed to detect default branch; specify --branch")
+	}
+	if err := op.Complete(fmt.Sprintf("Braid: detected default branch for mirror %s", localPath)); err != nil {
+		return "", err
 	}
 	return targets[0], nil
 }
@@ -261,40 +271,54 @@ func lsFilesContainsExactPath(output, path string) bool {
 	return false
 }
 
-func fetchCache(ctx context.Context, cache CacheConfig, url string, verbose bool, trace io.Writer) error {
-	cachePath := CachePath(cache.Dir, url)
-	if _, err := os.Stat(filepath.Join(cachePath, ".git")); err == nil {
-		if err := os.RemoveAll(cachePath); err != nil {
-			return err
-		}
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
+func fetchCache(ctx context.Context, cache CacheConfig, m mirror.Mirror, verbose bool, progress progressReporter, trace io.Writer) error {
+	return runProgress(
+		progress,
+		fmt.Sprintf("Braid: updating cache for mirror %s", m.Path),
+		fmt.Sprintf("Braid: updated cache for mirror %s", m.Path),
+		func() error {
+			cachePath := CachePath(cache.Dir, m.URL)
+			if _, err := os.Stat(filepath.Join(cachePath, ".git")); err == nil {
+				if err := os.RemoveAll(cachePath); err != nil {
+					return err
+				}
+			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 
-	if _, err := os.Stat(cachePath); err == nil {
-		return gitexec.New(cachePath, verbose, trace).Fetch(ctx)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
+			if _, err := os.Stat(cachePath); err == nil {
+				return gitexec.New(cachePath, verbose, trace).Fetch(ctx)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 
-	if err := os.MkdirAll(cache.Dir, 0o755); err != nil {
-		return err
-	}
-	return gitexec.New(".", verbose, trace).CloneMirror(ctx, url, cachePath)
+			if err := os.MkdirAll(cache.Dir, 0o755); err != nil {
+				return err
+			}
+			return gitexec.New(".", verbose, trace).CloneMirror(ctx, m.URL, cachePath)
+		},
+	)
 }
 
 type fetchGit interface {
 	Fetch(context.Context, ...string) error
 }
 
-func fetchMirror(ctx context.Context, git fetchGit, m mirror.Mirror) error {
-	if err := git.Fetch(ctx, "-n", m.Remote()); err != nil {
-		return err
-	}
-	if m.Tag != "" {
-		return git.Fetch(ctx, "-n", m.Remote(), "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag)
-	}
-	return nil
+func fetchMirror(ctx context.Context, git fetchGit, m mirror.Mirror, progress progressReporter) error {
+	return runProgress(
+		progress,
+		fmt.Sprintf("Braid: fetching mirror %s", m.Path),
+		fmt.Sprintf("Braid: fetched mirror %s", m.Path),
+		func() error {
+			if err := git.Fetch(ctx, "-n", m.Remote()); err != nil {
+				return err
+			}
+			if m.Tag != "" {
+				return git.Fetch(ctx, "-n", m.Remote(), "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag)
+			}
+			return nil
+		},
+	)
 }
 
 type revParseGit interface {
