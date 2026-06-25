@@ -172,12 +172,12 @@ tasks:
       - command: rg -n -- "--quiet|Output And Quiet Mode|progress|stderr|stdout" README.md docs/migration-from-ruby-braid.md
         result: passed; README and migration docs document quiet mode, progress, stdout, and stderr behavior
     commit:
-      hash: pending
-      message: pending
+      hash: 4030f4969f4208666602ab17b6efee7e645f158f
+      message: "docs(cli): document progress and quiet output"
 
   - id: T-05
     title: Run full CI parity and close out
-    status: pending
+    status: completed
     priority: high
     depends_on:
       - T-04
@@ -188,10 +188,30 @@ tasks:
       - Working tree status is reported.
     files_touched:
       - "*"
-    evidence: []
+    evidence:
+      - command: sed -n '1,260p' .github/workflows/ci.yml
+        result: inspected CI source of truth before running full gate
+      - command: bazel run @rules_go//go -- fmt ./...
+        result: passed
+      - command: git diff --exit-code
+        result: passed before final validation metadata update
+      - command: git --version
+        result: git version 2.51.0
+      - command: git merge-tree --write-tree "--merge-base=HEAD^{tree}" "HEAD^{tree}" "HEAD^{tree}"
+        result: passed; produced tree f5fb1a49f65ace8379c564afb6dfbc3fd5b49f6d
+      - command: bazel test --test_env=PATH //...
+        result: passed; 27 test targets pass
+      - command: bazel run @rules_go//go -- vet ./...
+        result: passed
+      - command: bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+        result: passed; 0 issues
+      - command: bazel test --test_env=PATH //integration/...
+        result: passed; 6 test targets pass
+      - command: GitHub Actions matrix observation
+        result: not observed locally; Windows, Linux ARM64, and macOS Intel remain GitHub-hosted platform validation
     commit:
-      hash: pending
-      message: pending
+      hash: a248c89ad542097e377113212dcf0d10e7bf2d18
+      message: "test(integration): align executable output expectations"
 
 history:
   - task: PLAN-01
@@ -224,3 +244,5 @@ history:
     note: Integrated progress reporting through add, pull/update, sync planning/update, push, status, diff hydration, and setup remote operations, with command-boundary tests for normal and quiet output contracts.
   - task: T-04
     note: Documented the global quiet flag, default progress behavior, stream classes, and Ruby migration impact.
+  - task: T-05
+    note: Full local CI parity gate passed after executable integration expectations were aligned with the new default progress output; GitHub Actions platform matrix was not observed locally.
