@@ -35,6 +35,15 @@ go_test(
 )
 
 go_test(
+    name = "completion_test",
+    size = "medium",
+    srcs = ["completion_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    timeout = "short",
+)
+
+go_test(
     name = "configure_failure_command_test",
     size = "medium",
     srcs = ["setup_failure_test.go"],

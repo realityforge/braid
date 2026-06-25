@@ -11,15 +11,17 @@ var DefaultVersion = "0.0.0-dev"
 type Command string
 
 const (
-	CommandAdd     Command = "add"
-	CommandPull    Command = "pull"
-	CommandRemove  Command = "remove"
-	CommandDiff    Command = "diff"
-	CommandPush    Command = "push"
-	CommandSync    Command = "sync"
-	CommandSetup   Command = "setup"
-	CommandVersion Command = "version"
-	CommandStatus  Command = "status"
+	CommandAdd        Command = "add"
+	CommandPull       Command = "pull"
+	CommandRemove     Command = "remove"
+	CommandDiff       Command = "diff"
+	CommandPush       Command = "push"
+	CommandSync       Command = "sync"
+	CommandSetup      Command = "setup"
+	CommandVersion    Command = "version"
+	CommandStatus     Command = "status"
+	CommandCompletion Command = "completion"
+	CommandComplete   Command = "__complete"
 )
 
 type GlobalOptions struct {
@@ -80,19 +82,30 @@ type StatusOptions struct {
 	LocalPath string
 }
 
+type CompletionOptions struct {
+	Shell string
+}
+
+type CompleteOptions struct {
+	Shell string
+	Args  []string
+}
+
 type Invocation struct {
 	Global  GlobalOptions
 	Command Command
 	Help    bool
 
-	Add    AddOptions
-	Update UpdateOptions
-	Remove RemoveOptions
-	Diff   DiffOptions
-	Push   PushOptions
-	Sync   SyncOptions
-	Setup  SetupOptions
-	Status StatusOptions
+	Add        AddOptions
+	Update     UpdateOptions
+	Remove     RemoveOptions
+	Diff       DiffOptions
+	Push       PushOptions
+	Sync       SyncOptions
+	Setup      SetupOptions
+	Status     StatusOptions
+	Completion CompletionOptions
+	Complete   CompleteOptions
 }
 
 type Handler interface {
@@ -251,6 +264,10 @@ func Parse(args []string) (Invocation, error) {
 		return inv, requireNoArgs("version", commandArgs)
 	case CommandStatus:
 		return inv, parseStatus(commandArgs, &inv.Status)
+	case CommandCompletion:
+		return inv, parseCompletion(commandArgs, &inv.Completion)
+	case CommandComplete:
+		return inv, parseComplete(commandArgs, &inv.Complete)
 	default:
 		return inv, usageError("unknown command %s", commandText)
 	}
@@ -464,6 +481,32 @@ func parseStatus(args []string, options *StatusOptions) error {
 	return nil
 }
 
+func parseCompletion(args []string, options *CompletionOptions) error {
+	if err := requireArgRange("completion", args, 1, 1); err != nil {
+		return err
+	}
+	if args[0] != "bash" {
+		return usageError("unknown completion shell %s", args[0])
+	}
+	options.Shell = args[0]
+	return nil
+}
+
+func parseComplete(args []string, options *CompleteOptions) error {
+	if len(args) < 2 {
+		return usageError("__complete requires shell and -- separator")
+	}
+	if args[0] != "bash" {
+		return usageError("unknown completion shell %s", args[0])
+	}
+	if args[1] != "--" {
+		return usageError("__complete requires -- separator")
+	}
+	options.Shell = args[0]
+	options.Args = append([]string(nil), args[2:]...)
+	return nil
+}
+
 func normalizeLocalPathArg(value string) string {
 	return strings.ReplaceAll(value, `\`, "/")
 }
@@ -560,6 +603,10 @@ func parseCommand(value string) (Command, bool) {
 		return CommandVersion, true
 	case string(CommandStatus):
 		return CommandStatus, true
+	case string(CommandCompletion):
+		return CommandCompletion, true
+	case string(CommandComplete):
+		return CommandComplete, true
 	default:
 		return "", false
 	}
@@ -604,6 +651,8 @@ commands:
   setup     Set up mirror remotes
   status    Show mirror status
   version   Show braid version
+  completion
+            Print Bash completion script
 
 Run "braid <command> help" for command-specific usage.
 `, "\n")
@@ -629,6 +678,8 @@ func CommandUsage(command Command) string {
 		return "usage: braid version\n"
 	case CommandStatus:
 		return "usage: braid status [local_path]\n"
+	case CommandCompletion:
+		return "usage: braid completion bash\n"
 	default:
 		return Usage()
 	}

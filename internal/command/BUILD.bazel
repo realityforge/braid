@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "add.go",
         "cache.go",
+        "completion.go",
         "diff.go",
         "path.go",
         "preflight.go",
@@ -57,6 +58,14 @@ go_test(
 go_test(
     name = "cache_test",
     srcs = ["cache_test.go"],
+    embed = [":command_test_support"],
+    timeout = "short",
+    deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "completion_test",
+    srcs = ["completion_test.go"],
     embed = [":command_test_support"],
     timeout = "short",
     deps = COMMAND_TEST_DEPS,

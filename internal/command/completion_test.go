@@ -1,0 +1,223 @@
+package command
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"braid/internal/testutil"
+)
+
+func TestCompletionBashPrintsScript(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{WorkDir: t.TempDir()}).Run([]string{"completion", "bash"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("completion bash exit = %d, stderr = %q", code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	assertContains(t, stdout.String(), "_braid()")
+	assertContains(t, stdout.String(), `"${COMP_WORDS[0]}" __complete bash -- "${COMP_WORDS[@]:1}"`)
+	assertContains(t, stdout.String(), "complete -o default -o bashdefault -F _braid braid")
+}
+
+func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
+	dir := t.TempDir()
+
+	candidates := completeCandidates(t, dir, "")
+	assertCandidate(t, candidates, "add")
+	assertCandidate(t, candidates, "pull")
+	assertCandidate(t, candidates, "completion")
+	assertCandidate(t, candidates, "help")
+	assertNoCandidate(t, candidates, "update")
+	assertNoCandidate(t, candidates, "up")
+	assertNoCandidate(t, candidates, "__complete")
+
+	candidates = completeCandidates(t, dir, "--")
+	assertCandidate(t, candidates, "--verbose")
+	assertCandidate(t, candidates, "--quiet")
+	assertCandidate(t, candidates, "--no-cache")
+	assertCandidate(t, candidates, "--cache-dir")
+
+	candidates = completeCandidates(t, dir, "--verbose", "")
+	assertNoCandidate(t, candidates, "--verbose")
+	assertNoCandidate(t, candidates, "-v")
+	assertNoCandidate(t, candidates, "--quiet")
+	assertCandidate(t, candidates, "--no-cache")
+
+	candidates = completeCandidates(t, dir, "--cache-dir", "cache", "")
+	assertNoCandidate(t, candidates, "--no-cache")
+	assertCandidate(t, candidates, "--cache-dir")
+}
+
+func TestCompleteCommandOptions(t *testing.T) {
+	dir := t.TempDir()
+
+	candidates := completeCandidates(t, dir, "sync", "--")
+	assertCandidate(t, candidates, "--pull-only")
+	assertCandidate(t, candidates, "--autostash")
+	assertCandidate(t, candidates, "--keep")
+
+	candidates = completeCandidates(t, dir, "sync", "--autostash", "--")
+	assertNoCandidate(t, candidates, "--autostash")
+	assertCandidate(t, candidates, "--pull-only")
+
+	candidates = completeCandidates(t, dir, "pull", "")
+	assertCandidate(t, candidates, "--branch")
+	assertCandidate(t, candidates, "-b")
+	assertCandidate(t, candidates, "--tag")
+	assertCandidate(t, candidates, "--revision")
+	assertCandidate(t, candidates, "--keep")
+
+	candidates = completeCandidates(t, dir, "completion", "")
+	if got, want := strings.Join(candidates, "\n"), "bash"; got != want {
+		t.Fatalf("completion candidates = %q, want %q", got, want)
+	}
+}
+
+func TestCompleteMirrorPathsRelativeToCurrentDirectory(t *testing.T) {
+	repo := testutil.InitRepo(t)
+	writeCompletionConfig(t, repo)
+	subdir := filepath.Join(repo, "apps", "web")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("create subdir: %v", err)
+	}
+
+	candidates := completeCandidates(t, subdir, "status", "")
+	assertCandidate(t, candidates, "vendor/local")
+	assertCandidate(t, candidates, "../../vendor/root")
+	assertCandidate(t, candidates, "../../path with spaces/lib")
+
+	candidates = completeCandidates(t, repo, "status", "path")
+	assertCandidate(t, candidates, "path with spaces/lib")
+}
+
+func TestCompleteMirrorPathsForSyncExcludeAlreadySelectedPaths(t *testing.T) {
+	repo := testutil.InitRepo(t)
+	writeCompletionConfig(t, repo)
+
+	candidates := completeCandidates(t, repo, "sync", "vendor/root", "")
+	assertNoCandidate(t, candidates, "vendor/root")
+	assertCandidate(t, candidates, "apps/web/vendor/local")
+	assertCandidate(t, candidates, "path with spaces/lib")
+}
+
+func TestCompleteSingleMirrorPathCommandStopsAfterPath(t *testing.T) {
+	repo := testutil.InitRepo(t)
+	writeCompletionConfig(t, repo)
+
+	candidates := completeCandidates(t, repo, "status", "vendor/root", "")
+	assertNoCandidate(t, candidates, "vendor/root")
+	assertNoCandidate(t, candidates, "apps/web/vendor/local")
+}
+
+func TestCompleteMirrorPathsAreSilentOutsideRepository(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(Options{WorkDir: t.TempDir()}).Run([]string{"__complete", "bash", "--", "status", ""}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("__complete exit = %d, stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestCompleteFilesystemContexts(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "cache"), 0o755); err != nil {
+		t.Fatalf("create cache dir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "vendor"), 0o755); err != nil {
+		t.Fatalf("create vendor dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("readme\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+
+	candidates := completeCandidates(t, dir, "--cache-dir", "ca")
+	assertCandidate(t, candidates, "cache/")
+
+	candidates = completeCandidates(t, dir, "--cache-dir=ca")
+	assertCandidate(t, candidates, "--cache-dir=cache/")
+
+	candidates = completeCandidates(t, dir, "add", "https://example.test/repo.git", "ven")
+	assertCandidate(t, candidates, "vendor/")
+
+	candidates = completeCandidates(t, dir, "diff", "--", "READ")
+	assertCandidate(t, candidates, "README.md")
+}
+
+func completeCandidates(t *testing.T, dir string, words ...string) []string {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	args := append([]string{"__complete", "bash", "--"}, words...)
+	code := NewAppWithOptions(Options{WorkDir: dir}).Run(args, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("braid %v exit = %d, stderr = %q", args, code, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("braid %v stderr = %q, want empty", args, stderr.String())
+	}
+	return splitCompletionLines(stdout.String())
+}
+
+func splitCompletionLines(output string) []string {
+	output = strings.TrimSuffix(output, "\n")
+	if output == "" {
+		return nil
+	}
+	return strings.Split(output, "\n")
+}
+
+func assertCandidate(t *testing.T, candidates []string, want string) {
+	t.Helper()
+	for _, candidate := range candidates {
+		if candidate == want {
+			return
+		}
+	}
+	t.Fatalf("candidates missing %q: %#v", want, candidates)
+}
+
+func assertNoCandidate(t *testing.T, candidates []string, unwanted string) {
+	t.Helper()
+	for _, candidate := range candidates {
+		if candidate == unwanted {
+			t.Fatalf("candidates contain %q unexpectedly: %#v", unwanted, candidates)
+		}
+	}
+}
+
+func writeCompletionConfig(t *testing.T, repo string) {
+	t.Helper()
+	data := []byte(`{
+  "config_version": 1,
+  "mirrors": {
+    "apps/web/vendor/local": {
+      "url": "https://example.test/local.git",
+      "branch": "main",
+      "revision": "1111111"
+    },
+    "path with spaces/lib": {
+      "url": "https://example.test/spaces.git",
+      "branch": "main",
+      "revision": "2222222"
+    },
+    "vendor/root": {
+      "url": "https://example.test/root.git",
+      "branch": "main",
+      "revision": "3333333"
+    }
+  }
+}
+`)
+	if err := os.WriteFile(filepath.Join(repo, ".braids.json"), data, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}

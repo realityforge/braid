@@ -141,6 +141,16 @@ func TestParseCommands(t *testing.T) {
 			args: []string{"-v", "status", "vendor/repo"},
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandStatus, Status: StatusOptions{LocalPath: "vendor/repo"}},
 		},
+		{
+			name: "completion bash",
+			args: []string{"completion", "bash"},
+			want: Invocation{Command: CommandCompletion, Completion: CompletionOptions{Shell: "bash"}},
+		},
+		{
+			name: "complete bash callback",
+			args: []string{"__complete", "bash", "--", "status", "vendor"},
+			want: Invocation{Command: CommandComplete, Complete: CompleteOptions{Shell: "bash", Args: []string{"status", "vendor"}}},
+		},
 	}
 
 	for _, test := range tests {
@@ -179,6 +189,11 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},
+		{name: "completion missing shell", args: []string{"completion"}, want: "completion requires 1 argument(s)"},
+		{name: "completion unknown shell", args: []string{"completion", "zsh"}, want: "unknown completion shell zsh"},
+		{name: "complete missing separator", args: []string{"__complete", "bash"}, want: "__complete requires shell and -- separator"},
+		{name: "complete unknown shell", args: []string{"__complete", "zsh", "--"}, want: "unknown completion shell zsh"},
+		{name: "complete missing separator token", args: []string{"__complete", "bash", "status"}, want: "__complete requires -- separator"},
 	}
 
 	for _, test := range tests {
@@ -297,11 +312,20 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull mirrors") {
 		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
 	}
+	if !strings.Contains(Usage(), "  completion") {
+		t.Fatalf("top-level usage missing completion command:\n%s", Usage())
+	}
+	if strings.Contains(Usage(), "__complete") {
+		t.Fatalf("top-level usage exposes hidden completion callback:\n%s", Usage())
+	}
 	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(pull) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
+	}
+	if got, want := CommandUsage(CommandCompletion), "usage: braid completion bash\n"; got != want {
+		t.Fatalf("CommandUsage(completion) = %q, want %q", got, want)
 	}
 	for _, command := range []Command{
 		CommandAdd,

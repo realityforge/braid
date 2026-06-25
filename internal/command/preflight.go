@@ -130,14 +130,16 @@ func NewApp() cli.App {
 func NewAppWithOptions(options Options) cli.App {
 	app := cli.New()
 	app.Handler = map[cli.Command]cli.Handler{
-		cli.CommandAdd:    AddHandler{Options: options},
-		cli.CommandPull:   UpdateHandler{Options: options},
-		cli.CommandRemove: RemoveHandler{Options: options},
-		cli.CommandDiff:   DiffHandler{Options: options},
-		cli.CommandPush:   PushHandler{Options: options},
-		cli.CommandSync:   SyncHandler{Options: options},
-		cli.CommandSetup:  SetupHandler{Options: options},
-		cli.CommandStatus: StatusHandler{Options: options},
+		cli.CommandAdd:        AddHandler{Options: options},
+		cli.CommandPull:       UpdateHandler{Options: options},
+		cli.CommandRemove:     RemoveHandler{Options: options},
+		cli.CommandDiff:       DiffHandler{Options: options},
+		cli.CommandPush:       PushHandler{Options: options},
+		cli.CommandSync:       SyncHandler{Options: options},
+		cli.CommandSetup:      SetupHandler{Options: options},
+		cli.CommandStatus:     StatusHandler{Options: options},
+		cli.CommandCompletion: CompletionHandler{Options: options},
+		cli.CommandComplete:   CompleteHandler{Options: options},
 	}
 	return app
 }
@@ -341,7 +343,7 @@ func (r RepoContext) processGit(inv cli.Invocation, options Options, trace io.Wr
 
 func RequirementsFor(command cli.Command) Requirements {
 	switch command {
-	case cli.CommandVersion:
+	case cli.CommandVersion, cli.CommandCompletion, cli.CommandComplete:
 		return Requirements{}
 	case cli.CommandSetup, cli.CommandStatus, cli.CommandDiff:
 		return Requirements{Git: true, Root: true, Config: true}

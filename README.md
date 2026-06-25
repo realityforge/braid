@@ -74,6 +74,7 @@ commits. `status`, `diff`, and `push` are the usual commands for deciding
 whether to pull, prepare a patch, or send local mirror changes upstream.
 
 - [Command form](#command-form)
+- [Shell completion](#shell-completion)
 - [Output and quiet mode](#output-and-quiet-mode)
 - [Quick start](#quick-start)
 - [Adding mirrors](#adding-mirrors)
@@ -103,6 +104,26 @@ braid help
 braid add help
 braid add --help
 ```
+
+### Shell Completion
+
+Braid can print a Bash completion script to `stdout`:
+
+```bash
+source <(braid completion bash)
+```
+
+To install it persistently, write that output to the location loaded by your
+Bash completion setup, for example:
+
+```bash
+braid completion bash > /usr/local/etc/bash_completion.d/braid
+```
+
+The Bash completion covers global options, commands, command options, and
+configured mirror paths. Mirror path candidates are printed relative to the
+directory where completion is invoked, matching how Braid resolves path
+arguments.
 
 ### Output And Quiet Mode
 
@@ -528,6 +549,7 @@ includes it.
 | `remove` | Remove mirrored content and config. |
 | `setup` | Add or refresh Braid-managed Git remotes. |
 | `version` | Print the Braid version. |
+| `completion bash` | Print the Bash completion script. |
 
 ## Build And Test
 
