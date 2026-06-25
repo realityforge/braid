@@ -65,12 +65,12 @@ tasks:
       - command: user approval
         result: user requested implementation after review loop completed
     commit:
-      hash: pending
-      message: pending
+      hash: 21ae3c926dc19bf496785f1fe15760aac0a10cbe
+      message: "docs(plan): add cli progress output plan"
 
   - id: T-01
     title: Add global quiet parsing and usage behavior
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - PLAN-APPROVAL
@@ -85,14 +85,16 @@ tasks:
       - internal/cli/cli_test.go
       - README.md
       - docs/migration-from-ruby-braid.md
-    evidence: []
+    evidence:
+      - command: bazel test //internal/cli:cli_test
+        result: passed
     commit:
       hash: pending
       message: pending
 
   - id: T-02
     title: Add progress reporter helper
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T-01
@@ -204,3 +206,5 @@ history:
     note: Iterative plan review round 3 returned Findings none; latest plan is ready for user approval.
   - task: PLAN-APPROVAL
     note: User approved implementation; plan status set to accepted and T-01 started.
+  - task: T-01
+    note: Added global --quiet parsing, quiet/verbose conflict handling, usage syntax, and focused CLI parser tests.

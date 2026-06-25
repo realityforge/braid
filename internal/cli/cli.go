@@ -27,6 +27,7 @@ type GlobalOptions struct {
 	CacheDir    string
 	CacheDirSet bool
 	Verbose     bool
+	Quiet       bool
 }
 
 type AddOptions struct {
@@ -206,6 +207,9 @@ func Parse(args []string) (Invocation, error) {
 	if inv.Global.NoCache && inv.Global.CacheDirSet {
 		return inv, usageError("--no-cache and --cache-dir cannot be used together")
 	}
+	if inv.Global.Verbose && inv.Global.Quiet {
+		return inv, usageError("--quiet and --verbose cannot be used together")
+	}
 
 	commandText := rest[0]
 	if commandText == "help" || commandText == "--help" || commandText == "-h" {
@@ -262,6 +266,9 @@ func parseGlobal(args []string, global *GlobalOptions) ([]string, error) {
 			i++
 		case arg == "--verbose" || arg == "-v":
 			global.Verbose = true
+			i++
+		case arg == "--quiet":
+			global.Quiet = true
 			i++
 		case arg == "--cache-dir":
 			if i+1 >= len(args) {
@@ -585,7 +592,7 @@ func usageError(format string, args ...interface{}) error {
 
 func Usage() string {
 	return strings.TrimLeft(`
-usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]
+usage: braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]
 
 commands:
   add       Add a new mirror

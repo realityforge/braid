@@ -71,9 +71,9 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "diff passthrough",
-			args: []string{"--no-cache", "-v", "diff", "vendor/repo", "--", "--stat", "weird;path"},
+			args: []string{"--no-cache", "--quiet", "diff", "vendor/repo", "--", "--stat", "weird;path"},
 			want: Invocation{
-				Global:  GlobalOptions{NoCache: true, Verbose: true},
+				Global:  GlobalOptions{NoCache: true, Quiet: true},
 				Command: CommandDiff,
 				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--stat", "weird;path"}},
 			},
@@ -132,6 +132,11 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandVersion},
 		},
 		{
+			name: "global quiet version",
+			args: []string{"--quiet", "version"},
+			want: Invocation{Global: GlobalOptions{Quiet: true}, Command: CommandVersion},
+		},
+		{
 			name: "status",
 			args: []string{"-v", "status", "vendor/repo"},
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandStatus, Status: StatusOptions{LocalPath: "vendor/repo"}},
@@ -163,7 +168,10 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "global no cache after command", args: []string{"add", "--no-cache", "url"}, want: "unknown flag for add: --no-cache"},
 		{name: "global verbose after command", args: []string{"add", "url", "--verbose"}, want: "unknown flag for add: --verbose"},
 		{name: "global verbose short after command", args: []string{"pull", "vendor/repo", "-v"}, want: "unknown flag for pull: -v"},
+		{name: "global quiet after command", args: []string{"add", "url", "--quiet"}, want: "unknown flag for add: --quiet"},
 		{name: "cache flags conflict", args: []string{"--no-cache", "--cache-dir", "cache", "version"}, want: "--no-cache and --cache-dir cannot be used together"},
+		{name: "quiet verbose conflict", args: []string{"--quiet", "--verbose", "version"}, want: "--quiet and --verbose cannot be used together"},
+		{name: "verbose quiet conflict", args: []string{"--verbose", "--quiet", "version"}, want: "--quiet and --verbose cannot be used together"},
 		{name: "empty cache dir", args: []string{"--cache-dir=", "version"}, want: "--cache-dir requires a non-empty value"},
 		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
@@ -277,8 +285,8 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "usage: braid [--no-cache | --cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage still contains old global syntax:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "usage: braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]") {
-		t.Fatalf("top-level usage missing global verbose syntax:\n%s", Usage())
+	if !strings.Contains(Usage(), "usage: braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]") {
+		t.Fatalf("top-level usage missing global output flag syntax:\n%s", Usage())
 	}
 	if !strings.Contains(Usage(), "  pull      Pull one mirror or every eligible mirror") {
 		t.Fatalf("top-level usage missing pull command:\n%s", Usage())
@@ -305,8 +313,8 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 		CommandSetup,
 		CommandStatus,
 	} {
-		if usage := CommandUsage(command); strings.Contains(usage, "--verbose") || strings.Contains(usage, "|-v") {
-			t.Fatalf("CommandUsage(%s) = %q, want no command-local verbose syntax", command, usage)
+		if usage := CommandUsage(command); strings.Contains(usage, "--verbose") || strings.Contains(usage, "|-v") || strings.Contains(usage, "--quiet") {
+			t.Fatalf("CommandUsage(%s) = %q, want no command-local output flag syntax", command, usage)
 		}
 	}
 }
