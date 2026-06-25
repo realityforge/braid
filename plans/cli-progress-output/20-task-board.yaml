@@ -89,12 +89,12 @@ tasks:
       - command: bazel test //internal/cli:cli_test
         result: passed
     commit:
-      hash: pending
-      message: pending
+      hash: dfa11580d2aab937058f921ffbcc0eec50dd2953
+      message: "feat(cli): add global quiet flag parsing"
 
   - id: T-02
     title: Add progress reporter helper
-    status: in_progress
+    status: completed
     priority: high
     depends_on:
       - T-01
@@ -110,14 +110,16 @@ tasks:
       - internal/command/*.go
       - internal/command/*_test.go
       - internal/command/BUILD.bazel
-    evidence: []
+    evidence:
+      - command: bazel test //internal/command:progress_test
+        result: passed
     commit:
       hash: pending
       message: pending
 
   - id: T-03
     title: Integrate progress in all remote/cache-contact workflows
-    status: pending
+    status: in_progress
     priority: high
     depends_on:
       - T-02
@@ -208,3 +210,5 @@ history:
     note: User approved implementation; plan status set to accepted and T-01 started.
   - task: T-01
     note: Added global --quiet parsing, quiet/verbose conflict handling, usage syntax, and focused CLI parser tests.
+  - task: T-02
+    note: Added progress reporter helper with quiet suppression, TTY dot ticking, completion newline behavior, abort cleanup, and fake-ticker tests.

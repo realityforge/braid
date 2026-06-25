@@ -8,6 +8,7 @@ go_library(
         "diff.go",
         "path.go",
         "preflight.go",
+        "progress.go",
         "push.go",
         "push_message.go",
         "push_provenance.go",
@@ -83,6 +84,13 @@ go_test(
     embed = [":command_test_support"],
     timeout = "short",
     deps = COMMAND_TEST_DEPS,
+)
+
+go_test(
+    name = "progress_test",
+    srcs = ["progress_test.go"],
+    embed = [":command"],
+    timeout = "short",
 )
 
 go_test(
