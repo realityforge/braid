@@ -27,11 +27,11 @@ func TestExecutableSetupCacheModes(t *testing.T) {
 	remote := remoteName("main", "vendor/repo")
 
 	defaultEnv := env.without("BRAID_LOCAL_CACHE_DIR")
-	setupDefault := runBraid(t, defaultEnv, downstream, braid, "setup", "vendor/repo")
+	setupDefault := runBraid(t, defaultEnv, downstream, braid, "--quiet", "setup", "vendor/repo")
 	assertResult(t, setupDefault, 0, "", "")
 	defaultCacheURL := cachePath(defaultEnv.defaultBraidCacheDir(), upstream)
 	assertRemoteURL(t, defaultEnv, downstream, remote, defaultCacheURL)
-	statusDefault := runBraid(t, defaultEnv, downstream, braid, "status", "vendor/repo")
+	statusDefault := runBraid(t, defaultEnv, downstream, braid, "--quiet", "status", "vendor/repo")
 	assertExit(t, statusDefault, 0)
 	assertEmpty(t, "default cache status stderr", statusDefault.stderr)
 	assertContains(t, statusDefault.stdout, "(Removed Locally)")
@@ -39,17 +39,17 @@ func TestExecutableSetupCacheModes(t *testing.T) {
 	assertNoRemote(t, defaultEnv, downstream, remote)
 
 	envDisabled := defaultEnv.with("BRAID_USE_LOCAL_CACHE", "false")
-	setupDisabled := runBraid(t, envDisabled, downstream, braid, "setup", "vendor/repo")
+	setupDisabled := runBraid(t, envDisabled, downstream, braid, "--quiet", "setup", "vendor/repo")
 	assertResult(t, setupDisabled, 0, "", "")
 	assertRemoteURL(t, envDisabled, downstream, remote, upstream)
 
 	gitOK(t, envDisabled, downstream, "remote", "rm", remote)
-	setupCacheDir := runBraid(t, envDisabled, downstream, braid, "--cache-dir", "explicit-cache", "setup", "vendor/repo")
+	setupCacheDir := runBraid(t, envDisabled, downstream, braid, "--quiet", "--cache-dir", "explicit-cache", "setup", "vendor/repo")
 	assertResult(t, setupCacheDir, 0, "", "")
 	assertRemoteURL(t, envDisabled, downstream, remote, cachePath(filepath.Join(processWorkingDir(t, downstream), "explicit-cache"), upstream))
 
 	gitOK(t, envDisabled, downstream, "remote", "rm", remote)
-	setupNoCache := runBraid(t, env, downstream, braid, "--no-cache", "setup", "vendor/repo")
+	setupNoCache := runBraid(t, env, downstream, braid, "--quiet", "--no-cache", "setup", "vendor/repo")
 	assertResult(t, setupNoCache, 0, "", "")
 	assertRemoteURL(t, env, downstream, remote, upstream)
 

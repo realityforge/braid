@@ -21,7 +21,7 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
@@ -32,7 +32,14 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	syncEnv := env.with("GIT_EDITOR", editorCommand(t, root, "Executable sync"))
 	sync := runBraid(t, syncEnv, downstream, braid, "sync", "vendor/basic")
 	assertExit(t, sync, 0)
-	assertEmpty(t, "sync stderr", sync.stderr)
+	assertProgress(t, sync.stderr,
+		"Braid: updated cache for mirror vendor/basic",
+		"Braid: fetched mirror vendor/basic",
+		"Braid: pushing mirror vendor/basic",
+		"Braid: pushed mirror vendor/basic",
+		"Braid: checked mirror vendor/basic",
+		"Braid: updated mirror vendor/basic",
+	)
 	assertContains(t, sync.stdout, "Executable sync")
 
 	assertFile(t, upstream, "README.md", "local\n")
@@ -61,7 +68,7 @@ func TestExecutablePushProvenanceTemplateTouchesGitDefaultTemplate(t *testing.T)
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 
 	writeFile(t, downstream, "vendor/basic/README.md", "local\n")
@@ -71,7 +78,12 @@ func TestExecutablePushProvenanceTemplateTouchesGitDefaultTemplate(t *testing.T)
 
 	push := runBraid(t, pushEnv, downstream, braid, "push", "vendor/basic")
 	assertExit(t, push, 0)
-	assertEmpty(t, "push stderr", push.stderr)
+	assertProgress(t, push.stderr,
+		"Braid: updated cache for mirror vendor/basic",
+		"Braid: fetched mirror vendor/basic",
+		"Braid: pushing mirror vendor/basic",
+		"Braid: pushed mirror vendor/basic",
+	)
 
 	template := readFile(t, root, filepath.Base(capture))
 	assertContains(t, template, "# Braid downstream mirror commit guidance for vendor/basic")
@@ -95,13 +107,13 @@ func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 
 	writeFile(t, upstream, "README.md", "remote\n")
 	remoteRevision := commitAll(t, env, upstream, "remote update")
 	syncEnv := env.with("GIT_EDITOR", failingEditorCommand(t, root))
-	sync := runBraid(t, syncEnv, downstream, braid, "sync", "--pull-only", "vendor/basic")
+	sync := runBraid(t, syncEnv, downstream, braid, "--quiet", "sync", "--pull-only", "vendor/basic")
 	assertResult(t, sync, 0, "", "")
 
 	assertFile(t, downstream, "vendor/basic/README.md", "remote\n")
@@ -127,7 +139,7 @@ func TestExecutableSyncAutostashRestoresSelectedState(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	writeFile(t, downstream, "outside.txt", "outside base\n")
 	gitOK(t, env, downstream, "add", "outside.txt")
@@ -143,7 +155,7 @@ func TestExecutableSyncAutostashRestoresSelectedState(t *testing.T) {
 
 	writeFile(t, upstream, "remote.txt", "remote\n")
 	remoteRevision := commitAll(t, env, upstream, "remote update")
-	sync := runBraid(t, env, downstream, braid, "sync", "--pull-only", "--autostash", "vendor/basic")
+	sync := runBraid(t, env, downstream, braid, "--quiet", "sync", "--pull-only", "--autostash", "vendor/basic")
 	assertResult(t, sync, 0, "", "")
 
 	assertFile(t, downstream, "vendor/basic/remote.txt", "remote\n")

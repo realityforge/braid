@@ -468,6 +468,13 @@ func assertContains(t *testing.T, value, want string) {
 	}
 }
 
+func assertProgress(t *testing.T, stderr string, messages ...string) {
+	t.Helper()
+	for _, message := range messages {
+		assertContains(t, stderr, message)
+	}
+}
+
 func assertNotContains(t *testing.T, value, unwanted string) {
 	t.Helper()
 	if strings.Contains(value, unwanted) {

@@ -28,25 +28,25 @@ func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 
 	localPath := "apps/web/vendor/basic"
 	remote := remoteName("main", localPath)
-	add := runBraid(t, env, workDir, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, workDir, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertFile(t, downstream, "apps/web/vendor/basic/README.md", "base\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		localPath: {URL: upstream, Branch: "main", Revision: baseRevision},
 	})
 
-	setup := runBraid(t, env, workDir, braid, "setup", "vendor/basic")
+	setup := runBraid(t, env, workDir, braid, "--quiet", "setup", "vendor/basic")
 	assertResult(t, setup, 0, "", "")
 	assertRemoteURL(t, env, downstream, remote, cachePath(env.braidCacheDir(), upstream))
 
-	status := runBraid(t, env, workDir, braid, "status", "vendor/basic")
+	status := runBraid(t, env, workDir, braid, "--quiet", "status", "vendor/basic")
 	assertExit(t, status, 0)
 	assertEmpty(t, "subdir status stderr", status.stderr)
 	assertContains(t, status.stdout, localPath+" ("+baseRevision+") [BRANCH=main]")
 	assertNoRemote(t, env, downstream, remote)
 
 	writeFile(t, downstream, "apps/web/vendor/basic/README.md", "local\n")
-	diff := runBraid(t, env, workDir, braid, "diff", "vendor/basic")
+	diff := runBraid(t, env, workDir, braid, "--quiet", "diff", "vendor/basic")
 	assertExit(t, diff, 0)
 	assertEmpty(t, "subdir diff stderr", diff.stderr)
 	assertContains(t, diff.stdout, "diff --git a/README.md b/README.md")
@@ -54,14 +54,14 @@ func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 
 	commitAll(t, env, downstream, "local mirror change")
 	pushEnv := env.with("GIT_EDITOR", editorCommand(t, root, "Subdir push"))
-	push := runBraid(t, pushEnv, workDir, braid, "push", "vendor/basic")
+	push := runBraid(t, pushEnv, workDir, braid, "--quiet", "push", "vendor/basic")
 	assertExit(t, push, 0)
 	assertEmpty(t, "subdir push stderr", push.stderr)
 	assertFile(t, upstream, "README.md", "local\n")
 	pushedRevision := gitOutput(t, env, upstream, "rev-parse", "HEAD")
 	assertNoRemote(t, env, downstream, remote)
 
-	update := runBraid(t, env, workDir, braid, "update", "vendor/basic")
+	update := runBraid(t, env, workDir, braid, "--quiet", "update", "vendor/basic")
 	assertResult(t, update, 0, "", "")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		localPath: {URL: upstream, Branch: "main", Revision: pushedRevision},
@@ -93,8 +93,8 @@ func TestExecutableNoPathCommandsFromSubdirectoryRemainRepositoryWide(t *testing
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamA, "vendor/a"), 0, "", "")
-	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamB, "third_party/b"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamA, "vendor/a"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamB, "third_party/b"), 0, "", "")
 	writeFile(t, downstream, "vendor/a/README.md", "a local\n")
 	writeFile(t, downstream, "third_party/b/README.md", "b local\n")
 	workDir := filepath.Join(downstream, "apps", "web")
@@ -102,13 +102,13 @@ func TestExecutableNoPathCommandsFromSubdirectoryRemainRepositoryWide(t *testing
 		t.Fatalf("create workdir: %v", err)
 	}
 
-	status := runBraid(t, env, workDir, braid, "status")
+	status := runBraid(t, env, workDir, braid, "--quiet", "status")
 	assertExit(t, status, 0)
 	assertEmpty(t, "no-path status stderr", status.stderr)
 	assertContains(t, status.stdout, "vendor/a (")
 	assertContains(t, status.stdout, "third_party/b (")
 
-	diff := runBraid(t, env, workDir, braid, "diff")
+	diff := runBraid(t, env, workDir, braid, "--quiet", "diff")
 	assertExit(t, diff, 0)
 	assertEmpty(t, "no-path diff stderr", diff.stderr)
 	assertContains(t, diff.stdout, "Braid: Diffing vendor/a")
@@ -141,7 +141,7 @@ func TestExecutableSubdirectoryAbsolutePathInputs(t *testing.T) {
 	}
 
 	absoluteTarget := filepath.Join(downstream, "vendor", "absolute")
-	addAbs := runBraid(t, env, workDir, braid, "add", upstreamAbs, absoluteTarget)
+	addAbs := runBraid(t, env, workDir, braid, "--quiet", "add", upstreamAbs, absoluteTarget)
 	assertResult(t, addAbs, 0, "", "")
 	assertFile(t, downstream, "vendor/absolute/README.md", "absolute\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
@@ -159,7 +159,7 @@ func TestExecutableSubdirectoryAbsolutePathInputs(t *testing.T) {
 	}
 	symlinkWorkDir := filepath.Join(symlinkRoot, "apps", "web")
 	symlinkTarget := filepath.Join(symlinkWorkDir, "vendor", "symlinked")
-	addSymlink := runBraid(t, env.with("PWD", symlinkWorkDir), symlinkWorkDir, braid, "add", upstreamSymlink, symlinkTarget)
+	addSymlink := runBraid(t, env.with("PWD", symlinkWorkDir), symlinkWorkDir, braid, "--quiet", "add", upstreamSymlink, symlinkTarget)
 	assertResult(t, addSymlink, 0, "", "")
 	assertFile(t, downstream, "apps/web/vendor/symlinked/README.md", "symlink\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{

@@ -31,7 +31,13 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	cacheRemoteURL := cachePath(env.braidCacheDir(), upstream)
 
 	add := runBraid(t, env, downstream, braid, "add", upstream, localPath, "--path", "lib dir")
-	assertResult(t, add, 0, "", "")
+	assertExit(t, add, 0)
+	assertEmpty(t, "add stdout", add.stdout)
+	assertProgress(t, add.stderr,
+		"Braid: detecting default branch for mirror "+localPath,
+		"Braid: updated cache for mirror "+localPath,
+		"Braid: fetched mirror "+localPath,
+	)
 	assertFile(t, downstream, "vendor/lib with spaces/component.txt", "base\n")
 	assertFile(t, downstream, "vendor/lib with spaces/kept.txt", "kept\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
@@ -43,7 +49,12 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertClean(t, env, downstream)
 
 	setup := runBraid(t, env, downstream, braid, "setup", localPath)
-	assertResult(t, setup, 0, "", "")
+	assertExit(t, setup, 0)
+	assertEmpty(t, "setup stdout", setup.stdout)
+	assertProgress(t, setup.stderr,
+		"Braid: setting up mirror remote "+localPath,
+		"Braid: set up mirror remote "+localPath,
+	)
 	assertRemoteURL(t, env, downstream, remote, cacheRemoteURL)
 
 	gitOK(t, env, downstream, "remote", "set-url", remote, "manual-url")
@@ -52,12 +63,20 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertRemoteURL(t, env, downstream, remote, "manual-url")
 
 	setupForce := runBraid(t, env, downstream, braid, "setup", localPath, "--force")
-	assertResult(t, setupForce, 0, "", "")
+	assertExit(t, setupForce, 0)
+	assertEmpty(t, "setup force stdout", setupForce.stdout)
+	assertProgress(t, setupForce.stderr,
+		"Braid: setting up mirror remote "+localPath,
+		"Braid: set up mirror remote "+localPath,
+	)
 	assertRemoteURL(t, env, downstream, remote, cacheRemoteURL)
 
 	status := runBraid(t, env, downstream, braid, "status", localPath)
 	assertExit(t, status, 0)
-	assertEmpty(t, "status stderr", status.stderr)
+	assertProgress(t, status.stderr,
+		"Braid: updated cache for mirror "+localPath,
+		"Braid: fetched mirror "+localPath,
+	)
 	assertContains(t, status.stdout, localPath+" ("+baseRevision+") [BRANCH=main]")
 	assertNoRemote(t, env, downstream, remote)
 
@@ -73,7 +92,12 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	pushEnv := env.with("GIT_EDITOR", editorCommand(t, root, "Executable push"))
 	push := runBraid(t, pushEnv, downstream, braid, "push", localPath)
 	assertExit(t, push, 0)
-	assertEmpty(t, "push stderr", push.stderr)
+	assertProgress(t, push.stderr,
+		"Braid: updated cache for mirror "+localPath,
+		"Braid: fetched mirror "+localPath,
+		"Braid: pushing mirror "+localPath,
+		"Braid: pushed mirror "+localPath,
+	)
 	assertContains(t, push.stdout, "Executable push")
 	assertFile(t, upstream, "lib dir/component.txt", "local\n")
 	pushedRevision := gitOutput(t, env, upstream, "rev-parse", "HEAD")
@@ -85,7 +109,14 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertClean(t, env, downstream)
 
 	update := runBraid(t, env, downstream, braid, "update", localPath)
-	assertResult(t, update, 0, "", "")
+	assertExit(t, update, 0)
+	assertEmpty(t, "update stdout", update.stdout)
+	assertProgress(t, update.stderr,
+		"Braid: updated cache for mirror "+localPath,
+		"Braid: fetched mirror "+localPath,
+		"Braid: checked mirror "+localPath,
+		"Braid: updated mirror "+localPath+" to "+shortRevision(pushedRevision),
+	)
 	assertFile(t, downstream, "vendor/lib with spaces/component.txt", "local\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		localPath: {URL: upstream, Branch: "main", Path: "lib dir", Revision: pushedRevision},

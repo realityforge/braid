@@ -29,7 +29,7 @@ func TestExecutableScopedAddPreservesUnrelatedState(t *testing.T) {
 	writeFile(t, downstream, "tracked.txt", "tracked dirty\n")
 	writeFile(t, downstream, "untracked.txt", "untracked content\n")
 
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertFile(t, downstream, "vendor/basic/README.md", "base\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
@@ -65,7 +65,7 @@ func TestExecutableScopedRemovePreservesUnrelatedState(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	writeFile(t, downstream, "tracked.txt", "tracked base\n")
 	gitOK(t, env, downstream, "add", "tracked.txt")
@@ -133,7 +133,7 @@ func TestExecutableScopedAddRemovePrecheckBlockers(t *testing.T) {
 			name: "remove dirty mirror",
 			setup: func(t *testing.T, env processEnv, braid, upstream, downstream string) {
 				t.Helper()
-				add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+				add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 				assertResult(t, add, 0, "", "")
 			},
 			dirty: func(t *testing.T, downstream string) {
@@ -147,7 +147,7 @@ func TestExecutableScopedAddRemovePrecheckBlockers(t *testing.T) {
 			name: "remove untracked mirror content",
 			setup: func(t *testing.T, env processEnv, braid, upstream, downstream string) {
 				t.Helper()
-				add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+				add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 				assertResult(t, add, 0, "", "")
 			},
 			dirty: func(t *testing.T, downstream string) {
@@ -219,7 +219,7 @@ func TestExecutableScopedUpdatePreservesUnrelatedState(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	writeFile(t, downstream, "tracked.txt", "tracked base\n")
 	gitOK(t, env, downstream, "add", "tracked.txt")
@@ -232,7 +232,7 @@ func TestExecutableScopedUpdatePreservesUnrelatedState(t *testing.T) {
 	writeFile(t, upstream, "README.md", "updated\n")
 	remoteRevision := commitAll(t, env, upstream, "updated")
 
-	update := runBraid(t, env, downstream, braid, "update", "vendor/basic")
+	update := runBraid(t, env, downstream, braid, "--quiet", "update", "vendor/basic")
 	assertResult(t, update, 0, "", "")
 	assertFile(t, downstream, "vendor/basic/README.md", "updated\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
@@ -271,8 +271,8 @@ func TestExecutableUpdateAllScopedPrecheckStopsBeforeUpdates(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamA, "vendor/a"), 0, "", "")
-	assertResult(t, runBraid(t, env, downstream, braid, "add", upstreamB, "vendor/b"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamA, "vendor/a"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamB, "vendor/b"), 0, "", "")
 	writeFile(t, upstreamA, "README.md", "a updated\n")
 	commitAll(t, env, upstreamA, "a updated")
 	writeFile(t, upstreamB, "README.md", "b updated\n")

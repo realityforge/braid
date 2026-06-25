@@ -22,7 +22,7 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
 
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
@@ -35,7 +35,7 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	writeFile(t, upstream, "README.md", "remote\n")
 	remoteRevision := commitAll(t, env, upstream, "remote change")
 
-	update := runBraid(t, env, downstream, braid, "update", "vendor/basic")
+	update := runBraid(t, env, downstream, braid, "--quiet", "update", "vendor/basic")
 	assertExit(t, update, 0)
 	assertEmpty(t, "conflict update stderr", update.stderr)
 	assertContains(t, update.stdout, "CONFLICT: vendor/basic/README.md")
@@ -76,7 +76,7 @@ func TestExecutableSubdirectoryConflictRecoveryCommands(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
@@ -91,7 +91,7 @@ func TestExecutableSubdirectoryConflictRecoveryCommands(t *testing.T) {
 		t.Fatalf("create workdir: %v", err)
 	}
 
-	update := runBraid(t, env, workDir, braid, "update", "../../vendor/basic")
+	update := runBraid(t, env, workDir, braid, "--quiet", "update", "../../vendor/basic")
 	assertExit(t, update, 0)
 	assertEmpty(t, "subdir conflict stderr", update.stderr)
 	assertContains(t, update.stdout, "CONFLICT: vendor/basic/README.md")
