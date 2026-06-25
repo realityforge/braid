@@ -146,6 +146,7 @@ Migration impact:
 | Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; same other core commands, plus `sync`; no `upgrade-config` | Prefer `pull` in new docs and scripts. Scripts using `upgrade-config` must run Ruby Braid before migration or be removed. |
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
 | Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
+| Quiet flag | No global quiet flag | Global `--quiet` before the command; incompatible with `--verbose` | Use `braid --quiet <command> ...` in automation that wants data, warnings, errors, and recovery output without progress or informational chatter. |
 | Cache flags | Environment variables only | Global `--no-cache` or `--cache-dir <path>` before the command, plus environment variables | Put cache flags before the command name. |
 | `update --head` | Accepted as an option, then errors with a deprecation message | Unknown flag for `pull` and its aliases | Remove it; use `--branch`, `--tag`, or `--revision` with an explicit mirror path. |
 | `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a path updates branch/tag mirrors in lexicographic path order, skips revision-locked mirrors, and reports skipped paths; `update` and `up` behave the same way | Locked mirrors are no longer touched by all-update. |
@@ -263,6 +264,23 @@ lines, or status banners. Stable automation should rely on exit codes,
 `.braids.json`, Git state, and documented command behavior rather than exact
 Ruby wording.
 
+Go Braid intentionally restores Ruby-like feedback for operations that may
+contact upstream repositories or the local cache. It prints semantic start and
+completion progress to `stderr` for cache updates, mirror fetches, pull checks,
+mirror updates, upstream pushes, status remote checks, diff remote hydration,
+and setup remote changes. Interactive terminals append `.` about every five
+seconds during long-running operations; non-interactive output is line-based.
+
+The stream contract is explicit:
+
+- Command-requested data stays on `stdout`, including `status`, `diff`, `help`,
+  and `version`.
+- Progress and informational output goes to `stderr`.
+- Warnings, errors, conflict recovery instructions, skipped revision-locked
+  mirror lists, and push stop messages remain visible under `--quiet`.
+- `--quiet` suppresses progress and informational output only; it is global and
+  must appear before the command name.
+
 Known output differences include:
 
 - Error messages use `braid: ...` style for Go command failures rather than
@@ -271,7 +289,8 @@ Known output differences include:
   banner.
 - `diff` still labels all-mirror output with `Braid: Diffing <path>`, but exact
   separators and paging behavior are not a compatibility target.
-- Verbose Git tracing uses Go's deterministic argv representation.
+- Verbose Git tracing uses Go's deterministic argv representation and is
+  incompatible with `--quiet`.
 
 ## Migration Checklist
 

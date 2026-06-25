@@ -74,6 +74,7 @@ commits. `status`, `diff`, and `push` are the usual commands for deciding
 whether to pull, prepare a patch, or send local mirror changes upstream.
 
 - [Command form](#command-form)
+- [Output and quiet mode](#output-and-quiet-mode)
 - [Quick start](#quick-start)
 - [Adding mirrors](#adding-mirrors)
 - [Checking status and local changes](#checking-status-and-local-changes)
@@ -89,8 +90,11 @@ whether to pull, prepare a patch, or send local mirror changes upstream.
 Global flags must appear before the command name:
 
 ```bash
-braid [--verbose|-v] [--no-cache | --cache-dir <path>] <command> [options]
+braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]
 ```
+
+`--verbose` prints Git command tracing. `--quiet` suppresses progress and other
+informational output, and cannot be used with `--verbose`.
 
 Use the built-in help for the command list or command-specific syntax:
 
@@ -99,6 +103,22 @@ braid help
 braid add help
 braid add --help
 ```
+
+### Output And Quiet Mode
+
+Commands that contact an upstream repository or update the local cache print
+start and completion messages on `stderr`, for example fetching a mirror,
+updating the cache, checking whether a mirror is current, pushing upstream, or
+setting up Braid-managed remotes. In an interactive terminal, long-running
+operations append `.` about every five seconds and print the completion message
+on a new line. Non-interactive output is line-based and does not print dots.
+
+Command-requested data stays on `stdout` and is not suppressed by `--quiet`.
+This includes `status`, `diff`, `help`, and `version` output. Warnings, errors,
+and recovery or result messages also remain visible under `--quiet`; examples
+include push provenance warnings, pull conflict instructions, skipped
+revision-locked mirror lists, and push stop messages such as "Mirror is not up
+to date."
 
 ### Quick Start
 

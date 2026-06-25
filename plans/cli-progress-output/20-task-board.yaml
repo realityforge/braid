@@ -152,12 +152,12 @@ tasks:
       - command: bazel test //internal/command:all
         result: passed
     commit:
-      hash: pending
-      message: pending
+      hash: 786be7d58e6b79d8bc749bb5f216d601c218a3b9
+      message: "feat(command): report remote operation progress"
 
   - id: T-04
     title: Update output documentation
-    status: pending
+    status: completed
     priority: medium
     depends_on:
       - T-03
@@ -168,7 +168,9 @@ tasks:
     files_touched:
       - README.md
       - docs/migration-from-ruby-braid.md
-    evidence: []
+    evidence:
+      - command: rg -n -- "--quiet|Output And Quiet Mode|progress|stderr|stdout" README.md docs/migration-from-ruby-braid.md
+        result: passed; README and migration docs document quiet mode, progress, stdout, and stderr behavior
     commit:
       hash: pending
       message: pending
@@ -220,3 +222,5 @@ history:
     note: Added progress reporter helper with quiet suppression, TTY dot ticking, completion newline behavior, abort cleanup, and fake-ticker tests.
   - task: T-03
     note: Integrated progress reporting through add, pull/update, sync planning/update, push, status, diff hydration, and setup remote operations, with command-boundary tests for normal and quiet output contracts.
+  - task: T-04
+    note: Documented the global quiet flag, default progress behavior, stream classes, and Ruby migration impact.
