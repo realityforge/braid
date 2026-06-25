@@ -70,19 +70,11 @@ func TestExecutableEmittedBashCompletionScriptWorks(t *testing.T) {
 	braid := braidBinary(t)
 	_, workDir := writeCompletionDownstream(t, env, root)
 
-	script := runBraid(t, env, root, braid, "completion", "bash")
-	assertExit(t, script, 0)
-	assertEmpty(t, "completion bash stderr", script.stderr)
-
-	completionPath := filepath.Join(root, "braid-completion.bash")
-	if err := os.WriteFile(completionPath, []byte(script.stdout), 0o644); err != nil {
-		t.Fatalf("write emitted completion script: %v", err)
-	}
 	probePath := filepath.Join(root, "probe-completion.bash")
 	probe := `set -euo pipefail
-source "$1"
+eval "$("$1" completion bash)"
 complete -p braid >/dev/null
-COMP_WORDS=("$2" status "")
+COMP_WORDS=("$1" status "")
 _braid
 printf '%s\n' "${COMPREPLY[@]}"
 `
@@ -90,7 +82,7 @@ printf '%s\n' "${COMPREPLY[@]}"
 		t.Fatalf("write completion probe script: %v", err)
 	}
 
-	result := runProcess(t, env, workDir, bash, probePath, completionPath, braid)
+	result := runProcess(t, env, workDir, bash, probePath, braid)
 	assertExit(t, result, 0)
 	assertEmpty(t, "completion probe stderr", result.stderr)
 	candidates := splitCompletionOutput(result.stdout)

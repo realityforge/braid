@@ -110,7 +110,7 @@ braid add --help
 Braid can print a Bash completion script to `stdout`:
 
 ```bash
-source <(braid completion bash)
+eval "$(braid completion bash)"
 ```
 
 To install it persistently, write that output to the location loaded by your
