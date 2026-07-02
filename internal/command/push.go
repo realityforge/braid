@@ -142,18 +142,18 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	}
 	messageGeneration := configuredPushMessageGeneration()
 
-	if err := runProgress(
+	if err := runProgressWithOperation(
 		progress,
 		fmt.Sprintf("Braid: pushing mirror %s", m.Path),
 		fmt.Sprintf("Braid: pushed mirror %s", m.Path),
-		func() error {
+		func(pushProgress *progressOperation) error {
 			info := stderr
 			commitStdout := stdout
 			if global.Quiet {
 				info = io.Discard
 				commitStdout = io.Discard
 			}
-			return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), commitStdout, stderr, info, provenance, provenanceOK, provenanceErr, messageGeneration)
+			return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), commitStdout, stderr, info, pushProgress, provenance, provenanceOK, provenanceErr, messageGeneration)
 		},
 	); err != nil {
 		return pushResult{}, err
@@ -161,7 +161,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	return pushResult{Status: pushStatusPushed}, nil
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr, info io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr, info io.Writer, pushProgress *progressOperation, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
 	workspaceDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -206,7 +206,8 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 	}
 
 	if messageGeneration.Enabled {
-		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, info, provenance, provenanceOK, provenanceErr)
+		messageInfo := newProgressSeparatedWriter(pushProgress, info)
+		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, messageInfo, provenance, provenanceOK, provenanceErr)
 		if err != nil {
 			return err
 		}

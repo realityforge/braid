@@ -107,6 +107,57 @@ func TestProgressReporterTTYDotsAndCompletion(t *testing.T) {
 	}
 }
 
+func TestProgressSeparatedWriterBreaksOpenTTYLine(t *testing.T) {
+	var out lockedBuffer
+	ticker := newFakeProgressTicker()
+	reporter := newProgressReporter(&out, false)
+	reporter.isTerminal = func(io.Writer) bool { return true }
+	reporter.newTicker = func(time.Duration) progressTicker { return ticker }
+
+	op, err := reporter.Start("Braid: pushing mirror vendor/basic")
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	separated := newProgressSeparatedWriter(op, &out)
+	if _, err := separated.Write([]byte("Braid: generating push commit message for vendor/basic using external tool\n")); err != nil {
+		t.Fatalf("separated Write returned error: %v", err)
+	}
+	ticker.ch <- time.Now()
+	waitForProgressOutput(t, &out, "using external tool\n.")
+	if err := op.Complete("Braid: pushed mirror vendor/basic"); err != nil {
+		t.Fatalf("Complete returned error: %v", err)
+	}
+
+	got := out.String()
+	want := "Braid: pushing mirror vendor/basic\nBraid: generating push commit message for vendor/basic using external tool\n.\nBraid: pushed mirror vendor/basic\n"
+	if got != want {
+		t.Fatalf("progress output = %q, want %q", got, want)
+	}
+}
+
+func TestProgressSeparatedWriterLeavesNonTTYProgressUnchanged(t *testing.T) {
+	var out lockedBuffer
+	reporter := newProgressReporter(&out, false)
+
+	op, err := reporter.Start("Braid: pushing mirror vendor/basic")
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	separated := newProgressSeparatedWriter(op, &out)
+	if _, err := separated.Write([]byte("Braid: generating push commit message for vendor/basic using external tool\n")); err != nil {
+		t.Fatalf("separated Write returned error: %v", err)
+	}
+	if err := op.Complete("Braid: pushed mirror vendor/basic"); err != nil {
+		t.Fatalf("Complete returned error: %v", err)
+	}
+
+	got := out.String()
+	want := "Braid: pushing mirror vendor/basic\nBraid: generating push commit message for vendor/basic using external tool\nBraid: pushed mirror vendor/basic\n"
+	if got != want {
+		t.Fatalf("progress output = %q, want %q", got, want)
+	}
+}
+
 func TestProgressReporterAbortCleansUpOpenTTYLine(t *testing.T) {
 	var out lockedBuffer
 	ticker := newFakeProgressTicker()

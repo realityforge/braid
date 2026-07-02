@@ -48,15 +48,45 @@ func newProgressReporter(writer io.Writer, quiet bool) progressReporter {
 }
 
 func runProgress(reporter progressReporter, start, complete string, fn func() error) error {
+	return runProgressWithOperation(reporter, start, complete, func(*progressOperation) error {
+		return fn()
+	})
+}
+
+func runProgressWithOperation(reporter progressReporter, start, complete string, fn func(*progressOperation) error) error {
 	op, err := reporter.Start(start)
 	if err != nil {
 		return err
 	}
-	if err := fn(); err != nil {
+	if err := fn(op); err != nil {
 		_ = op.Abort()
 		return err
 	}
 	return op.Complete(complete)
+}
+
+type progressSeparatedWriter struct {
+	op     *progressOperation
+	writer io.Writer
+	once   sync.Once
+}
+
+func newProgressSeparatedWriter(op *progressOperation, writer io.Writer) io.Writer {
+	if op == nil || writer == nil {
+		return writer
+	}
+	return &progressSeparatedWriter{op: op, writer: writer}
+}
+
+func (w *progressSeparatedWriter) Write(p []byte) (int, error) {
+	first := false
+	w.once.Do(func() {
+		first = true
+	})
+	if first {
+		return w.op.writeAfterLineBreak(w.writer, p)
+	}
+	return w.writer.Write(p)
 }
 
 func (r progressReporter) Start(message string) (*progressOperation, error) {
@@ -165,6 +195,18 @@ func (op *progressOperation) writeDot() {
 		return
 	}
 	op.lineOpen = true
+}
+
+func (op *progressOperation) writeAfterLineBreak(writer io.Writer, p []byte) (int, error) {
+	if op == nil || !op.enabled || !op.terminal {
+		return writer.Write(p)
+	}
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	if err := op.closeLineLocked(); err != nil {
+		return 0, err
+	}
+	return writer.Write(p)
 }
 
 func (op *progressOperation) stop() {
