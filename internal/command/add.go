@@ -29,7 +29,7 @@ func (h AddHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 
 	git := h.addGit(repo, inv, stderr)
 	progress := newProgressReporter(stderr, inv.Global.Quiet)
-	return h.add(ctx, repo, git, inv, progress, stderr)
+	return h.add(ctx, repo, git, inv, progress, stdout, stderr)
 }
 
 func (h AddHandler) addGit(repo RepoContext, inv cli.Invocation, trace io.Writer) AddGit {
@@ -42,7 +42,7 @@ func (h AddHandler) addGit(repo RepoContext, inv cli.Invocation, trace io.Writer
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv cli.Invocation, progress progressReporter, trace io.Writer) error {
+func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv cli.Invocation, progress progressReporter, stdout, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -109,61 +109,76 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return err
 	}
 	remote := m.Remote()
-	cleanupRemote := func(cause error) error {
+	cleanupRemote := func(cause error, completed string) error {
 		if err := git.RemoteRemove(ctx, remote); err != nil {
 			if cause != nil {
 				return fmt.Errorf("%w; failed to remove temporary remote %q: %w", cause, remote, err)
 			}
-			return fmt.Errorf("add committed but failed to remove temporary remote %q: %w", remote, err)
+			return fmt.Errorf("add %s but failed to remove temporary remote %q: %w", completed, remote, err)
 		}
 		return cause
 	}
 
 	if err := fetchMirror(ctx, git, m, progress); err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 
 	revision, err := resolveAddRevision(ctx, git, m, addOptions.Revision)
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 	item, err := itemAtRevision(ctx, git, m, revision)
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 
 	m.Revision = revision
 	if err := cfg.Add(m); err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 	configData, err := cfg.MarshalJSON()
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 	configItem, err := git.HashBytes(ctx, configData)
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 
 	mirrorTree, err := git.MakeTreeWithItemIn(ctx, "HEAD", m.Path, item)
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 	finalTree, err := git.MakeTreeWithItemIn(ctx, mirrorTree, config.FileName, configItem)
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
+	}
+	if addOptions.NoCommit {
+		var warned bool
+		if err := stageNoCommitResult(ctx, git, stdout, noCommitStageOptions{
+			Tree:       finalTree,
+			Action:     "add",
+			MirrorPath: m.Path,
+			Paths:      []string{m.Path, config.FileName},
+			OwnedPaths: []string{m.Path},
+			Quiet:      inv.Global.Quiet,
+			Warned:     &warned,
+		}); err != nil {
+			return cleanupRemote(err, "")
+		}
+		return cleanupRemote(nil, "staged changes")
 	}
 	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, addCommitSubject(m))
 	if err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
 	if !committed {
-		return cleanupRemote(errors.New("add produced no commit"))
+		return cleanupRemote(errors.New("add produced no commit"), "")
 	}
 	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(err, "")
 	}
-	return cleanupRemote(nil)
+	return cleanupRemote(nil, "committed")
 }
 
 func defaultBranch(ctx context.Context, git AddGit, url, localPath string, progress progressReporter) (branch string, err error) {

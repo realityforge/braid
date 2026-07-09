@@ -71,13 +71,18 @@ command.
 
 For `add`, `pull`, and `remove`, unrelated staged, unstaged, and untracked
 work outside `.braids.json` and the selected mirror paths is preserved and is not
-included in Braid's automatic commit. The selected mirror paths and
-`.braids.json` still have to be clean unless the command explicitly supports a
-different flow.
+included in Braid's automatic commit. These commands also accept `--no-commit`
+to stage `.braids.json` and selected mirror paths without creating the automatic
+commit. The selected mirror paths and `.braids.json` still have to be clean
+unless the command explicitly supports a different flow.
 
 Migration impact:
 
 - You can run Braid with unrelated work in progress more safely.
+- Use `--no-commit` on `add`, `pull`, or `remove` when the mirror change belongs
+  in the same downstream commit as other related changes.
+- If unrelated files are already staged during `--no-commit`, they remain staged
+  and can be included in the next manual commit unless you unstage them.
 - Dirty selected mirror paths still stop `add`, `pull`, `remove`, and `sync`
   unless `sync --autostash` is used.
 - On pull conflict, unrelated staged files remain staged. Go Braid warns about

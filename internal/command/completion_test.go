@@ -60,6 +60,7 @@ func TestCompleteCommandOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--pull-only")
 	assertCandidate(t, candidates, "--autostash")
 	assertCandidate(t, candidates, "--keep")
+	assertNoCandidate(t, candidates, "--no-commit")
 
 	candidates = completeCandidates(t, dir, "sync", "--autostash", "--")
 	assertNoCandidate(t, candidates, "--autostash")
@@ -71,6 +72,22 @@ func TestCompleteCommandOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--tag")
 	assertCandidate(t, candidates, "--revision")
 	assertCandidate(t, candidates, "--keep")
+	assertCandidate(t, candidates, "--no-commit")
+
+	candidates = completeCandidates(t, dir, "add", "")
+	assertCandidate(t, candidates, "--no-commit")
+
+	candidates = completeCandidates(t, dir, "remove", "")
+	assertCandidate(t, candidates, "--no-commit")
+
+	candidates = completeCandidates(t, dir, "pull", "--no-commit", "--")
+	assertNoCandidate(t, candidates, "--no-commit")
+
+	candidates = completeCandidates(t, dir, "update", "")
+	assertCandidate(t, candidates, "--no-commit")
+
+	candidates = completeCandidates(t, dir, "up", "")
+	assertCandidate(t, candidates, "--no-commit")
 
 	candidates = completeCandidates(t, dir, "completion", "")
 	if got, want := strings.Join(candidates, "\n"), "bash"; got != want {
@@ -92,6 +109,13 @@ func TestCompleteMirrorPathsRelativeToCurrentDirectory(t *testing.T) {
 	assertCandidate(t, candidates, "../../path with spaces/lib")
 
 	candidates = completeCandidates(t, repo, "status", "path")
+	assertCandidate(t, candidates, "path with spaces/lib")
+
+	candidates = completeCandidates(t, repo, "update", "")
+	assertCandidate(t, candidates, "apps/web/vendor/local")
+	assertCandidate(t, candidates, "vendor/root")
+
+	candidates = completeCandidates(t, repo, "up", "path")
 	assertCandidate(t, candidates, "path with spaces/lib")
 }
 

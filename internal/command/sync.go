@@ -99,7 +99,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		update := UpdateHandler(h)
 		updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
 		for _, target := range targets {
-			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, progress, stdout, stderr)
+			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, inv.Global.Quiet, progress, stdout, stderr)
 			if result.Status == updateStatusConflict && autostashOK {
 				updateConflict = true
 				if err != nil {

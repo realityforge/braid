@@ -73,6 +73,11 @@ unrelated staged, unstaged, and untracked work untouched and out of Braid's
 commits. `status`, `diff`, and `push` are the usual commands for deciding
 whether to pull, prepare a patch, or send local mirror changes upstream.
 
+Use `--no-commit` with `add`, `pull`, or `remove` to stage Braid's changes
+without creating the automatic commit. Braid stages only `.braids.json` and the
+selected mirror paths; unrelated staged files stay staged and will be included
+in your next `git commit` unless you unstage them first.
+
 - [Command form](#command-form)
 - [Shell completion](#shell-completion)
 - [Output and quiet mode](#output-and-quiet-mode)
@@ -155,6 +160,14 @@ Braid copies the upstream content into `lib/grit`, records the mirror in
 specify `--branch`, `--tag`, or `--revision`, Braid tracks the upstream
 repository's default branch.
 
+Use `--no-commit` when the mirror add belongs in the same commit as other
+changes:
+
+```bash
+braid add <upstream-git-url> lib/grit --no-commit
+git commit
+```
+
 Later, bring in upstream changes with:
 
 ```bash
@@ -232,6 +245,10 @@ path to be available. Tracked, staged, unstaged, or untracked content at the
 target, under the target, or at a blocking ancestor stops the add before Braid
 fetches or writes mirror content.
 
+With `--no-commit`, Braid leaves `HEAD` unchanged and stages `.braids.json` plus
+the new mirror path. If unrelated files were already staged, Braid warns because
+they will be included in a normal `git commit`.
+
 ### Checking Status And Local Changes
 
 Show every configured mirror, or just one mirror:
@@ -300,6 +317,19 @@ Before pulling, Braid requires `.braids.json` and the mirror path being pulled
 to be clean in both the index and working tree. For `braid pull` without a
 path, that scoped cleanliness check covers every eligible branch or tag mirror
 before any mirror is fetched or updated.
+
+Use `--no-commit` to stage a pull without creating the automatic Braid commit:
+
+```bash
+braid pull vendor/rails --no-commit
+braid pull --no-commit
+git commit
+```
+
+For no-path `braid pull --no-commit`, eligible mirrors are processed in
+lexicographic path order after the initial scoped cleanliness check. If a later
+mirror fails or conflicts, earlier staged mirror updates are left in place for
+manual resolution. Revision-locked mirrors are still skipped and reported.
 
 If a pull conflicts with local mirror changes, Braid leaves conflict markers
 in the mirror working tree, stages the updated `.braids.json`, and writes a
@@ -487,9 +517,19 @@ braid remove vendor/rails
 Braid removes the vendored content, updates `.braids.json`, and creates a
 `Braid: Remove mirror ...` commit.
 
+Use `--no-commit` to stage the removal without committing:
+
+```bash
+braid remove vendor/rails --no-commit
+git commit
+```
+
 Before removing, Braid requires `.braids.json` and the mirror path to be clean in
 both the index and working tree. Local edits, local deletions, staged mirror
 changes, and untracked files under the mirror path stop the remove.
+
+`braid remove --keep --no-commit` keeps the Braid-managed Git remote, but still
+stages the mirror content removal and `.braids.json` update.
 
 ### Remotes, Cache, And Paths
 
@@ -540,13 +580,13 @@ includes it.
 
 | Command | Purpose |
 | --- | --- |
-| `add` | Add a branch, tag, or revision mirror and create the initial Braid commit. |
+| `add [--no-commit]` | Add a branch, tag, or revision mirror and create or stage the initial Braid change. |
 | `status` | Show whether mirrors have remote, local, or removal changes. |
 | `diff` | Show local mirror changes, with Git diff arguments after `--`. |
-| `pull` | Pull one mirror, or every branch/tag mirror when no path is given. |
+| `pull [--no-commit]` | Pull one mirror, or every branch/tag mirror when no path is given. |
 | `push` | Push committed local mirror changes upstream. |
 | `sync [local_path...] [--pull-only] [--autostash] [--keep]` | Push changed branch mirrors, then pull selected mirrors. |
-| `remove` | Remove mirrored content and config. |
+| `remove [--no-commit]` | Remove mirrored content and config. |
 | `setup` | Add or refresh Braid-managed Git remotes. |
 | `version` | Print the Braid version. |
 | `completion bash` | Print the Bash completion script. |
@@ -557,7 +597,7 @@ This repository is Bazel-first. Use Bazel as the source of truth for builds,
 tests, formatting, vetting, linting, and Go toolchain selection.
 
 ```bash
-bazel test //...
+bazel test --test_env=PATH //...
 bazel build //cmd/braid:braid
 ```
 
@@ -565,7 +605,7 @@ Fast Go quality checks used by CI run through the Bazel-pinned Go SDK:
 
 ```bash
 bazel run @rules_go//go -- fmt ./...
-bazel test //...
+bazel test --test_env=PATH //...
 bazel run @rules_go//go -- vet ./...
 bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
 ```
@@ -575,8 +615,9 @@ bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci
 GitHub Actions CI workflow lives in `.github/workflows/ci.yml` and has two job families:
 
 - `Go quality and lint` runs formatting, tests, vet, and golangci-lint through
-  Bazel. Tests use `bazel test //...` so unit tests, real-Git tests, and the
-  executable integration target all run as first-class Bazel targets.
+  Bazel. Tests use `bazel test --test_env=PATH //...` so unit tests, real-Git
+  tests, and the executable integration target all run as first-class Bazel
+  targets.
 - `Integration (<platform>)` runs the executable integration target on the
   non-default native release platforms used for early cross-platform signal.
 

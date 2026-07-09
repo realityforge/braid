@@ -68,6 +68,42 @@ func TestRemoveCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
 	assertContains(t, status, "?? untracked.txt")
 }
 
+func TestRemoveCommandNoCommitStagesDeletionAndPreservesUnrelatedState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked base\n")
+	testutil.Git(t, repo, "add", "tracked.txt")
+	testutil.Git(t, repo, "commit", "-m", "add unrelated tracked file")
+	head := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
+
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked dirty\n")
+	testutil.WriteFile(t, repo, "untracked.txt", "untracked content\n")
+
+	stdout, _ := runCommandOKWithOutput(t, repo, []string{"remove", "vendor/basic", "--no-commit"})
+
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged removal of mirror 'vendor/basic'")
+	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
+		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
+	}
+	assertPathMissing(t, repo, "vendor/basic")
+	assertMirrorMissing(t, repo, "vendor/basic")
+	cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout)
+	wantCached := []string{".braids.json", "staged.txt", "vendor/basic/README.md"}
+	if strings.Join(cached, "\n") != strings.Join(wantCached, "\n") {
+		t.Fatalf("cached names = %#v, want %#v", cached, wantCached)
+	}
+	if unstaged := strings.TrimSpace(testutil.Git(t, repo, "diff", "--name-only", "--", ".braids.json", "vendor/basic").Stdout); unstaged != "" {
+		t.Fatalf("unstaged Braid-owned paths = %q, want none", unstaged)
+	}
+	assertFile(t, repo, "tracked.txt", "tracked dirty\n")
+	assertFile(t, repo, "untracked.txt", "untracked content\n")
+}
+
 func TestRemoveCommandKeepsRemote(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
@@ -83,6 +119,41 @@ func TestRemoveCommandKeepsRemote(t *testing.T) {
 	assertContains(t, remotes, remote)
 	assertMirrorMissing(t, repo, "vendor/basic")
 	assertClean(t, repo)
+}
+
+func TestRemoveCommandNoCommitKeepKeepsRemoteOnly(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	runCommandOK(t, repo, []string{"setup", "vendor/basic"})
+	remote := loadMirror(t, repo, "vendor/basic").Remote()
+
+	runCommandOK(t, repo, []string{"remove", "vendor/basic", "--keep", "--no-commit"})
+
+	assertPathMissing(t, repo, "vendor/basic")
+	assertMirrorMissing(t, repo, "vendor/basic")
+	remotes := testutil.Git(t, repo, "remote").Stdout
+	assertContains(t, remotes, remote)
+	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nvendor/basic/README.md" {
+		t.Fatalf("cached names = %#v, want staged config and mirror deletion", cached)
+	}
+}
+
+func TestRemoveCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+
+	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"--quiet", "remove", "vendor/basic", "--no-commit"})
+
+	if stdout != "" || stderr != "" {
+		t.Fatalf("stdout/stderr = %q / %q, want quiet no-commit output empty", stdout, stderr)
+	}
 }
 
 func TestRemoveCommandPathVariants(t *testing.T) {
@@ -231,7 +302,7 @@ func TestRemoveCommandReportsPostCommitRestoreFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{restoreErr: errors.New("restore failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"}, false, new(strings.Builder))
 	if err == nil || !strings.Contains(err.Error(), "restore failed") {
 		t.Fatalf("remove error = %v, want restore failure", err)
 	}
@@ -245,7 +316,7 @@ func TestRemoveCommandReportsPostCommitRemoteInspectFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{remoteURLErr: errors.New("inspect failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"}, false, new(strings.Builder))
 	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to inspect Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "inspect failed") {
 		t.Fatalf("remove error = %v, want post-commit remote inspect failure", err)
 	}
@@ -259,12 +330,40 @@ func TestRemoveCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 	writeRemoveMirrorConfig(t, repo)
 	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
 
-	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"})
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"}, false, new(strings.Builder))
 	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("remove error = %v, want post-commit remote cleanup failure", err)
 	}
 	if !git.committed {
 		t.Fatal("CommitTreeWithTemporaryIndex was not called before remote cleanup failure")
+	}
+}
+
+func TestRemoveCommandNoCommitReportsPostStageRemoteCleanupFailure(t *testing.T) {
+	repo := initDownstream(t)
+	writeRemoveMirrorConfig(t, repo)
+	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
+
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic", NoCommit: true}, false, new(strings.Builder))
+	if err == nil || !strings.Contains(err.Error(), `remove staged changes but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+		t.Fatalf("remove error = %v, want post-stage remote cleanup failure", err)
+	}
+	if git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was called for no-commit remove")
+	}
+}
+
+func TestRemoveCommandNoCommitReportsStagingFailure(t *testing.T) {
+	repo := initDownstream(t)
+	writeRemoveMirrorConfig(t, repo)
+	git := &fakeRemoveGit{restoreTreeErr: errors.New("stage failed")}
+
+	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic", NoCommit: true}, false, new(strings.Builder))
+	if err == nil || !strings.Contains(err.Error(), "stage failed") {
+		t.Fatalf("remove error = %v, want staging failure", err)
+	}
+	if git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was called for no-commit remove")
 	}
 }
 
@@ -310,6 +409,7 @@ type fakeRemoveGit struct {
 	remoteURLErr    error
 	remoteRemoveErr error
 	restoreErr      error
+	restoreTreeErr  error
 	committed       bool
 }
 
@@ -332,6 +432,9 @@ func (f *fakeRemoveGit) StatusPorcelainPathspecs(context.Context, ...string) (st
 func (f *fakeRemoveGit) BlockingOperation(context.Context) (string, bool, error) {
 	return "", false, nil
 }
+func (f *fakeRemoveGit) Diff(context.Context, ...string) (string, error) {
+	return "", nil
+}
 func (f *fakeRemoveGit) HashBytes(context.Context, []byte) (gitexec.TreeItem, error) {
 	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "config"}, nil
 }
@@ -347,6 +450,9 @@ func (f *fakeRemoveGit) CommitTreeWithTemporaryIndex(context.Context, string, st
 }
 func (f *fakeRemoveGit) RestorePathspecsFromHead(context.Context, ...string) error {
 	return f.restoreErr
+}
+func (f *fakeRemoveGit) RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error {
+	return f.restoreTreeErr
 }
 
 var _ RemoveGit = (*fakeRemoveGit)(nil)

@@ -67,6 +67,64 @@ func TestAddCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
 	assertContains(t, status, "?? untracked.txt")
 }
 
+func TestAddCommandNoCommitStagesContentConfigAndPreservesUnrelatedState(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "hello from upstream\n")
+	revision := testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked base\n")
+	testutil.Git(t, repo, "add", "tracked.txt")
+	testutil.Git(t, repo, "commit", "-m", "add unrelated tracked file")
+	head := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
+
+	testutil.WriteFile(t, repo, "staged.txt", "staged content\n")
+	testutil.Git(t, repo, "add", "staged.txt")
+	testutil.WriteFile(t, repo, "tracked.txt", "tracked dirty\n")
+	testutil.WriteFile(t, repo, "untracked.txt", "untracked content\n")
+
+	stdout, _ := runCommandOKWithOutput(t, repo, []string{"add", upstream, "vendor/basic", "--no-commit"})
+
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged add of mirror 'vendor/basic'")
+	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
+		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
+	}
+	assertFile(t, repo, "vendor/basic/README.md", "hello from upstream\n")
+	m := loadMirror(t, repo, "vendor/basic")
+	if m.URL != upstream || m.Branch != "main" || m.Revision != revision {
+		t.Fatalf("mirror = %#v, want staged upstream main at %s", m, revision)
+	}
+	cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout)
+	wantCached := []string{".braids.json", "staged.txt", "vendor/basic/README.md"}
+	if strings.Join(cached, "\n") != strings.Join(wantCached, "\n") {
+		t.Fatalf("cached names = %#v, want %#v", cached, wantCached)
+	}
+	if unstaged := strings.TrimSpace(testutil.Git(t, repo, "diff", "--name-only", "--", ".braids.json", "vendor/basic").Stdout); unstaged != "" {
+		t.Fatalf("unstaged Braid-owned paths = %q, want none", unstaged)
+	}
+	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
+		t.Fatalf("staged blob = %q, want staged content", got)
+	}
+	assertFile(t, repo, "tracked.txt", "tracked dirty\n")
+	assertFile(t, repo, "untracked.txt", "untracked content\n")
+	assertNoRemote(t, repo, m.Remote())
+}
+
+func TestAddCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "quiet\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+
+	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"--quiet", "add", upstream, "vendor/basic", "--no-commit"})
+
+	if stdout != "" || stderr != "" {
+		t.Fatalf("stdout/stderr = %q / %q, want quiet no-commit output empty", stdout, stderr)
+	}
+	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nvendor/basic/README.md" {
+		t.Fatalf("cached names = %#v, want staged config and mirror", cached)
+	}
+}
+
 func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "native path\n")
@@ -459,6 +517,7 @@ func TestAddCommandReportsPostCommitRestoreFailure(t *testing.T) {
 		},
 		progressReporter{},
 		new(bytes.Buffer),
+		new(bytes.Buffer),
 	)
 	if err == nil || !strings.Contains(err.Error(), "restore failed") {
 		t.Fatalf("add error = %v, want restore failure", err)
@@ -481,6 +540,7 @@ func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 		},
 		progressReporter{},
 		new(bytes.Buffer),
+		new(bytes.Buffer),
 	)
 	if err == nil || !strings.Contains(err.Error(), `add committed but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("add error = %v, want post-commit remote cleanup failure", err)
@@ -490,9 +550,56 @@ func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 	}
 }
 
+func TestAddCommandNoCommitReportsPostStageRemoteCleanupFailure(t *testing.T) {
+	repo := initDownstream(t)
+	git := &fakeAddGit{remoteRemoveErr: errors.New("remove remote failed")}
+	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
+		context.Background(),
+		testRepoContext(repo, git),
+		git,
+		cli.Invocation{
+			Global: cli.GlobalOptions{NoCache: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main", NoCommit: true},
+		},
+		progressReporter{},
+		new(bytes.Buffer),
+		new(bytes.Buffer),
+	)
+	if err == nil || !strings.Contains(err.Error(), `add staged changes but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+		t.Fatalf("add error = %v, want post-stage remote cleanup failure", err)
+	}
+	if git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was called for no-commit add")
+	}
+}
+
+func TestAddCommandNoCommitReportsStagingFailure(t *testing.T) {
+	repo := initDownstream(t)
+	git := &fakeAddGit{restoreTreeErr: errors.New("stage failed")}
+	err := AddHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.add(
+		context.Background(),
+		testRepoContext(repo, git),
+		git,
+		cli.Invocation{
+			Global: cli.GlobalOptions{NoCache: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main", NoCommit: true},
+		},
+		progressReporter{},
+		new(bytes.Buffer),
+		new(bytes.Buffer),
+	)
+	if err == nil || !strings.Contains(err.Error(), "stage failed") {
+		t.Fatalf("add error = %v, want staging failure", err)
+	}
+	if git.committed {
+		t.Fatal("CommitTreeWithTemporaryIndex was called for no-commit add")
+	}
+}
+
 type fakeAddGit struct {
 	remoteRemoveErr error
 	restoreErr      error
+	restoreTreeErr  error
 	committed       bool
 }
 
@@ -528,6 +635,9 @@ func (f *fakeAddGit) StatusPorcelainPathspecs(context.Context, ...string) (strin
 func (f *fakeAddGit) BlockingOperation(context.Context) (string, bool, error) {
 	return "", false, nil
 }
+func (f *fakeAddGit) Diff(context.Context, ...string) (string, error) {
+	return "", nil
+}
 func (f *fakeAddGit) HashBytes(context.Context, []byte) (gitexec.TreeItem, error) {
 	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "config"}, nil
 }
@@ -540,6 +650,9 @@ func (f *fakeAddGit) CommitTreeWithTemporaryIndex(context.Context, string, strin
 }
 func (f *fakeAddGit) RestorePathspecsFromHead(context.Context, ...string) error {
 	return f.restoreErr
+}
+func (f *fakeAddGit) RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error {
+	return f.restoreTreeErr
 }
 
 var _ AddGit = (*fakeAddGit)(nil)

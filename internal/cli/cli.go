@@ -39,6 +39,7 @@ type AddOptions struct {
 	Tag        string
 	Revision   string
 	RemotePath string
+	NoCommit   bool
 }
 
 type UpdateOptions struct {
@@ -47,11 +48,13 @@ type UpdateOptions struct {
 	Tag       string
 	Revision  string
 	Keep      bool
+	NoCommit  bool
 }
 
 type RemoveOptions struct {
 	LocalPath string
 	Keep      bool
+	NoCommit  bool
 }
 
 type DiffOptions struct {
@@ -319,6 +322,7 @@ func parseAdd(args []string, options *AddOptions) error {
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
 		valueFlag("--path", "-p", "path", func(value string) { options.RemotePath = value }),
+		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -348,6 +352,7 @@ func parseUpdate(args []string, options *UpdateOptions) error {
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
 		boolFlag("--keep", "", func() { options.Keep = true }),
+		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -375,6 +380,7 @@ func parseRemove(args []string, options *RemoveOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandRemove, args, []flagSpec{
 		boolFlag("--keep", "", func() { options.Keep = true }),
+		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -661,11 +667,11 @@ Run "braid <command> help" for command-specific usage.
 func CommandUsage(command Command) string {
 	switch command {
 	case CommandAdd:
-		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>]\n"
+		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit]\n"
 	case CommandPull:
-		return "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"
+		return "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"
 	case CommandRemove:
-		return "usage: braid remove <local_path> [--keep]\n"
+		return "usage: braid remove <local_path> [--keep] [--no-commit]\n"
 	case CommandDiff:
 		return "usage: braid diff [local_path] [--keep] [-- <git_diff_arg>...]\n"
 	case CommandPush:

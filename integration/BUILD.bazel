@@ -69,3 +69,12 @@ go_test(
     embed = [":test_support"],
     timeout = "short",
 )
+
+go_test(
+    name = "no_commit_test",
+    size = "medium",
+    srcs = ["no_commit_test.go"],
+    data = ["//cmd/braid"],
+    embed = [":test_support"],
+    timeout = "moderate",
+)

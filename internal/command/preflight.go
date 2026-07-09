@@ -37,10 +37,12 @@ type AddGit interface {
 	LsFiles(context.Context, string) (string, error)
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
+	Diff(context.Context, ...string) (string, error)
 	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
 	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
 	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
 	RestorePathspecsFromHead(context.Context, ...string) error
+	RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error
 }
 
 type DiffGit interface {
@@ -66,6 +68,7 @@ type UpdateGit interface {
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
 	Add(context.Context, string) error
+	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
 	HashFile(context.Context, string) (gitexec.TreeItem, error)
 	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
 	RestorePathspecsFromHead(context.Context, ...string) error
@@ -76,11 +79,13 @@ type RemoveGit interface {
 	RemoteGit
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
+	Diff(context.Context, ...string) (string, error)
 	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
 	MakeTreeWithoutPath(context.Context, string, string) (string, error)
 	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
 	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
 	RestorePathspecsFromHead(context.Context, ...string) error
+	RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error
 }
 
 type PushGit interface {

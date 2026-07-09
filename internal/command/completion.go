@@ -72,15 +72,18 @@ var commandCompletionFlags = map[string][]completionFlag{
 		{long: "--tag", short: "-t", value: true},
 		{long: "--revision", short: "-r", value: true},
 		{long: "--path", short: "-p", value: true},
+		{long: "--no-commit"},
 	},
 	string(cli.CommandPull): {
 		{long: "--branch", short: "-b", value: true},
 		{long: "--tag", short: "-t", value: true},
 		{long: "--revision", short: "-r", value: true},
 		{long: "--keep"},
+		{long: "--no-commit"},
 	},
 	string(cli.CommandRemove): {
 		{long: "--keep"},
+		{long: "--no-commit"},
 	},
 	string(cli.CommandDiff): {
 		{long: "--keep"},
@@ -177,26 +180,36 @@ func (h CompleteHandler) completeCommand(ctx context.Context, line completionLin
 		return completeCompletionCommand(line)
 	}
 
-	flags, ok := commandCompletionFlags[line.command]
+	command := canonicalCompletionCommand(line.command)
+	flags, ok := commandCompletionFlags[command]
 	if !ok {
 		return nil
 	}
 	if _, ok := valueFlagAwaitingCurrent(line.commandArgs, flags); ok {
 		return nil
 	}
-	if line.command == string(cli.CommandDiff) && commandArgsContainDiffSeparator(line.commandArgs) {
+	if command == string(cli.CommandDiff) && commandArgsContainDiffSeparator(line.commandArgs) {
 		return pathCandidates(h.Options.WorkDir, line.current, false, "")
 	}
 
-	state := parseCompletedCommandArgs(line.command, line.commandArgs, flags)
+	state := parseCompletedCommandArgs(command, line.commandArgs, flags)
 	var candidates []string
 	if line.current == "" || strings.HasPrefix(line.current, "-") {
 		candidates = append(candidates, optionCandidates(line.current, flags, line.commandArgs, false)...)
 	}
 	if line.current == "" || !strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, h.pathCandidatesForCommand(ctx, line, state)...)
+		candidates = append(candidates, h.pathCandidatesForCommand(ctx, command, line, state)...)
 	}
 	return uniqueSorted(candidates)
+}
+
+func canonicalCompletionCommand(command string) string {
+	switch command {
+	case "update", "up":
+		return string(cli.CommandPull)
+	default:
+		return command
+	}
 }
 
 func completeCompletionCommand(line completionLine) []string {
@@ -207,8 +220,8 @@ func completeCompletionCommand(line completionLine) []string {
 	return prefixed([]string{"bash"}, line.current)
 }
 
-func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, line completionLine, state commandArgState) []string {
-	switch line.command {
+func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, command string, line completionLine, state commandArgState) []string {
+	switch command {
 	case string(cli.CommandAdd):
 		if len(state.positionals) == 1 {
 			return pathCandidates(h.Options.WorkDir, line.current, false, "")

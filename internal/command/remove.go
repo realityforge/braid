@@ -24,7 +24,7 @@ func (h RemoveHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	git := h.removeGit(repo, inv, stderr)
-	return h.remove(ctx, repo, git, inv.Remove)
+	return h.remove(ctx, repo, git, inv.Remove, inv.Global.Quiet, stdout)
 }
 
 func (h RemoveHandler) removeGit(repo RepoContext, inv cli.Invocation, trace io.Writer) RemoveGit {
@@ -37,7 +37,7 @@ func (h RemoveHandler) removeGit(repo RepoContext, inv cli.Invocation, trace io.
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveGit, options cli.RemoveOptions) error {
+func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveGit, options cli.RemoveOptions, quiet bool, stdout io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -80,6 +80,21 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 	if err != nil {
 		return err
 	}
+	if options.NoCommit {
+		var warned bool
+		if err := stageNoCommitResult(ctx, git, stdout, noCommitStageOptions{
+			Tree:       finalTree,
+			Action:     "removal",
+			MirrorPath: m.Path,
+			Paths:      []string{m.Path, config.FileName},
+			OwnedPaths: []string{m.Path},
+			Quiet:      quiet,
+			Warned:     &warned,
+		}); err != nil {
+			return err
+		}
+		return cleanupRemote(ctx, git, options, m, nil, "staged changes")
+	}
 	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, removeCommitSubject(m))
 	if err != nil {
 		return err
@@ -88,31 +103,32 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 		return errors.New("remove produced no commit")
 	}
 
-	cleanupRemote := func(cause error) error {
-		if options.Keep {
-			return cause
-		}
-		if _, ok, err := git.RemoteURL(ctx, m.Remote()); err != nil {
-			if cause != nil {
-				return fmt.Errorf("%w; failed to inspect Braid remote %q: %w", cause, m.Remote(), err)
-			}
-			return fmt.Errorf("remove committed but failed to inspect Braid remote %q: %w", m.Remote(), err)
-		} else if ok {
-			if err := git.RemoteRemove(ctx, m.Remote()); err != nil {
-				if cause != nil {
-					return fmt.Errorf("%w; failed to remove Braid remote %q: %w", cause, m.Remote(), err)
-				}
-				return fmt.Errorf("remove committed but failed to remove Braid remote %q: %w", m.Remote(), err)
-			}
-		}
-		return cause
-	}
 	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
-		return cleanupRemote(err)
+		return cleanupRemote(ctx, git, options, m, err, "")
 	}
-	return cleanupRemote(nil)
+	return cleanupRemote(ctx, git, options, m, nil, "committed")
 }
 
 func removeCommitSubject(m mirror.Mirror) string {
 	return fmt.Sprintf("Braid: Remove mirror '%s'", m.Path)
+}
+
+func cleanupRemote(ctx context.Context, git RemoveGit, options cli.RemoveOptions, m mirror.Mirror, cause error, completed string) error {
+	if options.Keep {
+		return cause
+	}
+	if _, ok, err := git.RemoteURL(ctx, m.Remote()); err != nil {
+		if cause != nil {
+			return fmt.Errorf("%w; failed to inspect Braid remote %q: %w", cause, m.Remote(), err)
+		}
+		return fmt.Errorf("remove %s but failed to inspect Braid remote %q: %w", completed, m.Remote(), err)
+	} else if ok {
+		if err := git.RemoteRemove(ctx, m.Remote()); err != nil {
+			if cause != nil {
+				return fmt.Errorf("%w; failed to remove Braid remote %q: %w", cause, m.Remote(), err)
+			}
+			return fmt.Errorf("remove %s but failed to remove Braid remote %q: %w", completed, m.Remote(), err)
+		}
+	}
+	return cause
 }

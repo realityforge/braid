@@ -74,10 +74,10 @@ func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, err = h.updateOne(ctx, repo, git, processGit, cache, localPath, inv.Update, inv.Global.Verbose, progress, stdout, stderr)
+		_, err = h.updateOne(ctx, repo, git, processGit, cache, localPath, inv.Update, inv.Global.Verbose, inv.Global.Quiet, progress, stdout, stderr)
 		return err
 	}
-	return h.updateAll(ctx, repo, git, processGit, cache, inv.Update, inv.Global.Verbose, progress, stdout, stderr)
+	return h.updateAll(ctx, repo, git, processGit, cache, inv.Update, inv.Global.Verbose, inv.Global.Quiet, progress, stdout, stderr)
 }
 
 func (h UpdateHandler) updateGit(repo RepoContext, inv cli.Invocation, trace io.Writer) UpdateGit {
@@ -100,7 +100,7 @@ func (h UpdateHandler) processRepoPathGit(repo RepoContext, inv cli.Invocation, 
 	return gitexec.New(repo.ProcessWorkDir, inv.Global.Verbose, trace)
 }
 
-func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, options cli.UpdateOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) error {
+func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, options cli.UpdateOptions, verbose, quiet bool, progress progressReporter, stdout, trace io.Writer) error {
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return err
@@ -123,9 +123,20 @@ func (h UpdateHandler) updateAll(ctx context.Context, repo RepoContext, git Upda
 		return err
 	}
 
+	var warned bool
 	for _, localPath := range targets {
-		if _, err := h.updateOne(ctx, repo, git, processGit, cache, localPath, options, verbose, progress, stdout, trace); err != nil {
+		runOptions := updateOneRunOptions{}
+		if options.NoCommit {
+			runOptions.SkipCleanCheck = true
+			runOptions.WarningPaths = targets
+			runOptions.Warned = &warned
+		}
+		result, err := h.updateOneWithRunOptions(ctx, repo, git, processGit, cache, localPath, options, verbose, quiet, progress, stdout, trace, runOptions)
+		if err != nil {
 			return fmt.Errorf("pull %s: %w", localPath, err)
+		}
+		if options.NoCommit && result.Status == updateStatusConflict {
+			break
 		}
 	}
 	return writeSkippedLockedMirrors(stdout, skippedLocked)
@@ -146,7 +157,17 @@ func writeSkippedLockedMirrors(stdout io.Writer, paths []string) error {
 	return nil
 }
 
-func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) (updateResult, error) {
+type updateOneRunOptions struct {
+	SkipCleanCheck bool
+	WarningPaths   []string
+	Warned         *bool
+}
+
+func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose, quiet bool, progress progressReporter, stdout, trace io.Writer) (updateResult, error) {
+	return h.updateOneWithRunOptions(ctx, repo, git, processGit, cache, localPath, options, verbose, quiet, progress, stdout, trace, updateOneRunOptions{})
+}
+
+func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoContext, git UpdateGit, processGit repoPathGit, cache CacheConfig, localPath string, options cli.UpdateOptions, verbose, quiet bool, progress progressReporter, stdout, trace io.Writer, runOptions updateOneRunOptions) (updateResult, error) {
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
 		return updateResult{}, err
@@ -160,8 +181,13 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 	}
 	original := m
 	applyUpdateStrategy(&m, options)
-	if err := h.ensureUpdateTargetsClean(ctx, repo, git, cfg, []string{localPath}); err != nil {
-		return updateResult{}, err
+	if mirrorOverlapsConfig(m.Path) {
+		return updateResult{}, fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
+	}
+	if !runOptions.SkipCleanCheck {
+		if err := h.ensureUpdateTargetsClean(ctx, repo, git, cfg, []string{localPath}); err != nil {
+			return updateResult{}, err
+		}
 	}
 
 	if cache.Enabled {
@@ -291,22 +317,19 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 		_ = cleanupRemote()
 		return failUpdate(updateResult{}, err)
 	}
-	if err := cfg.WriteFile(filepath.Join(configRoot(h.Options, repo), config.FileName)); err != nil {
-		_ = cleanupRemote()
-		return failUpdate(updateResult{}, err)
-	}
-	configItem, err := git.HashFile(ctx, config.FileName)
+	configData, err := cfg.MarshalJSON()
 	if err != nil {
 		_ = cleanupRemote()
-		if mergeErr != nil {
-			return failUpdate(updateResult{Status: updateStatusConflict}, err)
-		}
 		return failUpdate(updateResult{}, err)
 	}
 
 	subject := updateCommitSubject(m)
 	if mergeErr != nil {
 		result := updateResult{Status: updateStatusConflict}
+		if err := cfg.WriteFile(filepath.Join(configRoot(h.Options, repo), config.FileName)); err != nil {
+			_ = cleanupRemote()
+			return failUpdate(result, err)
+		}
 		if err := writeConflictSummary(stdout, mergedTree.ConflictPaths); err != nil {
 			return failUpdate(result, err)
 		}
@@ -334,10 +357,38 @@ func (h UpdateHandler) updateOne(ctx context.Context, repo RepoContext, git Upda
 		return result, nil
 	}
 
+	configItem, err := git.HashBytes(ctx, configData)
+	if err != nil {
+		_ = cleanupRemote()
+		return failUpdate(updateResult{}, err)
+	}
 	finalTree, err := git.MakeTreeWithItemIn(ctx, contentTree, config.FileName, configItem)
 	if err != nil {
 		_ = cleanupRemote()
 		return failUpdate(updateResult{}, err)
+	}
+	if options.NoCommit {
+		warningPaths := runOptions.WarningPaths
+		if len(warningPaths) == 0 {
+			warningPaths = []string{m.Path}
+		}
+		if err := stageNoCommitResult(ctx, git, stdout, noCommitStageOptions{
+			Tree:       finalTree,
+			Action:     "update",
+			MirrorPath: m.Path,
+			Paths:      []string{m.Path, config.FileName},
+			OwnedPaths: warningPaths,
+			Quiet:      quiet,
+			Warned:     runOptions.Warned,
+		}); err != nil {
+			_ = cleanupRemote()
+			return failUpdate(updateResult{}, err)
+		}
+		if err := updateProgress.Complete(fmt.Sprintf("Braid: updated mirror %s to %s", m.Path, shortRevision(newRevision))); err != nil {
+			_ = cleanupRemote()
+			return updateResult{}, err
+		}
+		return updateResult{Status: updateStatusUpdated}, cleanupRemote()
 	}
 	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, subject)
 	if err != nil {
@@ -473,21 +524,6 @@ func (h UpdateHandler) writeConflictInstructions(ctx context.Context, git Update
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
-}
-
-func hasUnrelatedStagedEntries(ctx context.Context, git UpdateGit, mirrorPath string) (bool, error) {
-	out, err := git.Diff(ctx, "--cached", "--name-only")
-	if err != nil {
-		return false, err
-	}
-	for _, path := range strings.Split(out, "\n") {
-		path = strings.TrimSpace(path)
-		if path == "" || path == config.FileName || pathWithin(path, mirrorPath) {
-			continue
-		}
-		return true, nil
-	}
-	return false, nil
 }
 
 func pathWithin(path, scope string) bool {

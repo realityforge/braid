@@ -17,7 +17,7 @@ func TestParseCommands(t *testing.T) {
 	}{
 		{
 			name: "add branch mirror",
-			args: []string{"--verbose", "--cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib"},
+			args: []string{"--verbose", "--cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib", "--no-commit"},
 			want: Invocation{
 				Global:  GlobalOptions{CacheDir: ".cache", CacheDirSet: true, Verbose: true},
 				Command: CommandAdd,
@@ -26,6 +26,7 @@ func TestParseCommands(t *testing.T) {
 					LocalPath:  "vendor/repo",
 					Branch:     "main",
 					RemotePath: "lib",
+					NoCommit:   true,
 				},
 			},
 		},
@@ -42,11 +43,11 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "pull one mirror",
-			args: []string{"-v", "pull", "vendor/repo", "-r", "abc123", "--keep"},
+			args: []string{"-v", "pull", "vendor/repo", "-r", "abc123", "--keep", "--no-commit"},
 			want: Invocation{
 				Global:  GlobalOptions{Verbose: true},
 				Command: CommandPull,
-				Update:  UpdateOptions{LocalPath: "vendor/repo", Revision: "abc123", Keep: true},
+				Update:  UpdateOptions{LocalPath: "vendor/repo", Revision: "abc123", Keep: true, NoCommit: true},
 			},
 		},
 		{
@@ -56,18 +57,18 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "update alias",
-			args: []string{"update", "vendor/repo"},
-			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo"}},
+			args: []string{"update", "vendor/repo", "--no-commit"},
+			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo", NoCommit: true}},
 		},
 		{
 			name: "up alias",
-			args: []string{"up", "vendor/repo"},
-			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo"}},
+			args: []string{"up", "vendor/repo", "--no-commit"},
+			want: Invocation{Command: CommandPull, Update: UpdateOptions{LocalPath: "vendor/repo", NoCommit: true}},
 		},
 		{
 			name: "remove",
-			args: []string{"--verbose", "remove", "vendor/repo", "--keep"},
-			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandRemove, Remove: RemoveOptions{LocalPath: "vendor/repo", Keep: true}},
+			args: []string{"--verbose", "remove", "vendor/repo", "--keep", "--no-commit"},
+			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandRemove, Remove: RemoveOptions{LocalPath: "vendor/repo", Keep: true, NoCommit: true}},
 		},
 		{
 			name: "diff passthrough",
@@ -188,6 +189,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
+		{name: "sync no commit unsupported", args: []string{"sync", "--no-commit"}, want: "unknown flag for sync: --no-commit"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},
 		{name: "completion missing shell", args: []string{"completion"}, want: "completion requires 1 argument(s)"},
 		{name: "completion unknown shell", args: []string{"completion", "zsh"}, want: "unknown completion shell zsh"},
@@ -318,8 +320,14 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "__complete") {
 		t.Fatalf("top-level usage exposes hidden completion callback:\n%s", Usage())
 	}
-	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep]\n"; got != want {
+	if got, want := CommandUsage(CommandAdd), "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit]\n"; got != want {
+		t.Fatalf("CommandUsage(add) = %q, want %q", got, want)
+	}
+	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(pull) = %q, want %q", got, want)
+	}
+	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path> [--keep] [--no-commit]\n"; got != want {
+		t.Fatalf("CommandUsage(remove) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
