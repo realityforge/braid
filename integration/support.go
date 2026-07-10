@@ -52,7 +52,8 @@ func newProcessEnv(t *testing.T, root string) processEnv {
 		}
 	}
 	globalConfig := filepath.Join(root, "xdg-config", "gitconfig")
-	if err := os.WriteFile(globalConfig, nil, 0o644); err != nil {
+	const globalConfigContents = "[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"
+	if err := os.WriteFile(globalConfig, []byte(globalConfigContents), 0o644); err != nil {
 		t.Fatalf("write global gitconfig: %v", err)
 	}
 
