@@ -131,6 +131,8 @@ tool keeps that model but tightens the user-facing behavior:
   revision mirrors still require an explicit `--branch`.
 - The editor starts with commented provenance guidance when Braid can compute
   downstream commits that touched the mirror since the recorded upstream state.
+- `push --message <message>` uses the supplied upstream commit message directly
+  without opening the editor or running the generated-message command.
 - `BRAID_PUSH_COMMIT_MESSAGE_COMMAND` can optionally run a trusted local POSIX
   shell command to generate a draft upstream commit message. The editor still
   opens for review. This generator is disabled by default and is not supported

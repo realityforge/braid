@@ -52,7 +52,7 @@ func (h PushHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	result, err := h.push(ctx, repo, git, m, inv.Push.Branch, inv.Push.Keep, inv.Global, stdout, stderr)
+	result, err := h.push(ctx, repo, git, m, inv.Push.Branch, inv.Push.Keep, inv.Push.Message, inv.Global, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (h PushHandler) pushGit(repo RepoContext, inv cli.Invocation, trace io.Writ
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m mirror.Mirror, branch string, keep bool, global cli.GlobalOptions, stdout, stderr io.Writer) (result pushResult, err error) {
+func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m mirror.Mirror, branch string, keep bool, commitMessage string, global cli.GlobalOptions, stdout, stderr io.Writer) (result pushResult, err error) {
 	if branch == "" {
 		branch = m.Branch
 	}
@@ -136,11 +136,17 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 		return pushResult{Status: pushStatusNoLocalChanges}, nil
 	}
 
-	provenance, provenanceOK, provenanceErr := buildPushProvenance(ctx, git, m)
-	if provenanceErr != nil {
-		warnPushProvenance(stderr, provenanceErr)
+	var provenance pushProvenance
+	var provenanceOK bool
+	var provenanceErr error
+	messageGeneration := pushMessageGeneration{}
+	if commitMessage == "" {
+		provenance, provenanceOK, provenanceErr = buildPushProvenance(ctx, git, m)
+		if provenanceErr != nil {
+			warnPushProvenance(stderr, provenanceErr)
+		}
+		messageGeneration = configuredPushMessageGeneration()
 	}
-	messageGeneration := configuredPushMessageGeneration()
 
 	if err := runProgressWithOperation(
 		progress,
@@ -153,7 +159,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 				info = io.Discard
 				commitStdout = io.Discard
 			}
-			return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, global.Verbose, h.stdin(), commitStdout, stderr, info, pushProgress, provenance, provenanceOK, provenanceErr, messageGeneration)
+			return h.pushViaTempRepo(ctx, repo, git, m, branch, baseRevision, newTree, commitMessage, global.Verbose, h.stdin(), commitStdout, stderr, info, pushProgress, provenance, provenanceOK, provenanceErr, messageGeneration)
 		},
 	); err != nil {
 		return pushResult{}, err
@@ -161,7 +167,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	return pushResult{Status: pushStatusPushed}, nil
 }
 
-func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree string, verbose bool, stdin io.Reader, stdout, stderr, info io.Writer, pushProgress *progressOperation, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
+func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, source PushGit, m mirror.Mirror, branch, baseRevision, newTree, commitMessage string, verbose bool, stdin io.Reader, stdout, stderr, info io.Writer, pushProgress *progressOperation, provenance pushProvenance, provenanceOK bool, provenanceErr error, messageGeneration pushMessageGeneration) error {
 	workspaceDir, err := os.MkdirTemp("", "braid-push")
 	if err != nil {
 		return err
@@ -205,7 +211,18 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 		return err
 	}
 
-	if messageGeneration.Enabled {
+	if commitMessage != "" {
+		if err := verifyTempPushIndex(ctx, tempGit, newTree); err != nil {
+			return err
+		}
+		committed, err := tempGit.CommitMessage(ctx, commitMessage)
+		if err != nil {
+			return err
+		}
+		if !committed {
+			return fmt.Errorf("temporary push commit did not create a commit")
+		}
+	} else if messageGeneration.Enabled {
 		messageInfo := newProgressSeparatedWriter(pushProgress, info)
 		seedPath, err := preparePushMessageSeed(ctx, repo, source, tempGit, m, branch, baseRevision, newTree, contextDir, messageGeneration, verbose, messageInfo, provenance, provenanceOK, provenanceErr)
 		if err != nil {

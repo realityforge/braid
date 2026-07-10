@@ -91,6 +91,7 @@ var commandCompletionFlags = map[string][]completionFlag{
 	},
 	string(cli.CommandPush): {
 		{long: "--branch", short: "-b", value: true},
+		{long: "--message", short: "-m", value: true},
 		{long: "--keep"},
 	},
 	string(cli.CommandSync): {

@@ -93,6 +93,11 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Branch: "main", Keep: true}},
 		},
 		{
+			name: "push message",
+			args: []string{"push", "vendor/repo", "-m", "Push upstream\n\nBody"},
+			want: Invocation{Command: CommandPush, Push: PushOptions{LocalPath: "vendor/repo", Message: "Push upstream\n\nBody"}},
+		},
+		{
 			name: "sync all",
 			args: []string{"sync"},
 			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{}}},
@@ -190,6 +195,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "sync no commit unsupported", args: []string{"sync", "--no-commit"}, want: "unknown flag for sync: --no-commit"},
+		{name: "push whitespace message", args: []string{"push", "vendor/repo", "--message", " \t"}, want: "--message requires a non-empty message value"},
 		{name: "version extra args", args: []string{"version", "extra"}, want: "version received extra argument(s)"},
 		{name: "completion missing shell", args: []string{"completion"}, want: "completion requires 1 argument(s)"},
 		{name: "completion unknown shell", args: []string{"completion", "zsh"}, want: "unknown completion shell zsh"},
@@ -328,6 +334,9 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	}
 	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path> [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(remove) = %q, want %q", got, want)
+	}
+	if got, want := CommandUsage(CommandPush), "usage: braid push <local_path> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"; got != want {
+		t.Fatalf("CommandUsage(push) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)

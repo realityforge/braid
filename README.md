@@ -445,6 +445,15 @@ braid sync vendor/rails --keep
 downstream `HEAD`, opens Git's commit editor for the upstream commit message, and
 pushes that commit.
 
+For non-interactive pushes, pass the upstream commit message explicitly:
+
+```bash
+braid push vendor/rails --message "Apply local Rails customizations"
+```
+
+When `--message` (or `-m`) is present, Braid uses that message directly and does
+not open the editor or run `BRAID_PUSH_COMMIT_MESSAGE_COMMAND`.
+
 When available, the editor starts with commented guidance listing downstream
 commits that touched the mirror path since the last clean mirror state. The
 guidance includes full downstream commit messages so you can summarize, copy, or

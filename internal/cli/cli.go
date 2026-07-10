@@ -67,6 +67,7 @@ type PushOptions struct {
 	LocalPath string
 	Branch    string
 	Keep      bool
+	Message   string
 }
 
 type SyncOptions struct {
@@ -418,6 +419,7 @@ func parsePush(args []string, options *PushOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandPush, args, []flagSpec{
 		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
+		valueFlag("--message", "-m", "message", func(value string) { options.Message = value }),
 		boolFlag("--keep", "", func() { options.Keep = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
@@ -427,6 +429,9 @@ func parsePush(args []string, options *PushOptions) error {
 	}
 	if err := requireArgRange("push", positionals, 1, 1); err != nil {
 		return err
+	}
+	if options.Message != "" && strings.TrimSpace(options.Message) == "" {
+		return usageError("--message requires a non-empty message value")
 	}
 	options.LocalPath = normalizeLocalPathArg(positionals[0])
 	return nil
@@ -675,7 +680,7 @@ func CommandUsage(command Command) string {
 	case CommandDiff:
 		return "usage: braid diff [local_path] [--keep] [-- <git_diff_arg>...]\n"
 	case CommandPush:
-		return "usage: braid push <local_path> [--branch|-b <branch>] [--keep]\n"
+		return "usage: braid push <local_path> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"
 	case CommandSync:
 		return "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"
 	case CommandSetup:

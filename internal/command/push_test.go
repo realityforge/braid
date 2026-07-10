@@ -38,6 +38,29 @@ func TestPushCommandPushesBranchAndPreservesIdentity(t *testing.T) {
 	}
 }
 
+func TestPushCommandMessageBypassesEditorAndGenerator(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "noninteractive\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	t.Setenv("GIT_EDITOR", writeFailingEditor(t))
+	t.Setenv(pushMessageCommandEnv, "exit 42")
+
+	message := "Push supplied message\n\nBody line"
+	runCommandOK(t, repo, []string{"push", "vendor/basic", "--message", message})
+
+	assertFile(t, upstream, "README.md", "noninteractive\n")
+	got := strings.TrimSpace(testutil.Git(t, upstream, "log", "-1", "--pretty=%B").Stdout)
+	if got != message {
+		t.Fatalf("commit message = %q, want %q", got, message)
+	}
+}
+
 func TestPushCommandEditorReceivesStdin(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")

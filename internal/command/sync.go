@@ -342,7 +342,7 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 func (h SyncHandler) runPushPlan(ctx context.Context, repo RepoContext, git PushGit, plan syncPushPlan, inv cli.Invocation, stdout, stderr io.Writer) error {
 	push := PushHandler(h)
 	for _, action := range plan.Actions {
-		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch, inv.Sync.Keep, inv.Global, stdout, stderr)
+		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch, inv.Sync.Keep, "", inv.Global, stdout, stderr)
 		if err != nil {
 			return err
 		}

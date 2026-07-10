@@ -77,6 +77,11 @@ func TestCompleteCommandOptions(t *testing.T) {
 	candidates = completeCandidates(t, dir, "add", "")
 	assertCandidate(t, candidates, "--no-commit")
 
+	candidates = completeCandidates(t, dir, "push", "")
+	assertCandidate(t, candidates, "--message")
+	assertCandidate(t, candidates, "-m")
+	assertNoCandidate(t, candidates, "--no-commit")
+
 	candidates = completeCandidates(t, dir, "remove", "")
 	assertCandidate(t, candidates, "--no-commit")
 
