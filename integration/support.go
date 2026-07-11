@@ -31,6 +31,7 @@ func expectedBraidVersion() string {
 
 type processEnv struct {
 	values map[string]string
+	root   string
 }
 
 func newProcessEnv(t *testing.T, root string) processEnv {
@@ -51,28 +52,28 @@ func newProcessEnv(t *testing.T, root string) processEnv {
 		}
 	}
 	globalConfig := filepath.Join(root, "xdg-config", "gitconfig")
-	if err := os.WriteFile(globalConfig, nil, 0o644); err != nil {
+	const globalConfigContents = "[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"
+	if err := os.WriteFile(globalConfig, []byte(globalConfigContents), 0o644); err != nil {
 		t.Fatalf("write global gitconfig: %v", err)
 	}
 
 	values := map[string]string{
-		"APPDATA":               filepath.Join(root, "appdata"),
-		"BRAID_LOCAL_CACHE_DIR": filepath.Join(root, "braid-cache"),
-		"GIT_AUTHOR_DATE":       "2001-02-03T04:05:06Z",
-		"GIT_COMMITTER_DATE":    "2001-02-03T04:05:06Z",
-		"GIT_CONFIG_GLOBAL":     globalConfig,
-		"GIT_CONFIG_NOSYSTEM":   "1",
-		"GIT_TERMINAL_PROMPT":   "0",
-		"HOME":                  filepath.Join(root, "home"),
-		"LANG":                  "C",
-		"LC_ALL":                "C",
-		"LOCALAPPDATA":          filepath.Join(root, "local-appdata"),
-		"TEMP":                  filepath.Join(root, "tmp"),
-		"TMP":                   filepath.Join(root, "tmp"),
-		"TMPDIR":                filepath.Join(root, "tmp"),
-		"USERPROFILE":           filepath.Join(root, "userprofile"),
-		"XDG_CACHE_HOME":        filepath.Join(root, "xdg-cache"),
-		"XDG_CONFIG_HOME":       filepath.Join(root, "xdg-config"),
+		"APPDATA":             filepath.Join(root, "appdata"),
+		"GIT_AUTHOR_DATE":     "2001-02-03T04:05:06Z",
+		"GIT_COMMITTER_DATE":  "2001-02-03T04:05:06Z",
+		"GIT_CONFIG_GLOBAL":   globalConfig,
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_TERMINAL_PROMPT": "0",
+		"HOME":                filepath.Join(root, "home"),
+		"LANG":                "C",
+		"LC_ALL":              "C",
+		"LOCALAPPDATA":        filepath.Join(root, "local-appdata"),
+		"TEMP":                filepath.Join(root, "tmp"),
+		"TMP":                 filepath.Join(root, "tmp"),
+		"TMPDIR":              filepath.Join(root, "tmp"),
+		"USERPROFILE":         filepath.Join(root, "userprofile"),
+		"XDG_CACHE_HOME":      filepath.Join(root, "xdg-cache"),
+		"XDG_CONFIG_HOME":     filepath.Join(root, "xdg-config"),
 	}
 	if runtime.GOOS == "windows" {
 		if value, ok := os.LookupEnv("Path"); ok {
@@ -88,7 +89,7 @@ func newProcessEnv(t *testing.T, root string) processEnv {
 	} else if value, ok := os.LookupEnv("PATH"); ok {
 		values["PATH"] = value
 	}
-	return processEnv{values: values}
+	return processEnv{values: values, root: root}
 }
 
 func (e processEnv) list() []string {
@@ -110,33 +111,7 @@ func (e processEnv) with(key, value string) processEnv {
 		values[existingKey] = existingValue
 	}
 	values[key] = value
-	return processEnv{values: values}
-}
-
-func (e processEnv) without(keys ...string) processEnv {
-	values := make(map[string]string, len(e.values))
-	for existingKey, existingValue := range e.values {
-		values[existingKey] = existingValue
-	}
-	for _, key := range keys {
-		delete(values, key)
-	}
-	return processEnv{values: values}
-}
-
-func (e processEnv) braidCacheDir() string {
-	return e.values["BRAID_LOCAL_CACHE_DIR"]
-}
-
-func (e processEnv) defaultBraidCacheDir() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return filepath.Join(e.values["HOME"], "Library", "Caches", "braid")
-	case "windows":
-		return filepath.Join(e.values["LOCALAPPDATA"], "braid")
-	default:
-		return filepath.Join(e.values["XDG_CACHE_HOME"], "braid")
-	}
+	return processEnv{values: values, root: e.root}
 }
 
 type commandResult struct {
@@ -344,6 +319,24 @@ func assertConfigRaw(t *testing.T, repo string, mirrors map[string]configMirror)
 func cachePath(cacheDir, url string) string {
 	sum := sha256.Sum256([]byte(url))
 	return filepath.Join(cacheDir, hex.EncodeToString(sum[:]))
+}
+
+func repositoryCachePath(t *testing.T, repo, localPath string, m configMirror) string {
+	t.Helper()
+	cacheDir := filepath.Join(processWorkingDir(t, repo), ".git", "braid", "cache")
+	return filepath.Join(cacheDir, mirrorCacheID(localPath, m)+".git")
+}
+
+func mirrorCacheID(localPath string, m configMirror) string {
+	tracking := "revision"
+	if m.Branch != "" {
+		tracking = m.Branch
+	} else if m.Tag != "" {
+		tracking = m.Tag
+	}
+	parts := []string{m.URL, localPath, m.Path, tracking, m.Branch, m.Tag}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:16])
 }
 
 func remoteName(tracking, localPath string) string {

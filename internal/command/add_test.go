@@ -178,7 +178,7 @@ func TestAddCommandGlobalVerboseTracesWorktreeAndCacheGit(t *testing.T) {
 
 	repo := initDownstream(t)
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Setenv("BRAID_GLOBAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 
 	var stdout, stderr bytes.Buffer

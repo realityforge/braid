@@ -17,9 +17,9 @@ func TestParseCommands(t *testing.T) {
 	}{
 		{
 			name: "add branch mirror",
-			args: []string{"--verbose", "--cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib", "--no-commit"},
+			args: []string{"--verbose", "--global-cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib", "--no-commit"},
 			want: Invocation{
-				Global:  GlobalOptions{CacheDir: ".cache", CacheDirSet: true, Verbose: true},
+				Global:  GlobalOptions{GlobalCacheDir: ".cache", GlobalCacheDirSet: true, Verbose: true},
 				Command: CommandAdd,
 				Add: AddOptions{
 					URL:        "https://example.test/repo.git",
@@ -185,10 +185,12 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "global verbose after command", args: []string{"add", "url", "--verbose"}, want: "unknown flag for add: --verbose"},
 		{name: "global verbose short after command", args: []string{"pull", "vendor/repo", "-v"}, want: "unknown flag for pull: -v"},
 		{name: "global quiet after command", args: []string{"add", "url", "--quiet"}, want: "unknown flag for add: --quiet"},
-		{name: "cache flags conflict", args: []string{"--no-cache", "--cache-dir", "cache", "version"}, want: "--no-cache and --cache-dir cannot be used together"},
+		{name: "global cache flags conflict", args: []string{"--no-cache", "--global-cache-dir", "cache", "version"}, want: "--no-cache and --global-cache-dir cannot be used together"},
+		{name: "old cache dir flag", args: []string{"--cache-dir", "cache", "version"}, want: "--cache-dir has been replaced by --global-cache-dir"},
+		{name: "old cache dir equals flag", args: []string{"--cache-dir=cache", "version"}, want: "--cache-dir has been replaced by --global-cache-dir"},
 		{name: "quiet verbose conflict", args: []string{"--quiet", "--verbose", "version"}, want: "--quiet and --verbose cannot be used together"},
 		{name: "verbose quiet conflict", args: []string{"--verbose", "--quiet", "version"}, want: "--quiet and --verbose cannot be used together"},
-		{name: "empty cache dir", args: []string{"--cache-dir=", "version"}, want: "--cache-dir requires a non-empty value"},
+		{name: "empty global cache dir", args: []string{"--global-cache-dir=", "version"}, want: "--global-cache-dir requires a non-empty value"},
 		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
 		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
@@ -305,10 +307,10 @@ func TestHelpParsing(t *testing.T) {
 }
 
 func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
-	if strings.Contains(Usage(), "usage: braid [--no-cache | --cache-dir <path>] <command> [options]") {
+	if strings.Contains(Usage(), "usage: braid [--no-cache | --global-cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage still contains old global syntax:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "usage: braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]") {
+	if !strings.Contains(Usage(), "usage: braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage missing global output flag syntax:\n%s", Usage())
 	}
 	if !strings.Contains(Usage(), "  pull      Pull one mirror or every eligible mirror") {

@@ -64,7 +64,7 @@ func (h UpdateHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	git := h.updateGit(repo, inv, stderr)
 	processGit := h.processRepoPathGit(repo, inv, stderr)
 	progress := newProgressReporter(stderr, inv.Global.Quiet)
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,11 @@ func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoCon
 	}
 
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m, verbose, progress, trace); err != nil {
+		var requestedRevisions []string
+		if options.Revision != "" {
+			requestedRevisions = append(requestedRevisions, options.Revision)
+		}
+		if err := fetchCache(ctx, cache, m, verbose, progress, trace, requestedRevisions...); err != nil {
 			return updateResult{}, err
 		}
 	}
@@ -205,7 +209,7 @@ func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoCon
 		return git.RemoteRemove(ctx, m.Remote())
 	}
 
-	if err := fetchMirror(ctx, git, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		_ = cleanupRemote()
 		return updateResult{}, err
 	}
@@ -221,7 +225,7 @@ func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoCon
 		_ = cleanupRemote()
 		return updateResult{}, err
 	}
-	newRevision, err := resolveUpdateRevision(ctx, git, m, options.Revision)
+	newRevision, err := resolveUpdateRevision(ctx, git, cache, m, options.Revision)
 	if err != nil {
 		_ = checkProgress.Abort()
 		_ = cleanupRemote()
@@ -424,9 +428,9 @@ func applyUpdateStrategy(m *mirror.Mirror, options cli.UpdateOptions) {
 	}
 }
 
-func resolveUpdateRevision(ctx context.Context, git UpdateGit, m mirror.Mirror, requested string) (string, error) {
+func resolveUpdateRevision(ctx context.Context, git UpdateGit, cache CacheConfig, m mirror.Mirror, requested string) (string, error) {
 	if requested != "" {
-		return git.RevParse(ctx, requested+"^{commit}")
+		return git.RevParse(ctx, cacheResolveRequestedRevision(cache, m, requested)+"^{commit}")
 	}
 	return resolveAddRevision(ctx, git, m, "")
 }

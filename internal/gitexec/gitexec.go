@@ -597,6 +597,11 @@ func (g Git) Init(ctx context.Context) error {
 	return err
 }
 
+func (g Git) InitBare(ctx context.Context, dir string) error {
+	_, err := g.RunOK(ctx, "init", "--bare", dir)
+	return err
+}
+
 func (g Git) UpdateRef(ctx context.Context, args ...string) error {
 	gitArgs := append([]string{"update-ref"}, args...)
 	_, err := g.RunOK(ctx, gitArgs...)

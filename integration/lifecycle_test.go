@@ -28,7 +28,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 
 	localPath := "vendor/lib with spaces"
 	remote := remoteName("main", localPath)
-	cacheRemoteURL := cachePath(env.braidCacheDir(), upstream)
+	cacheRemoteURL := repositoryCachePath(t, downstream, localPath, configMirror{URL: upstream, Branch: "main", Path: "lib dir"})
 
 	add := runBraid(t, env, downstream, braid, "add", upstream, localPath, "--path", "lib dir")
 	assertExit(t, add, 0)
@@ -52,6 +52,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertExit(t, setup, 0)
 	assertEmpty(t, "setup stdout", setup.stdout)
 	assertProgress(t, setup.stderr,
+		"Braid: updated cache for mirror "+localPath,
 		"Braid: setting up mirror remote "+localPath,
 		"Braid: set up mirror remote "+localPath,
 	)
@@ -66,6 +67,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertExit(t, setupForce, 0)
 	assertEmpty(t, "setup force stdout", setupForce.stdout)
 	assertProgress(t, setupForce.stderr,
+		"Braid: updated cache for mirror "+localPath,
 		"Braid: setting up mirror remote "+localPath,
 		"Braid: set up mirror remote "+localPath,
 	)

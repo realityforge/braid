@@ -32,7 +32,7 @@ func TestExecutableBashCompletion(t *testing.T) {
 	globalFlags := completeExecutable(t, env, root, braid, "--")
 	assertCompletionCandidate(t, globalFlags, "--verbose")
 	assertCompletionCandidate(t, globalFlags, "--quiet")
-	assertCompletionCandidate(t, globalFlags, "--cache-dir")
+	assertCompletionCandidate(t, globalFlags, "--global-cache-dir")
 
 	noRepoMirrors := runBraid(t, env, root, braid, "__complete", "bash", "--", "status", "")
 	assertResult(t, noRepoMirrors, 0, "", "")

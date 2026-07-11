@@ -32,7 +32,7 @@ func (h StatusHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache Cache
 		}
 	}()
 
-	if err := fetchMirror(ctx, git, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		return err
 	}
 	baseRevision, err := git.RevParse(ctx, m.Revision+"^{commit}")

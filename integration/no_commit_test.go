@@ -80,7 +80,7 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	assertContains(t, remove.stdout, "Braid: staged removal of mirror 'vendor/basic'")
 	assertPathMissing(t, downstream, "vendor/basic")
 	assertConfigRaw(t, downstream, map[string]configMirror{})
-	assertRemoteURL(t, env, downstream, remote, cachePath(env.braidCacheDir(), upstream))
+	assertRemoteURL(t, env, downstream, remote, repositoryCachePath(t, downstream, "vendor/basic", configMirror{URL: upstream, Branch: "main"}))
 	assertCachedNames(t, env, downstream, ".braids.json", "remove-staged.txt", "vendor/basic/README.md")
 	if got := gitOutput(t, env, downstream, "rev-parse", "HEAD"); got != removeHead {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, removeHead)

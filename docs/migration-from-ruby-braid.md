@@ -154,7 +154,7 @@ Migration impact:
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
 | Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
 | Quiet flag | No global quiet flag | Global `--quiet` before the command; incompatible with `--verbose` | Use `braid --quiet <command> ...` in automation that wants data, warnings, errors, and recovery output without progress or informational chatter. |
-| Cache flags | Environment variables only | Global `--no-cache` or `--cache-dir <path>` before the command, plus environment variables | Put cache flags before the command name. |
+| Cache flags | Environment variables only | Global `--no-cache` or `--global-cache-dir <path>` before the command, plus environment variables | Put cache flags before the command name. |
 | Bash completion | No documented generated completion command | `braid completion bash` prints a Bash completion script | Load it from shell startup or install it in the Bash completion directory to complete global options, commands, command options, and configured mirror paths. |
 | `update --head` | Accepted as an option, then errors with a deprecation message | Unknown flag for `pull` and its aliases | Remove it; use `--branch`, `--tag`, or `--revision` with an explicit mirror path. |
 | `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a path updates branch/tag mirrors in lexicographic path order, skips revision-locked mirrors, and reports skipped paths; `update` and `up` behave the same way | Locked mirrors are no longer touched by all-update. |
@@ -222,21 +222,30 @@ Migration impact:
 Both tools enable a local mirror cache by default, but the cache layout changed.
 
 Ruby Braid defaults to `~/.braid/cache` and derives cache child paths by
-sanitizing the upstream URL. Current Go Braid defaults to the operating system
-user cache directory with a `braid` child directory and derives cache child paths
-from a SHA-256 hash of the upstream URL.
+sanitizing the upstream URL. Current Go Braid defaults to repository-local
+per-mirror bare caches under `.git/braid/cache` and derives cache child paths
+from a SHA-256-derived key covering the upstream URL, local path, upstream path,
+and tracking mode.
 
 Current controls:
 
 - `BRAID_USE_LOCAL_CACHE=false` or `--no-cache` disables the cache.
-- `BRAID_LOCAL_CACHE_DIR=<path>` or `--cache-dir <path>` selects the cache
-  directory.
-- `--no-cache` and `--cache-dir` cannot be used together.
+- `BRAID_GLOBAL_CACHE_DIR=<path>` or `--global-cache-dir <path>` selects a shared
+  full-cache directory.
+- `--no-cache` and `--global-cache-dir` cannot be used together.
+- `BRAID_LOCAL_CACHE_DIR` and `--cache-dir` have been replaced by
+  `BRAID_GLOBAL_CACHE_DIR` and `--global-cache-dir`.
 
 Migration impact:
 
 - Do not depend on the old `~/.braid/cache` layout or old cache path names.
-- Braid-managed remotes created by `setup` may point at different cache paths.
+- Braid-managed remotes created by `setup` may point at repository-local cache
+  paths under `.git/braid/cache`.
+- Repository-local caches are disposable. If one is deleted, Braid can rebuild it
+  only while upstream still serves the recorded revisions from `.braids.json`.
+  Shallow repository-local caches can also make Git report the downstream
+  repository as shallow because Braid mirror commits are recorded in
+  `.git/shallow`.
 - Tag mirrors work when the Go cache is disabled. Ruby Braid could not retrieve
   tag revisions with the cache disabled.
 
@@ -313,8 +322,9 @@ Known output differences include:
    result with expected mirror state.
 6. Review `.braids.json` for unknown fields, unsafe paths, and remote-name
    collisions.
-7. Decide whether the new default cache location is acceptable; set
-   `BRAID_LOCAL_CACHE_DIR` or use `--cache-dir` if you need a controlled path.
+7. Decide whether repository-local caches are acceptable; set
+   `BRAID_GLOBAL_CACHE_DIR` or use `--global-cache-dir` if you need a controlled
+   shared full-cache path.
 8. For push workflows, make sure local mirror edits are committed downstream
    before `braid push` or `braid sync`.
 9. Prefer `braid sync` for the push-then-pull workflow once the team has

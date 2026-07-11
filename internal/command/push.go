@@ -84,7 +84,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	}
 	progress := newProgressReporter(stderr, global.Quiet)
 
-	cache, err := runtimeCache(global)
+	cache, err := runtimeCacheForRepo(ctx, repo, global, global.Verbose, stderr)
 	if err != nil {
 		return pushResult{}, err
 	}
@@ -104,7 +104,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 			}
 		}()
 	}
-	if err := fetchMirror(ctx, git, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		return pushResult{}, err
 	}
 

@@ -40,7 +40,7 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--verbose")
 	assertCandidate(t, candidates, "--quiet")
 	assertCandidate(t, candidates, "--no-cache")
-	assertCandidate(t, candidates, "--cache-dir")
+	assertCandidate(t, candidates, "--global-cache-dir")
 
 	candidates = completeCandidates(t, dir, "--verbose", "")
 	assertNoCandidate(t, candidates, "--verbose")
@@ -48,9 +48,9 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertNoCandidate(t, candidates, "--quiet")
 	assertCandidate(t, candidates, "--no-cache")
 
-	candidates = completeCandidates(t, dir, "--cache-dir", "cache", "")
+	candidates = completeCandidates(t, dir, "--global-cache-dir", "cache", "")
 	assertNoCandidate(t, candidates, "--no-cache")
-	assertCandidate(t, candidates, "--cache-dir")
+	assertCandidate(t, candidates, "--global-cache-dir")
 }
 
 func TestCompleteCommandOptions(t *testing.T) {
@@ -169,11 +169,11 @@ func TestCompleteFilesystemContexts(t *testing.T) {
 		t.Fatalf("write README: %v", err)
 	}
 
-	candidates := completeCandidates(t, dir, "--cache-dir", "ca")
+	candidates := completeCandidates(t, dir, "--global-cache-dir", "ca")
 	assertCandidate(t, candidates, "cache/")
 
-	candidates = completeCandidates(t, dir, "--cache-dir=ca")
-	assertCandidate(t, candidates, "--cache-dir=cache/")
+	candidates = completeCandidates(t, dir, "--global-cache-dir=ca")
+	assertCandidate(t, candidates, "--global-cache-dir=cache/")
 
 	candidates = completeCandidates(t, dir, "add", "https://example.test/repo.git", "ven")
 	assertCandidate(t, candidates, "vendor/")
