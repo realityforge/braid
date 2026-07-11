@@ -64,7 +64,7 @@ func TestMirrorRefsAndRemote(t *testing.T) {
 	if got, want := tag.Remote(), "v1_braid_mytool"; got != want {
 		t.Fatalf("Remote = %q, want %q", got, want)
 	}
-	if got, want := tag.LocalRef(), "tags/v1"; got != want {
+	if got, want := tag.LocalRef(), "refs/remotes/v1_braid_mytool/tags/v1"; got != want {
 		t.Fatalf("LocalRef = %q, want %q", got, want)
 	}
 	if got, err := tag.RemoteRef(); err != nil || got != "+refs/tags/v1" {

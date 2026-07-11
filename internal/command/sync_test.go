@@ -1106,6 +1106,28 @@ func TestSyncCommandKeepRetainsTemporaryRemote(t *testing.T) {
 	assertGitRemote(t, repo, "main_braid_vendor_basic")
 }
 
+func TestSyncCommandKeepRetainsDistinctTagTrackingRefs(t *testing.T) {
+	ctx := context.Background()
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a\n")
+	revisionA := testutil.CommitAll(t, upstreamA, "a")
+	testutil.Git(t, upstreamA, "tag", "v1")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b\n")
+	revisionB := testutil.CommitAll(t, upstreamB, "b")
+	testutil.Git(t, upstreamB, "tag", "v1")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--tag", "v1"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--tag", "v1"})
+
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "--keep", "vendor/a", "vendor/b"})
+
+	git := gitexec.New(repo, false, nil)
+	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_vendor_a/tags/v1", revisionA)
+	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_vendor_b/tags/v1", revisionB)
+	assertRefMissing(t, ctx, git, "refs/tags/v1")
+}
+
 func assertNoGitRemote(t *testing.T, repo, remote string) {
 	t.Helper()
 	remotes := strings.Fields(testutil.Git(t, repo, "remote").Stdout)

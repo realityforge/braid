@@ -296,6 +296,31 @@ func TestFetchMirrorFromRepositoryLocalCacheFetchesBraidRefs(t *testing.T) {
 	}
 }
 
+func TestFetchTagMirrorFromRepositoryLocalCacheUsesRemoteTrackingRef(t *testing.T) {
+	ctx := context.Background()
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	revision := testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "tag", "v1")
+	repo := testutil.InitRepo(t)
+	cache := repositoryLocalCacheForTest(t, ctx, repo)
+	m := mirror.Mirror{Path: "vendor/basic", URL: upstream, Tag: "v1", Revision: revision}
+
+	if err := (MirrorObjectCache{Config: cache}).Hydrate(ctx, m); err != nil {
+		t.Fatalf("Hydrate returned error: %v", err)
+	}
+	git := gitexec.New(repo, false, nil)
+	if err := setupOne(ctx, git, m, true, cache); err != nil {
+		t.Fatalf("setupOne returned error: %v", err)
+	}
+	if err := fetchMirror(ctx, git, cache, m, progressReporter{}); err != nil {
+		t.Fatalf("fetchMirror returned error: %v", err)
+	}
+
+	assertRefCommit(t, ctx, git, m.LocalRef(), revision)
+	assertRefMissing(t, ctx, git, "refs/tags/v1")
+}
+
 func TestAcquireCacheLockTimesOut(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), "mirror.git.lock")
 	if err := os.Mkdir(lockPath, 0o700); err != nil {
@@ -323,17 +348,6 @@ func repositoryLocalCacheForTest(t *testing.T, ctx context.Context, repo string)
 		t.Fatalf("ResolveRepositoryCache returned error: %v", err)
 	}
 	return cache
-}
-
-func assertRefCommit(t *testing.T, ctx context.Context, git gitexec.Git, ref, want string) {
-	t.Helper()
-	got, err := git.RevParse(ctx, ref+"^{commit}")
-	if err != nil {
-		t.Fatalf("rev-parse %s: %v", ref, err)
-	}
-	if got != want {
-		t.Fatalf("%s = %s, want %s", ref, got, want)
-	}
 }
 
 func assertPathIsDir(t *testing.T, path string) {

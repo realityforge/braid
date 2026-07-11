@@ -74,7 +74,7 @@ func (m Mirror) LocalRef() string {
 	case m.Branch != "":
 		return m.Remote() + "/" + m.Branch
 	case m.Tag != "":
-		return "tags/" + m.Tag
+		return "refs/remotes/" + m.Remote() + "/tags/" + m.Tag
 	default:
 		return m.Revision
 	}
