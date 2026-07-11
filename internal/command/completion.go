@@ -73,6 +73,7 @@ var commandCompletionFlags = map[string][]completionFlag{
 		{long: "--revision", short: "-r", value: true},
 		{long: "--path", short: "-p", value: true},
 		{long: "--no-commit"},
+		{long: "--partial-clone"},
 	},
 	string(cli.CommandPull): {
 		{long: "--branch", short: "-b", value: true},
@@ -102,7 +103,8 @@ var commandCompletionFlags = map[string][]completionFlag{
 	string(cli.CommandSetup): {
 		{long: "--force", short: "-f"},
 	},
-	string(cli.CommandStatus): {},
+	string(cli.CommandStatus):        {},
+	string(cli.CommandUpgradeConfig): {{long: "--no-commit"}},
 }
 
 var rootCompletionCommands = []string{
@@ -116,6 +118,7 @@ var rootCompletionCommands = []string{
 	string(cli.CommandStatus),
 	string(cli.CommandVersion),
 	string(cli.CommandCompletion),
+	string(cli.CommandUpgradeConfig),
 	"help",
 }
 

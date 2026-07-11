@@ -88,6 +88,19 @@ type RemoveGit interface {
 	RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error
 }
 
+type UpgradeConfigGit interface {
+	Git
+	RevParse(context.Context, string) (string, error)
+	UpdateRef(context.Context, ...string) error
+	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
+	BlockingOperation(context.Context) (string, bool, error)
+	HashBytes(context.Context, []byte) (gitexec.TreeItem, error)
+	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
+	CommitTreeWithTemporaryIndex(context.Context, string, string) (bool, error)
+	RestorePathspecsFromHead(context.Context, ...string) error
+	RestorePathspecsFromTree(context.Context, string, bool, bool, ...string) error
+}
+
 type PushGit interface {
 	UpdateGit
 	ConfigGet(context.Context, ...string) (string, bool, error)
@@ -135,16 +148,17 @@ func NewApp() cli.App {
 func NewAppWithOptions(options Options) cli.App {
 	app := cli.New()
 	app.Handler = map[cli.Command]cli.Handler{
-		cli.CommandAdd:        AddHandler{Options: options},
-		cli.CommandPull:       UpdateHandler{Options: options},
-		cli.CommandRemove:     RemoveHandler{Options: options},
-		cli.CommandDiff:       DiffHandler{Options: options},
-		cli.CommandPush:       PushHandler{Options: options},
-		cli.CommandSync:       SyncHandler{Options: options},
-		cli.CommandSetup:      SetupHandler{Options: options},
-		cli.CommandStatus:     StatusHandler{Options: options},
-		cli.CommandCompletion: CompletionHandler{Options: options},
-		cli.CommandComplete:   CompleteHandler{Options: options},
+		cli.CommandAdd:           AddHandler{Options: options},
+		cli.CommandPull:          UpdateHandler{Options: options},
+		cli.CommandRemove:        RemoveHandler{Options: options},
+		cli.CommandDiff:          DiffHandler{Options: options},
+		cli.CommandPush:          PushHandler{Options: options},
+		cli.CommandSync:          SyncHandler{Options: options},
+		cli.CommandSetup:         SetupHandler{Options: options},
+		cli.CommandStatus:        StatusHandler{Options: options},
+		cli.CommandCompletion:    CompletionHandler{Options: options},
+		cli.CommandComplete:      CompleteHandler{Options: options},
+		cli.CommandUpgradeConfig: UpgradeConfigHandler{Options: options},
 	}
 	return app
 }
@@ -210,8 +224,10 @@ func Preflight(ctx context.Context, command cli.Command, inv cli.Invocation, opt
 			return RepoContext{}, err
 		}
 	}
-	if _, err := config.Load(root); err != nil {
-		return RepoContext{}, err
+	if command != cli.CommandUpgradeConfig {
+		if _, err := config.Load(root); err != nil {
+			return RepoContext{}, err
+		}
 	}
 
 	return repo, nil
@@ -357,6 +373,8 @@ func RequirementsFor(command cli.Command) Requirements {
 	case cli.CommandPull:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandRemove:
+		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
+	case cli.CommandUpgradeConfig:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}
 	case cli.CommandSync:
 		return Requirements{Git: true, Root: true, Config: true, MayWrite: true}

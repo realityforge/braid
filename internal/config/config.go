@@ -15,7 +15,7 @@ import (
 
 const (
 	FileName       = ".braids.json"
-	CurrentVersion = 1
+	CurrentVersion = 2
 )
 
 type Config struct {
@@ -71,7 +71,7 @@ func Parse(data []byte) (Config, error) {
 		return Config{}, fmt.Errorf("config version %d is newer than supported version %d", raw.ConfigVersion, CurrentVersion)
 	}
 	if raw.ConfigVersion < CurrentVersion {
-		return Config{}, fmt.Errorf("config version %d is unsupported; expected version %d", raw.ConfigVersion, CurrentVersion)
+		return Config{}, fmt.Errorf("config version %d requires upgrade; run %q", raw.ConfigVersion, "braid upgrade-config")
 	}
 	if raw.Mirrors == nil {
 		return Config{}, errors.New("missing mirrors")
@@ -168,11 +168,12 @@ func (c Config) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("mirror %q: %w", localPath, err)
 		}
 		raw.Mirrors[localPath] = writeMirror{
-			URL:      m.URL,
-			Branch:   m.Branch,
-			Path:     m.RemotePath,
-			Tag:      m.Tag,
-			Revision: m.Revision,
+			URL:          m.URL,
+			Branch:       m.Branch,
+			Path:         m.RemotePath,
+			Tag:          m.Tag,
+			Revision:     m.Revision,
+			PartialClone: m.PartialClone,
 		}
 	}
 
@@ -189,6 +190,15 @@ type rawConfig struct {
 }
 
 type readMirror struct {
+	URL          string `json:"url"`
+	Branch       string `json:"branch"`
+	Path         string `json:"path"`
+	Tag          string `json:"tag"`
+	Revision     string `json:"revision"`
+	PartialClone bool   `json:"partial_clone"`
+}
+
+type readMirrorV1 struct {
 	URL      string `json:"url"`
 	Branch   string `json:"branch"`
 	Path     string `json:"path"`
@@ -202,11 +212,12 @@ type writeConfig struct {
 }
 
 type writeMirror struct {
-	URL      string `json:"url"`
-	Branch   string `json:"branch,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Tag      string `json:"tag,omitempty"`
-	Revision string `json:"revision"`
+	URL          string `json:"url"`
+	Branch       string `json:"branch,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Tag          string `json:"tag,omitempty"`
+	Revision     string `json:"revision"`
+	PartialClone bool   `json:"partial_clone,omitempty"`
 }
 
 func parseMirror(localPath string, raw json.RawMessage) (mirror.Mirror, error) {
@@ -217,12 +228,13 @@ func parseMirror(localPath string, raw json.RawMessage) (mirror.Mirror, error) {
 		return mirror.Mirror{}, err
 	}
 	m := mirror.Mirror{
-		Path:       localPath,
-		URL:        decoded.URL,
-		Branch:     decoded.Branch,
-		RemotePath: decoded.Path,
-		Tag:        decoded.Tag,
-		Revision:   decoded.Revision,
+		Path:         localPath,
+		URL:          decoded.URL,
+		Branch:       decoded.Branch,
+		RemotePath:   decoded.Path,
+		Tag:          decoded.Tag,
+		Revision:     decoded.Revision,
+		PartialClone: decoded.PartialClone,
 	}
 	if err := validateMirror(m); err != nil {
 		return mirror.Mirror{}, err
@@ -243,5 +255,39 @@ func validateMirror(m mirror.Mirror) error {
 	if m.Branch != "" && m.Tag != "" {
 		return errors.New("cannot specify both branch and tag")
 	}
+	if m.PartialClone && m.RemotePath == "" {
+		return errors.New("partial clone requires path")
+	}
 	return nil
+}
+
+func UpgradeV1(data []byte) (Config, error) {
+	var raw rawConfig
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&raw); err != nil {
+		return Config{}, err
+	}
+	if raw.ConfigVersion != 1 {
+		return Config{}, fmt.Errorf("expected config version 1, got %d", raw.ConfigVersion)
+	}
+	if raw.Mirrors == nil {
+		return Config{}, errors.New("missing mirrors")
+	}
+	cfg := Empty()
+	for localPath, rawMirror := range raw.Mirrors {
+		var decoded readMirrorV1
+		decoder := json.NewDecoder(bytes.NewReader(rawMirror))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&decoded); err != nil {
+			return Config{}, fmt.Errorf("mirror %q: %w", localPath, err)
+		}
+		parsed := mirror.Mirror{Path: strings.TrimRight(localPath, "/"), URL: decoded.URL, Branch: decoded.Branch, RemotePath: decoded.Path, Tag: decoded.Tag, Revision: decoded.Revision}
+		err := validateMirror(parsed)
+		if err != nil {
+			return Config{}, fmt.Errorf("mirror %q: %w", localPath, err)
+		}
+		cfg.Mirrors[parsed.Path] = parsed
+	}
+	return cfg, nil
 }

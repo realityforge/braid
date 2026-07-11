@@ -316,7 +316,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "  pull      Pull one mirror or every eligible mirror") {
 		t.Fatalf("top-level usage missing pull command:\n%s", Usage())
 	}
-	if strings.Contains(Usage(), "  update") || strings.Contains(Usage(), "  up") {
+	if strings.Contains(Usage(), "  update") || strings.Contains(Usage(), "\n  up ") {
 		t.Fatalf("top-level usage exposes update aliases:\n%s", Usage())
 	}
 	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull mirrors") {
@@ -328,7 +328,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "__complete") {
 		t.Fatalf("top-level usage exposes hidden completion callback:\n%s", Usage())
 	}
-	if got, want := CommandUsage(CommandAdd), "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit]\n"; got != want {
+	if got, want := CommandUsage(CommandAdd), "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit] [--partial-clone]\n"; got != want {
 		t.Fatalf("CommandUsage(add) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"; got != want {

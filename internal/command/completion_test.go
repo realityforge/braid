@@ -226,7 +226,7 @@ func assertNoCandidate(t *testing.T, candidates []string, unwanted string) {
 func writeCompletionConfig(t *testing.T, repo string) {
 	t.Helper()
 	data := []byte(`{
-  "config_version": 1,
+  "config_version": 2,
   "mirrors": {
     "apps/web/vendor/local": {
       "url": "https://example.test/local.git",

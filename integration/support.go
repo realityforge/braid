@@ -280,16 +280,17 @@ type configFile struct {
 }
 
 type configMirror struct {
-	URL      string `json:"url"`
-	Branch   string `json:"branch,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Tag      string `json:"tag,omitempty"`
-	Revision string `json:"revision"`
+	URL          string `json:"url"`
+	Branch       string `json:"branch,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Tag          string `json:"tag,omitempty"`
+	Revision     string `json:"revision"`
+	PartialClone bool   `json:"partial_clone,omitempty"`
 }
 
 func expectedConfigRaw(t *testing.T, mirrors map[string]configMirror) string {
 	t.Helper()
-	data, err := json.MarshalIndent(configFile{ConfigVersion: 1, Mirrors: mirrors}, "", "  ")
+	data, err := json.MarshalIndent(configFile{ConfigVersion: 2, Mirrors: mirrors}, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal expected config: %v", err)
 	}
@@ -311,8 +312,8 @@ func assertConfigRaw(t *testing.T, repo string, mirrors map[string]configMirror)
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("parse .braids.json: %v", err)
 	}
-	if parsed.ConfigVersion != 1 || len(parsed.Mirrors) != len(mirrors) {
-		t.Fatalf(".braids.json semantic parse = %#v, want version 1 and %d mirrors", parsed, len(mirrors))
+	if parsed.ConfigVersion != 2 || len(parsed.Mirrors) != len(mirrors) {
+		t.Fatalf(".braids.json semantic parse = %#v, want version 2 and %d mirrors", parsed, len(mirrors))
 	}
 }
 

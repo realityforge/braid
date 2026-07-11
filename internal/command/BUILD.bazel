@@ -19,6 +19,7 @@ go_library(
         "status.go",
         "sync.go",
         "update.go",
+		"upgrade_config.go",
     ],
     importpath = "braid/internal/command",
     visibility = ["//visibility:public"],

@@ -116,7 +116,7 @@ func TestConfigRequirements(t *testing.T) {
 func configRootWithModernConfig(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	data := []byte(`{"config_version":1,"mirrors":{"vendor/repo":{"url":"u","branch":"main","revision":"r"}}}`)
+	data := []byte(`{"config_version":2,"mirrors":{"vendor/repo":{"url":"u","branch":"main","revision":"r"}}}`)
 	if err := os.WriteFile(filepath.Join(root, ".braids.json"), data, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

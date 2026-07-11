@@ -113,7 +113,7 @@ func TestExecutableScopedAddRemovePrecheckBlockers(t *testing.T) {
 			},
 			dirty: func(t *testing.T, downstream string) {
 				t.Helper()
-				writeFile(t, downstream, ".braids.json", "{\"config_version\":1,\"mirrors\":{}}\n")
+				writeFile(t, downstream, ".braids.json", "{\"config_version\":2,\"mirrors\":{}}\n")
 			},
 			args:    []string{"add", "$upstream", "vendor/basic"},
 			wantErr: "local changes are present in .braids.json",

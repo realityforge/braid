@@ -150,7 +150,7 @@ Migration impact:
 
 | Area | Ruby Braid | Current Go Braid | Migration impact |
 | --- | --- | --- | --- |
-| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; same other core commands, plus `sync`; no `upgrade-config` | Prefer `pull` in new docs and scripts. Scripts using `upgrade-config` must run Ruby Braid before migration or be removed. |
+| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; same other core commands, plus `sync`; `upgrade-config` migrates versioned JSON config | Prefer `pull` in new docs and scripts. Use Go Braid's `upgrade-config` only for `.braids.json` version 1 to 2 migration. |
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
 | Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
 | Quiet flag | No global quiet flag | Global `--quiet` before the command; incompatible with `--verbose` | Use `braid --quiet <command> ...` in automation that wants data, warnings, errors, and recovery output without progress or informational chatter. |
@@ -165,7 +165,8 @@ Migration impact:
 ## Configuration Compatibility
 
 The Go tool supports only the modern `.braids.json` shape with
-`config_version: 1` and a `mirrors` object keyed by local mirror path.
+`config_version: 2` and a `mirrors` object keyed by local mirror path. Version 1
+JSON config can be migrated with `braid upgrade-config`.
 
 Supported mirror attributes remain:
 
@@ -174,12 +175,13 @@ Supported mirror attributes remain:
 - `tag`
 - `path`
 - `revision`
+- `partial_clone` (optional; requires `path`)
 
 Important differences:
 
 - Legacy `.braids` YAML/PStore config is not read or upgraded.
 - Older `.braids.json` layouts without `config_version` are not upgraded.
-- `upgrade-config` is not implemented.
+- `upgrade-config` does not migrate legacy `.braids` YAML/PStore data.
 - Unknown root fields and unknown mirror fields fail validation.
 - Missing `config_version`, missing `mirrors`, missing `url`, missing
   `revision`, or a mirror with both `branch` and `tag` fails validation.

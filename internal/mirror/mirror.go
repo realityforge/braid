@@ -10,20 +10,22 @@ import (
 var remoteUnsafeChars = regexp.MustCompile(`[^-A-Za-z0-9]`)
 
 type Options struct {
-	LocalPath  string
-	Branch     string
-	Tag        string
-	Revision   string
-	RemotePath string
+	LocalPath    string
+	Branch       string
+	Tag          string
+	Revision     string
+	RemotePath   string
+	PartialClone bool
 }
 
 type Mirror struct {
-	Path       string
-	URL        string
-	Branch     string
-	RemotePath string
-	Tag        string
-	Revision   string
+	Path         string
+	URL          string
+	Branch       string
+	RemotePath   string
+	Tag          string
+	Revision     string
+	PartialClone bool
 }
 
 func NewFromOptions(url string, options Options) (Mirror, error) {
@@ -33,6 +35,9 @@ func NewFromOptions(url string, options Options) (Mirror, error) {
 	if options.Tag != "" && options.Revision != "" {
 		return Mirror{}, errors.New("cannot specify both tag and revision")
 	}
+	if options.PartialClone && options.RemotePath == "" {
+		return Mirror{}, errors.New("partial clone requires path")
+	}
 
 	cleanURL := strings.TrimRight(url, "/")
 	localPath := cleanMirrorPath(options.LocalPath)
@@ -41,12 +46,13 @@ func NewFromOptions(url string, options Options) (Mirror, error) {
 	}
 
 	return Mirror{
-		Path:       localPath,
-		URL:        cleanURL,
-		Branch:     options.Branch,
-		RemotePath: strings.TrimRight(options.RemotePath, "/"),
-		Tag:        options.Tag,
-		Revision:   options.Revision,
+		Path:         localPath,
+		URL:          cleanURL,
+		Branch:       options.Branch,
+		RemotePath:   strings.TrimRight(options.RemotePath, "/"),
+		Tag:          options.Tag,
+		Revision:     options.Revision,
+		PartialClone: options.PartialClone,
 	}, nil
 }
 

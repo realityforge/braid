@@ -370,7 +370,7 @@ func TestRemoveCommandNoCommitReportsStagingFailure(t *testing.T) {
 func writeRemoveMirrorConfig(t *testing.T, repo string) {
 	t.Helper()
 	data := []byte(`{
-  "config_version": 1,
+  "config_version": 2,
   "mirrors": {
     "vendor/basic": {
       "url": "https://example.invalid/upstream.git",

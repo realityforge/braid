@@ -212,7 +212,24 @@ func setupOneWithProgress(ctx context.Context, git RemoteGit, m mirror.Mirror, f
 
 func setupMirrorRemote(ctx context.Context, git RemoteGit, m mirror.Mirror, cache CacheConfig) error {
 	remote := m.Remote()
-	return git.RemoteAdd(ctx, remote, cache.RemoteURL(m))
+	if err := git.RemoteAdd(ctx, remote, cache.RemoteURL(m)); err != nil {
+		return err
+	}
+	if m.PartialClone && cache.Enabled && cache.Mode == CacheModeRepositoryLocal {
+		if configurable, ok := git.(interface {
+			ConfigSet(context.Context, ...string) error
+		}); ok {
+			if err := configurable.ConfigSet(ctx, "remote."+remote+".promisor", "true"); err != nil {
+				return err
+			}
+			if err := configurable.ConfigSet(ctx, "remote."+remote+".partialclonefilter", "blob:none"); err != nil {
+				return err
+			}
+		} else {
+			return errors.New("git implementation cannot configure partial clone remote")
+		}
+	}
+	return nil
 }
 
 func validateConfigPaths(cfg config.Config) error {
