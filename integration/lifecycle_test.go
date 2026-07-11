@@ -49,31 +49,6 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertPathExists(t, filepath.Join(cacheRemoteURL, "HEAD"))
 	assertClean(t, env, downstream)
 
-	setup := runBraid(t, env, downstream, braid, "setup", localPath)
-	assertExit(t, setup, 0)
-	assertEmpty(t, "setup stdout", setup.stdout)
-	assertProgress(t, setup.stderr,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: setting up mirror remote "+localPath,
-		"Braid: set up mirror remote "+localPath,
-	)
-	assertRemoteURL(t, env, downstream, remote, cacheRemoteURL)
-
-	gitOK(t, env, downstream, "remote", "set-url", remote, "manual-url")
-	setupReuse := runBraid(t, env, downstream, braid, "setup", localPath)
-	assertResult(t, setupReuse, 0, "", "")
-	assertRemoteURL(t, env, downstream, remote, "manual-url")
-
-	setupForce := runBraid(t, env, downstream, braid, "setup", localPath, "--force")
-	assertExit(t, setupForce, 0)
-	assertEmpty(t, "setup force stdout", setupForce.stdout)
-	assertProgress(t, setupForce.stderr,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: setting up mirror remote "+localPath,
-		"Braid: set up mirror remote "+localPath,
-	)
-	assertRemoteURL(t, env, downstream, remote, cacheRemoteURL)
-
 	status := runBraid(t, env, downstream, braid, "status", localPath)
 	assertExit(t, status, 0)
 	assertProgress(t, status.stderr,

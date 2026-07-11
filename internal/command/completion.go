@@ -100,9 +100,6 @@ var commandCompletionFlags = map[string][]completionFlag{
 		{long: "--autostash"},
 		{long: "--keep"},
 	},
-	string(cli.CommandSetup): {
-		{long: "--force", short: "-f"},
-	},
 	string(cli.CommandStatus):        {},
 	string(cli.CommandUpgradeConfig): {{long: "--no-commit"}},
 }
@@ -114,7 +111,6 @@ var rootCompletionCommands = []string{
 	string(cli.CommandDiff),
 	string(cli.CommandPush),
 	string(cli.CommandSync),
-	string(cli.CommandSetup),
 	string(cli.CommandStatus),
 	string(cli.CommandVersion),
 	string(cli.CommandCompletion),
@@ -230,7 +226,7 @@ func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, command s
 		if len(state.positionals) == 1 {
 			return pathCandidates(h.Options.WorkDir, line.current, false, "")
 		}
-	case string(cli.CommandPull), string(cli.CommandRemove), string(cli.CommandDiff), string(cli.CommandPush), string(cli.CommandSetup), string(cli.CommandStatus):
+	case string(cli.CommandPull), string(cli.CommandRemove), string(cli.CommandDiff), string(cli.CommandPush), string(cli.CommandStatus):
 		if len(state.positionals) == 0 {
 			return h.mirrorPathCandidates(ctx, line.current, nil)
 		}

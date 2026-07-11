@@ -44,15 +44,6 @@ go_test(
 )
 
 go_test(
-    name = "configure_failure_command_test",
-    size = "medium",
-    srcs = ["setup_failure_test.go"],
-    data = ["//cmd/braid"],
-    embed = [":test_support"],
-    timeout = "short",
-)
-
-go_test(
     name = "scoped_state_test",
     size = "medium",
     srcs = ["scoped_state_test.go"],

@@ -199,7 +199,7 @@ func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoCon
 			return updateResult{}, err
 		}
 	}
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return updateResult{}, err
 	}
 	cleanupRemote := func() error {

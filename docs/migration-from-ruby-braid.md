@@ -15,7 +15,7 @@ Comparison baseline:
 
 The Go tool keeps the core modern Braid model: mirrors are recorded in
 `.braids.json`, mirror content is copied into the downstream repository, and the
-main workflows are `add`, `status`, `diff`, `pull`, `push`, `setup`, and
+main workflows are `add`, `status`, `diff`, `pull`, `push`, and
 `remove`. `pull` is the documented spelling for updating mirror content;
 `update` and `up` are accepted aliases. The differences below are the parts most
 likely to matter in day to day use or automation.
@@ -51,7 +51,7 @@ worktree.
 When a command takes a mirror path, the path is resolved relative to the
 directory where Braid was invoked and stored in `.braids.json` as a
 repo-root-relative path. Commands without a path, such as `braid status`,
-`braid diff`, `braid pull`, `braid sync`, and `braid setup`, still operate on
+`braid diff`, `braid pull`, and `braid sync`, still operate on
 the repository-wide mirror set.
 
 Migration impact:
@@ -150,7 +150,7 @@ Migration impact:
 
 | Area | Ruby Braid | Current Go Braid | Migration impact |
 | --- | --- | --- | --- |
-| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; same other core commands, plus `sync`; `upgrade-config` migrates versioned JSON config | Prefer `pull` in new docs and scripts. Use Go Braid's `upgrade-config` only for `.braids.json` version 1 to 2 migration. |
+| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; `setup` is removed; the other core commands remain, plus `sync`; `upgrade-config` migrates versioned JSON config | Remove `setup` from scripts, prefer `pull` in new docs and scripts, and use Go Braid's `upgrade-config` only for `.braids.json` version 1 to 2 migration. |
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
 | Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
 | Quiet flag | No global quiet flag | Global `--quiet` before the command; incompatible with `--verbose` | Use `braid --quiet <command> ...` in automation that wants data, warnings, errors, and recovery output without progress or informational chatter. |
@@ -160,7 +160,6 @@ Migration impact:
 | `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a path updates branch/tag mirrors in lexicographic path order, skips revision-locked mirrors, and reports skipped paths; `update` and `up` behave the same way | Locked mirrors are no longer touched by all-update. |
 | Strategy flags with no-path `update` | Accepted by the Ruby parser, with inconsistent all-mirror behavior | Rejected for no-path `pull` and its aliases | Pass a local path when changing branch, tag, or revision. |
 | `diff` pass-through | Arguments after `--` are passed to `git diff` | Same | Output formatting is not exact Ruby text parity. |
-| `setup --force` and command `--keep` | Supported | Supported where relevant | Remote cleanup behavior is broadly preserved. |
 
 ## Configuration Compatibility
 
@@ -241,8 +240,6 @@ Current controls:
 Migration impact:
 
 - Do not depend on the old `~/.braid/cache` layout or old cache path names.
-- Braid-managed remotes created by `setup` may point at repository-local cache
-  paths under `.git/braid/cache`.
 - Repository-local caches are disposable. If one is deleted, Braid can rebuild it
   only while upstream still serves the recorded revisions from `.braids.json`.
   Shallow repository-local caches can also make Git report the downstream
@@ -287,7 +284,7 @@ Go Braid intentionally restores Ruby-like feedback for operations that may
 contact upstream repositories or the local cache. It prints semantic start and
 completion progress to `stderr` for cache updates, mirror fetches, pull checks,
 mirror updates, upstream pushes, status remote checks, diff remote hydration,
-and setup remote changes. Interactive terminals append `.` about every five
+and temporary remote changes. Interactive terminals append `.` about every five
 seconds during long-running operations; non-interactive output is line-based.
 
 The stream contract is explicit:

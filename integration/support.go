@@ -317,11 +317,6 @@ func assertConfigRaw(t *testing.T, repo string, mirrors map[string]configMirror)
 	}
 }
 
-func cachePath(cacheDir, url string) string {
-	sum := sha256.Sum256([]byte(url))
-	return filepath.Join(cacheDir, hex.EncodeToString(sum[:]))
-}
-
 func repositoryCachePath(t *testing.T, repo, localPath string, m configMirror) string {
 	t.Helper()
 	cacheDir := filepath.Join(processWorkingDir(t, repo), ".git", "braid", "cache")

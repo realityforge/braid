@@ -154,7 +154,6 @@ func NewAppWithOptions(options Options) cli.App {
 		cli.CommandDiff:          DiffHandler{Options: options},
 		cli.CommandPush:          PushHandler{Options: options},
 		cli.CommandSync:          SyncHandler{Options: options},
-		cli.CommandSetup:         SetupHandler{Options: options},
 		cli.CommandStatus:        StatusHandler{Options: options},
 		cli.CommandCompletion:    CompletionHandler{Options: options},
 		cli.CommandComplete:      CompleteHandler{Options: options},
@@ -366,7 +365,7 @@ func RequirementsFor(command cli.Command) Requirements {
 	switch command {
 	case cli.CommandVersion, cli.CommandCompletion, cli.CommandComplete:
 		return Requirements{}
-	case cli.CommandSetup, cli.CommandStatus, cli.CommandDiff:
+	case cli.CommandStatus, cli.CommandDiff:
 		return Requirements{Git: true, Root: true, Config: true}
 	case cli.CommandAdd:
 		return Requirements{Git: true, Root: true, MayWrite: true}

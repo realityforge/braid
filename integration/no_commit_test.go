@@ -68,9 +68,8 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	}
 	commitAll(t, env, downstream, "combined update")
 
-	setup := runBraid(t, env, downstream, braid, "setup", "vendor/basic")
-	assertExit(t, setup, 0)
 	remote := remoteName("main", "vendor/basic")
+	gitOK(t, env, downstream, "remote", "add", remote, repositoryCachePath(t, downstream, "vendor/basic", configMirror{URL: upstream, Branch: "main"}))
 	writeFile(t, downstream, "remove-staged.txt", "remove staged\n")
 	gitOK(t, env, downstream, "add", "remove-staged.txt")
 	removeHead := gitOutput(t, env, downstream, "rev-parse", "HEAD")
