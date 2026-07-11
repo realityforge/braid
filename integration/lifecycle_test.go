@@ -177,6 +177,7 @@ func TestPartialCloneSubdirectoryLifecycle(t *testing.T) {
 	upstream := filepath.Join(root, "upstream")
 	initRepo(t, env, upstream)
 	gitOK(t, env, upstream, "config", "uploadpack.allowFilter", "true")
+	gitOK(t, env, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 	writeFile(t, upstream, "wanted/file.txt", "one\n")
 	writeFile(t, upstream, "other/large.txt", string(make([]byte, 1024*1024)))
 	first := commitAll(t, env, upstream, "initial")
@@ -202,6 +203,21 @@ func TestPartialCloneSubdirectoryLifecycle(t *testing.T) {
 	if missing.exitCode == 0 {
 		t.Fatalf("unrelated blob %s unexpectedly present downstream", unrelatedBlob)
 	}
+
+	writeFile(t, downstream, "vendor/wanted/file.txt", "pushed\n")
+	commitAll(t, env, downstream, "local partial mirror change")
+	result = runBraid(t, env, downstream, braid, "push", "vendor/wanted", "--message", "Push partial mirror")
+	assertExit(t, result, 0)
+	assertFile(t, upstream, "wanted/file.txt", "pushed\n")
+	assertFile(t, upstream, "other/large.txt", string(make([]byte, 1024*1024)))
+	assertLatestCommit(t, env, upstream, defaultName+" <"+defaultEmail+">", "Push partial mirror")
+	missing = runProcess(t, env.with("GIT_NO_LAZY_FETCH", "1"), cachePath, "git", "cat-file", "-e", unrelatedBlob)
+	if missing.exitCode == 0 {
+		t.Fatalf("unrelated blob %s unexpectedly present in partial cache after push", unrelatedBlob)
+	}
+	result = runBraid(t, env, downstream, braid, "pull", "vendor/wanted")
+	assertExit(t, result, 0)
+	assertFile(t, downstream, "vendor/wanted/file.txt", "pushed\n")
 
 	writeFile(t, upstream, "wanted/file.txt", "two\n")
 	second := commitAll(t, env, upstream, "update")
