@@ -10,6 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  plans-empty:
+    name: Plans directory is empty
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check plans directory
+        run: test ! -d plans || test -z "$(find plans -type f -print -quit)"
+
   go-quality:
     name: Go quality and lint
     runs-on: ubuntu-latest
@@ -74,3 +85,15 @@ jobs:
           git --version
           git merge-tree --write-tree "--merge-base=HEAD^{tree}" "HEAD^{tree}" "HEAD^{tree}"
           bazel test --test_env=PATH //integration/...
+
+  ci-success:
+    name: CI success
+    runs-on: ubuntu-latest
+    needs:
+      - plans-empty
+      - go-quality
+      - integration
+
+    steps:
+      - name: Confirm CI succeeded
+        run: echo "All CI checks passed"
