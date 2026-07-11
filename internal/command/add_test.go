@@ -432,7 +432,7 @@ func TestAddCommandBlocksUnresolvedGitOperationBeforeScopedStatus(t *testing.T) 
 	assertContains(t, stderr, "unresolved git operation state is present: MERGE_HEAD")
 }
 
-func TestAddCommandNoCacheTags(t *testing.T) {
+func TestAddCommandTags(t *testing.T) {
 	tests := []struct {
 		name string
 		tag  string
@@ -463,21 +463,45 @@ func TestAddCommandNoCacheTags(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			upstream := testutil.InitRepo(t)
-			revision := test.make(t, upstream, test.tag)
-			repo := initDownstream(t)
-			localPath := "vendor/" + test.name
-			runCommandOK(t, repo, []string{"--no-cache", "add", upstream, localPath, "--tag", test.tag})
+		for _, mode := range []string{"no-cache", "global-cache"} {
+			t.Run(test.name+"/"+mode, func(t *testing.T) {
+				upstream := testutil.InitRepo(t)
+				revision := test.make(t, upstream, test.tag)
+				repo := initDownstream(t)
+				localPath := "vendor/" + test.name
+				args := []string{"--no-cache", "add", upstream, localPath, "--tag", test.tag}
+				if mode == "global-cache" {
+					args = []string{"--global-cache-dir", t.TempDir(), "add", upstream, localPath, "--tag", test.tag}
+				}
+				runCommandOK(t, repo, args)
 
-			assertFile(t, repo, localPath+"/README.md", test.name+"\n")
-			m := loadMirror(t, repo, localPath)
-			if m.Tag != test.tag || m.Branch != "" || m.Revision != revision {
-				t.Fatalf("mirror = %#v, want tag %q at %s", m, test.tag, revision)
-			}
-			assertClean(t, repo)
-		})
+				assertFile(t, repo, localPath+"/README.md", test.name+"\n")
+				m := loadMirror(t, repo, localPath)
+				if m.Tag != test.tag || m.Branch != "" || m.Revision != revision {
+					t.Fatalf("mirror = %#v, want tag %q at %s", m, test.tag, revision)
+				}
+				git := gitexec.New(repo, false, nil)
+				assertRefMissing(t, context.Background(), git, "refs/tags/"+test.tag)
+				assertRefMissing(t, context.Background(), git, m.LocalRef())
+				assertClean(t, repo)
+			})
+		}
 	}
+}
+
+func TestAddTagMirrorPreservesSameNamedDownstreamTag(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "upstream\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	testutil.Git(t, upstream, "tag", "v1")
+
+	repo := initDownstream(t)
+	testutil.Git(t, repo, "tag", "-a", "v1", "-m", "downstream tag")
+	downstreamTag := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "refs/tags/v1").Stdout)
+
+	runCommandOK(t, repo, []string{"--no-cache", "add", upstream, "vendor/tagged", "--tag", "v1"})
+
+	assertRefObjectID(t, context.Background(), gitexec.New(repo, false, nil), "refs/tags/v1", downstreamTag)
 }
 
 func TestAddCommandMissingUpstreamPathCleansUpTemporaryRemote(t *testing.T) {

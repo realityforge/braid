@@ -242,7 +242,7 @@ func fetchMirror(ctx context.Context, git fetchGit, cache CacheConfig, m mirror.
 					args = append(args, "+refs/heads/"+m.Branch+":refs/remotes/"+m.Remote()+"/"+m.Branch)
 				}
 				if m.Tag != "" {
-					args = append(args, "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag)
+					args = append(args, "+refs/tags/"+m.Tag+":"+m.LocalRef())
 				}
 				args = append(args, "+refs/braid/*:refs/braid/*")
 				return git.Fetch(ctx, args...)
@@ -251,7 +251,7 @@ func fetchMirror(ctx context.Context, git fetchGit, cache CacheConfig, m mirror.
 				return err
 			}
 			if m.Tag != "" {
-				return git.Fetch(ctx, "-n", m.Remote(), "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag)
+				return git.Fetch(ctx, "-n", m.Remote(), "+refs/tags/"+m.Tag+":"+m.LocalRef())
 			}
 			return nil
 		},

@@ -1042,6 +1042,8 @@ func TestUpdateCommandNoCacheTags(t *testing.T) {
 				testutil.Git(t, upstream, "tag", test.tag)
 			}
 			repo := initDownstream(t)
+			testutil.Git(t, repo, "tag", "-a", test.tag, "-m", "downstream tag")
+			downstreamTag := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "refs/tags/"+test.tag).Stdout)
 			localPath := "vendor/" + test.name
 			runCommandOK(t, repo, []string{"--no-cache", "add", upstream, localPath, "--tag", test.tag})
 
@@ -1051,6 +1053,7 @@ func TestUpdateCommandNoCacheTags(t *testing.T) {
 			if got := loadMirror(t, repo, localPath).Revision; got != revision {
 				t.Fatalf("revision = %q, want %q", got, revision)
 			}
+			assertRefObjectID(t, context.Background(), gitexec.New(repo, false, nil), "refs/tags/"+test.tag, downstreamTag)
 		})
 	}
 }

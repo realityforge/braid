@@ -24,6 +24,35 @@ func initDownstream(t *testing.T) string {
 	return repo
 }
 
+func assertRefCommit(t *testing.T, ctx context.Context, git gitexec.Git, ref, want string) {
+	t.Helper()
+	got, err := git.RevParse(ctx, ref+"^{commit}")
+	if err != nil {
+		t.Fatalf("rev-parse %s: %v", ref, err)
+	}
+	if got != want {
+		t.Fatalf("%s = %s, want %s", ref, got, want)
+	}
+}
+
+func assertRefObjectID(t *testing.T, ctx context.Context, git gitexec.Git, ref, want string) {
+	t.Helper()
+	got, err := git.RevParse(ctx, ref)
+	if err != nil {
+		t.Fatalf("rev-parse %s: %v", ref, err)
+	}
+	if got != want {
+		t.Fatalf("%s = %s, want %s", ref, got, want)
+	}
+}
+
+func assertRefMissing(t *testing.T, ctx context.Context, git gitexec.Git, ref string) {
+	t.Helper()
+	if result, err := git.RunOK(ctx, "rev-parse", "--verify", "--quiet", ref); err == nil {
+		t.Fatalf("ref %s exists unexpectedly at %s", ref, strings.TrimSpace(result.Stdout))
+	}
+}
+
 func runCommandOK(t *testing.T, repo string, args []string) string {
 	t.Helper()
 	return runCommandOKInDir(t, repo, repo, args)

@@ -7,6 +7,8 @@
 
 ## Git And Tests
 
+- All changes must land through pull requests; do not push changes directly to
+  the default branch.
 - Product code that invokes Git should stay behind `internal/gitexec`.
 - Tests must not depend on the user's global Git identity, real Braid cache, or
   network remotes.
