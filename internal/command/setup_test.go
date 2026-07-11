@@ -22,8 +22,6 @@ func TestResolveCacheContract(t *testing.T) {
 	}
 	cwd := rootedTestPath("work")
 	home := rootedTestPath("home")
-	userCache := rootedTestPath("user-cache")
-	withUserCacheDir(t, userCache, nil)
 
 	tests := []struct {
 		name    string
@@ -32,15 +30,15 @@ func TestResolveCacheContract(t *testing.T) {
 		want    CacheConfig
 		wantErr string
 	}{
-		{name: "default enabled", env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
-		{name: "env true", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "true"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
-		{name: "env one", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "1"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(userCache, "braid")}},
-		{name: "env disabled", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "false"}, want: CacheConfig{Enabled: false}},
-		{name: "env cache dir", env: map[string]string{"HOME": home, "BRAID_LOCAL_CACHE_DIR": "~/custom"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(home, "custom")}},
-		{name: "flag no cache", global: cli.GlobalOptions{NoCache: true}, env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: false}},
-		{name: "flag cache dir", global: cli.GlobalOptions{CacheDir: "rel-cache", CacheDirSet: true}, env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "false"}, want: CacheConfig{Enabled: true, Dir: filepath.Join(cwd, "rel-cache")}},
-		{name: "invalid both flags", global: cli.GlobalOptions{NoCache: true, CacheDir: "cache", CacheDirSet: true}, env: map[string]string{"HOME": home}, wantErr: "--no-cache and --cache-dir cannot be used together"},
-		{name: "invalid empty env cache dir", env: map[string]string{"HOME": home, "BRAID_LOCAL_CACHE_DIR": ""}, wantErr: "cache directory cannot be empty"},
+		{name: "default enabled", env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: true, Mode: CacheModeRepositoryLocal}},
+		{name: "env true", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "true"}, want: CacheConfig{Enabled: true, Mode: CacheModeRepositoryLocal}},
+		{name: "env one", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "1"}, want: CacheConfig{Enabled: true, Mode: CacheModeRepositoryLocal}},
+		{name: "env disabled", env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "false"}, want: CacheConfig{Enabled: false, Mode: CacheModeDisabled}},
+		{name: "env global cache dir", env: map[string]string{"HOME": home, "BRAID_GLOBAL_CACHE_DIR": "~/custom"}, want: CacheConfig{Enabled: true, Mode: CacheModeGlobal, Dir: filepath.Join(home, "custom")}},
+		{name: "flag no cache", global: cli.GlobalOptions{NoCache: true}, env: map[string]string{"HOME": home}, want: CacheConfig{Enabled: false, Mode: CacheModeDisabled}},
+		{name: "flag global cache dir", global: cli.GlobalOptions{GlobalCacheDir: "rel-cache", GlobalCacheDirSet: true}, env: map[string]string{"HOME": home, "BRAID_USE_LOCAL_CACHE": "false"}, want: CacheConfig{Enabled: true, Mode: CacheModeGlobal, Dir: filepath.Join(cwd, "rel-cache")}},
+		{name: "invalid both flags", global: cli.GlobalOptions{NoCache: true, GlobalCacheDir: "cache", GlobalCacheDirSet: true}, env: map[string]string{"HOME": home}, wantErr: "--no-cache and --global-cache-dir cannot be used together"},
+		{name: "old local cache dir env", env: map[string]string{"HOME": home, "BRAID_LOCAL_CACHE_DIR": ""}, wantErr: "BRAID_LOCAL_CACHE_DIR has been replaced by BRAID_GLOBAL_CACHE_DIR"},
 	}
 
 	for _, test := range tests {
@@ -97,7 +95,6 @@ func TestSetupCommandCreatesAllRemotes(t *testing.T) {
 		t.Fatalf("Write config: %v", err)
 	}
 
-	withUserCacheDir(t, filepath.Join(t.TempDir(), "user-cache"), nil)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repo)
 
@@ -110,13 +107,14 @@ func TestSetupCommandCreatesAllRemotes(t *testing.T) {
 		if result := testutil.Git(t, repo, "remote", "get-url", remote); strings.TrimSpace(result.Stdout) == "" {
 			t.Fatalf("remote %q was not created", remote)
 		}
+		if result := testutil.Git(t, repo, "ls-remote", remote, "refs/heads/main"); strings.TrimSpace(result.Stdout) == "" {
+			t.Fatalf("remote %q was not hydrated", remote)
+		}
 	}
 }
 
 func TestSetupCommandCreatesAndReusesRemotes(t *testing.T) {
 	repo := setupRepoWithConfig(t)
-	cacheRoot := filepath.Join(t.TempDir(), "user-cache")
-	withUserCacheDir(t, cacheRoot, nil)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repo)
 
@@ -128,8 +126,15 @@ func TestSetupCommandCreatesAndReusesRemotes(t *testing.T) {
 
 	remote := "main_braid_vendor_repo"
 	firstURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
-	if !strings.HasPrefix(firstURL, filepath.Join(cacheRoot, "braid")) {
-		t.Fatalf("remote URL = %q, want default cache path", firstURL)
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatalf("canonicalize repo path: %v", err)
+	}
+	if !strings.HasPrefix(firstURL, filepath.Join(canonicalRepo, ".git", "braid", "cache")) {
+		t.Fatalf("remote URL = %q, want repository-local cache path", firstURL)
+	}
+	if result := testutil.Git(t, repo, "ls-remote", remote, "refs/heads/main"); strings.TrimSpace(result.Stdout) == "" {
+		t.Fatalf("remote %q was not hydrated", remote)
 	}
 
 	testutil.Git(t, repo, "remote", "set-url", remote, "manually-kept")
@@ -154,7 +159,72 @@ func TestSetupCommandCreatesAndReusesRemotes(t *testing.T) {
 	}
 }
 
-func TestSetupCommandHonorsNoCacheAndCacheDir(t *testing.T) {
+func TestSetupCommandRehydratesExistingRepositoryLocalCachePath(t *testing.T) {
+	repo := setupRepoWithConfig(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(repo)
+
+	var stdout, stderr bytes.Buffer
+	if code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run([]string{"setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("setup exit = %d, stderr = %q", code, stderr.String())
+	}
+
+	remote := "main_braid_vendor_repo"
+	cacheURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
+	if err := os.RemoveAll(cacheURL); err != nil {
+		t.Fatalf("remove cache: %v", err)
+	}
+	if err := os.MkdirAll(cacheURL, 0o755); err != nil {
+		t.Fatalf("create unusable cache dir: %v", err)
+	}
+
+	stderr.Reset()
+	if code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run([]string{"setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("second setup exit = %d, stderr = %q", code, stderr.String())
+	}
+	if result := testutil.Git(t, repo, "ls-remote", remote, "refs/heads/main"); strings.TrimSpace(result.Stdout) == "" {
+		t.Fatalf("remote %q was not rehydrated", remote)
+	}
+}
+
+func TestSetupCommandRehydratesStaleRepositoryLocalRevision(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	baseRevision := testutil.CommitAll(t, upstream, "base")
+
+	repo := testutil.InitRepo(t)
+	testutil.WriteFile(t, repo, "README.md", "downstream\n")
+	testutil.CommitAll(t, repo, "downstream")
+
+	m := mirror.Mirror{Path: "vendor/repo", URL: upstream, Branch: "main", Revision: baseRevision}
+	writeSingleMirrorConfig(t, repo, m)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(repo)
+
+	var stdout, stderr bytes.Buffer
+	if code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run([]string{"setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("setup exit = %d, stderr = %q", code, stderr.String())
+	}
+	remote := "main_braid_vendor_repo"
+	cacheURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
+
+	testutil.WriteFile(t, upstream, "README.md", "updated\n")
+	updatedRevision := testutil.CommitAll(t, upstream, "updated")
+	m.Revision = updatedRevision
+	writeSingleMirrorConfig(t, repo, m)
+
+	stderr.Reset()
+	if code := NewAppWithOptions(Options{WorkDir: repo, ConfigRoot: repo}).Run([]string{"setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("second setup exit = %d, stderr = %q", code, stderr.String())
+	}
+	recordedRef := (CacheConfig{}).RecordedRef(m)
+	got := strings.TrimSpace(testutil.Git(t, cacheURL, "rev-parse", recordedRef+"^{commit}").Stdout)
+	if got != updatedRevision {
+		t.Fatalf("%s = %s, want %s", recordedRef, got, updatedRevision)
+	}
+}
+
+func TestSetupCommandHonorsNoCacheAndGlobalCacheDir(t *testing.T) {
 	repo := setupRepoWithConfig(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(repo)
@@ -176,8 +246,8 @@ func TestSetupCommandHonorsNoCacheAndCacheDir(t *testing.T) {
 
 	testutil.Git(t, repo, "remote", "rm", remote)
 	stderr.Reset()
-	if code := app.Run([]string{"--cache-dir", "local-cache", "setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("setup --cache-dir exit = %d, stderr = %q", code, stderr.String())
+	if code := app.Run([]string{"--global-cache-dir", "local-cache", "setup", "vendor/repo"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("setup --global-cache-dir exit = %d, stderr = %q", code, stderr.String())
 	}
 	cacheURL := strings.TrimSpace(testutil.Git(t, repo, "remote", "get-url", remote).Stdout)
 	canonicalRepo, err := filepath.EvalSymlinks(repo)
@@ -189,7 +259,7 @@ func TestSetupCommandHonorsNoCacheAndCacheDir(t *testing.T) {
 	}
 }
 
-func TestSetupCommandFromSubdirectoryUsesProcessRelativeCacheDir(t *testing.T) {
+func TestSetupCommandFromSubdirectoryUsesProcessRelativeGlobalCacheDir(t *testing.T) {
 	repo := setupRepoWithConfig(t)
 	workDir := filepath.Join(repo, "apps", "web")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
@@ -199,7 +269,7 @@ func TestSetupCommandFromSubdirectoryUsesProcessRelativeCacheDir(t *testing.T) {
 	t.Chdir(workDir)
 
 	var stdout, stderr bytes.Buffer
-	if code := NewAppWithOptions(Options{WorkDir: workDir}).Run([]string{"--cache-dir", "local-cache", "setup", "../../vendor/repo"}, &stdout, &stderr); code != 0 {
+	if code := NewAppWithOptions(Options{WorkDir: workDir}).Run([]string{"--global-cache-dir", "local-cache", "setup", "../../vendor/repo"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("setup from subdir exit = %d, stderr = %q", code, stderr.String())
 	}
 	remote := "main_braid_vendor_repo"

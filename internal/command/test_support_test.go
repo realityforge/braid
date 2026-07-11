@@ -32,7 +32,6 @@ func runCommandOK(t *testing.T, repo string, args []string) string {
 func runCommandOKInDir(t *testing.T, repo, dir string, args []string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: dir}).Run(args, &stdout, &stderr)
@@ -45,7 +44,6 @@ func runCommandOKInDir(t *testing.T, repo, dir string, args []string) string {
 func runCommandOKInDirWithOptions(t *testing.T, repo, dir string, options Options, args []string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(dir)
 	options.WorkDir = dir
 	var stdout, stderr bytes.Buffer
@@ -59,7 +57,6 @@ func runCommandOKInDirWithOptions(t *testing.T, repo, dir string, options Option
 func runCommandOKWithOutput(t *testing.T, repo string, args []string) (string, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: repo}).Run(args, &stdout, &stderr)
@@ -77,7 +74,6 @@ func runCommandError(t *testing.T, repo string, args []string) string {
 func runCommandErrorInDir(t *testing.T, repo, dir string, args []string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: dir}).Run(args, &stdout, &stderr)
@@ -90,7 +86,6 @@ func runCommandErrorInDir(t *testing.T, repo, dir string, args []string) string 
 func runCommandErrorWithOutput(t *testing.T, repo string, args []string) (string, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{WorkDir: repo}).Run(args, &stdout, &stderr)
@@ -219,17 +214,6 @@ func writePostCommitHook(t *testing.T, repo string) {
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\nprintf 'ran\\n' > post-commit-ran\n"), 0o755); err != nil {
 		t.Fatalf("write post-commit hook: %v", err)
 	}
-}
-
-func withUserCacheDir(t *testing.T, dir string, err error) {
-	t.Helper()
-	previous := userCacheDir
-	userCacheDir = func() (string, error) {
-		return dir, err
-	}
-	t.Cleanup(func() {
-		userCacheDir = previous
-	})
 }
 
 func envLookup(values map[string]string) EnvLookup {

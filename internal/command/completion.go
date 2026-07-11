@@ -63,7 +63,7 @@ var globalCompletionFlags = []completionFlag{
 	{long: "--verbose", short: "-v"},
 	{long: "--quiet"},
 	{long: "--no-cache"},
-	{long: "--cache-dir", value: true},
+	{long: "--global-cache-dir", value: true},
 }
 
 var commandCompletionFlags = map[string][]completionFlag{
@@ -153,14 +153,14 @@ func (h CompleteHandler) completeBash(ctx context.Context, words []string) []str
 
 func (h CompleteHandler) completeRoot(line completionLine) []string {
 	if flag, ok := valueFlagAwaitingCurrent(line.globalArgs, globalCompletionFlags); ok {
-		if flag.long == "--cache-dir" {
+		if flag.long == "--global-cache-dir" {
 			return pathCandidates(h.Options.WorkDir, line.current, true, "")
 		}
 		return nil
 	}
-	if strings.HasPrefix(line.current, "--cache-dir=") {
-		value := strings.TrimPrefix(line.current, "--cache-dir=")
-		return pathCandidates(h.Options.WorkDir, value, true, "--cache-dir=")
+	if strings.HasPrefix(line.current, "--global-cache-dir=") {
+		value := strings.TrimPrefix(line.current, "--global-cache-dir=")
+		return pathCandidates(h.Options.WorkDir, value, true, "--global-cache-dir=")
 	}
 
 	var candidates []string
@@ -328,8 +328,8 @@ func suppressFlag(flag completionFlag, args []string, global bool) bool {
 	case "--verbose":
 		return flagPresent(completionFlag{long: "--quiet"}, args)
 	case "--no-cache":
-		return flagPresent(completionFlag{long: "--cache-dir", value: true}, args)
-	case "--cache-dir":
+		return flagPresent(completionFlag{long: "--global-cache-dir", value: true}, args)
+	case "--global-cache-dir":
 		return flagPresent(completionFlag{long: "--no-cache"}, args)
 	default:
 		return false

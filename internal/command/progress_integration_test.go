@@ -162,12 +162,15 @@ func TestProgressSetupReportsLocalRemoteChangesInPathOrder(t *testing.T) {
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"setup"})
 	assertEmptyOutput(t, "setup stdout", stdout)
 	assertInOrder(t, stderr,
+		"Braid: updating cache for mirror vendor/a",
+		"Braid: updated cache for mirror vendor/a",
 		"Braid: setting up mirror remote vendor/a",
 		"Braid: set up mirror remote vendor/a",
+		"Braid: updating cache for mirror vendor/z",
+		"Braid: updated cache for mirror vendor/z",
 		"Braid: setting up mirror remote vendor/z",
 		"Braid: set up mirror remote vendor/z",
 	)
-	assertNotContains(t, stderr, "Braid: updating cache")
 	assertNotContains(t, stderr, "Braid: fetching mirror")
 
 	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"setup"})

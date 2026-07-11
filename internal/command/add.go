@@ -95,7 +95,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return err
 	}
 
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, trace)
 	if err != nil {
 		return err
 	}
@@ -119,11 +119,11 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return cause
 	}
 
-	if err := fetchMirror(ctx, git, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		return cleanupRemote(err, "")
 	}
 
-	revision, err := resolveAddRevision(ctx, git, m, addOptions.Revision)
+	revision, err := resolveAddRevision(ctx, git, m, cacheResolveRecordedRevision(cache, m, addOptions.Revision))
 	if err != nil {
 		return cleanupRemote(err, "")
 	}
@@ -284,56 +284,6 @@ func lsFilesContainsExactPath(output, path string) bool {
 		}
 	}
 	return false
-}
-
-func fetchCache(ctx context.Context, cache CacheConfig, m mirror.Mirror, verbose bool, progress progressReporter, trace io.Writer) error {
-	return runProgress(
-		progress,
-		fmt.Sprintf("Braid: updating cache for mirror %s", m.Path),
-		fmt.Sprintf("Braid: updated cache for mirror %s", m.Path),
-		func() error {
-			cachePath := CachePath(cache.Dir, m.URL)
-			if _, err := os.Stat(filepath.Join(cachePath, ".git")); err == nil {
-				if err := os.RemoveAll(cachePath); err != nil {
-					return err
-				}
-			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-
-			if _, err := os.Stat(cachePath); err == nil {
-				return gitexec.New(cachePath, verbose, trace).Fetch(ctx)
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-
-			if err := os.MkdirAll(cache.Dir, 0o755); err != nil {
-				return err
-			}
-			return gitexec.New(".", verbose, trace).CloneMirror(ctx, m.URL, cachePath)
-		},
-	)
-}
-
-type fetchGit interface {
-	Fetch(context.Context, ...string) error
-}
-
-func fetchMirror(ctx context.Context, git fetchGit, m mirror.Mirror, progress progressReporter) error {
-	return runProgress(
-		progress,
-		fmt.Sprintf("Braid: fetching mirror %s", m.Path),
-		fmt.Sprintf("Braid: fetched mirror %s", m.Path),
-		func() error {
-			if err := git.Fetch(ctx, "-n", m.Remote()); err != nil {
-				return err
-			}
-			if m.Tag != "" {
-				return git.Fetch(ctx, "-n", m.Remote(), "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag)
-			}
-			return nil
-		},
-	)
 }
 
 type revParseGit interface {

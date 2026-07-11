@@ -71,7 +71,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 			}
 		}()
 	}
-	if err := fetchMirror(ctx, git, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		return err
 	}
 	return fn()

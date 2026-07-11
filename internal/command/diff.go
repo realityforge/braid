@@ -33,7 +33,7 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	cache, err := runtimeCache(inv.Global)
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheCon
 			return err
 		}
 	}
-	return fetchMirror(ctx, git, m, progress)
+	return fetchMirror(ctx, git, cache, m, progress)
 }
 
 func buildDiffArgs(ctx context.Context, git DiffGit, m mirror.Mirror, userArgs []string) ([]string, error) {

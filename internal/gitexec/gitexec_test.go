@@ -249,6 +249,23 @@ func TestIsInsideWorkTreeTreatsNonRepositoryAsFalse(t *testing.T) {
 	}
 }
 
+func TestInitBareCreatesBareRepository(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "cache.git")
+
+	if err := New(t.TempDir(), false, nil).InitBare(ctx, dir); err != nil {
+		t.Fatalf("InitBare returned error: %v", err)
+	}
+
+	got, err := New(dir, false, nil).Output(ctx, "rev-parse", "--is-bare-repository")
+	if err != nil {
+		t.Fatalf("rev-parse bare repository: %v", err)
+	}
+	if got != "true" {
+		t.Fatalf("bare repository = %q, want true", got)
+	}
+}
+
 func TestCommitVerboseAndMessageFileUseExpectedCleanup(t *testing.T) {
 	git := Git{Runner: helperRunner(t, nil)}
 

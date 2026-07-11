@@ -1232,7 +1232,7 @@ func TestUpdateCommandMergeTreeCommandFailureDoesNotWriteConflictState(t *testin
 	testutil.CommitAll(t, upstream, "remote change")
 
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("BRAID_LOCAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
+	t.Setenv("BRAID_GLOBAL_CACHE_DIR", filepath.Join(t.TempDir(), "braid-cache"))
 	t.Chdir(repo)
 	var stdout, stderr bytes.Buffer
 	code := NewAppWithOptions(Options{

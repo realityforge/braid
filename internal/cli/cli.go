@@ -25,11 +25,11 @@ const (
 )
 
 type GlobalOptions struct {
-	NoCache     bool
-	CacheDir    string
-	CacheDirSet bool
-	Verbose     bool
-	Quiet       bool
+	NoCache           bool
+	GlobalCacheDir    string
+	GlobalCacheDirSet bool
+	Verbose           bool
+	Quiet             bool
 }
 
 type AddOptions struct {
@@ -221,8 +221,8 @@ func Parse(args []string) (Invocation, error) {
 	if len(rest) == 0 {
 		return inv, usageError("missing command")
 	}
-	if inv.Global.NoCache && inv.Global.CacheDirSet {
-		return inv, usageError("--no-cache and --cache-dir cannot be used together")
+	if inv.Global.NoCache && inv.Global.GlobalCacheDirSet {
+		return inv, usageError("--no-cache and --global-cache-dir cannot be used together")
 	}
 	if inv.Global.Verbose && inv.Global.Quiet {
 		return inv, usageError("--quiet and --verbose cannot be used together")
@@ -291,23 +291,25 @@ func parseGlobal(args []string, global *GlobalOptions) ([]string, error) {
 		case arg == "--quiet":
 			global.Quiet = true
 			i++
-		case arg == "--cache-dir":
+		case arg == "--cache-dir" || strings.HasPrefix(arg, "--cache-dir="):
+			return nil, usageError("--cache-dir has been replaced by --global-cache-dir")
+		case arg == "--global-cache-dir":
 			if i+1 >= len(args) {
-				return nil, usageError("--cache-dir requires a value")
+				return nil, usageError("--global-cache-dir requires a value")
 			}
 			if args[i+1] == "" {
-				return nil, usageError("--cache-dir requires a non-empty value")
+				return nil, usageError("--global-cache-dir requires a non-empty value")
 			}
-			global.CacheDir = args[i+1]
-			global.CacheDirSet = true
+			global.GlobalCacheDir = args[i+1]
+			global.GlobalCacheDirSet = true
 			i += 2
-		case strings.HasPrefix(arg, "--cache-dir="):
-			value := strings.TrimPrefix(arg, "--cache-dir=")
+		case strings.HasPrefix(arg, "--global-cache-dir="):
+			value := strings.TrimPrefix(arg, "--global-cache-dir=")
 			if value == "" {
-				return nil, usageError("--cache-dir requires a non-empty value")
+				return nil, usageError("--global-cache-dir requires a non-empty value")
 			}
-			global.CacheDir = value
-			global.CacheDirSet = true
+			global.GlobalCacheDir = value
+			global.GlobalCacheDirSet = true
 			i++
 		default:
 			return args[i:], nil
@@ -650,7 +652,7 @@ func usageError(format string, args ...interface{}) error {
 
 func Usage() string {
 	return strings.TrimLeft(`
-usage: braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]
+usage: braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]
 
 commands:
   add       Add a new mirror

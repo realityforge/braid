@@ -522,7 +522,7 @@ func TestSyncCommandAutostashRestoresAfterOperationalFailure(t *testing.T) {
 
 	stderr := runCommandError(t, repo, []string{"sync", "--autostash", "vendor/basic"})
 
-	assertContains(t, stderr, "recorded revision "+bogusRevision+" for vendor/basic is unavailable after hydration")
+	assertContains(t, stderr, "recorded revision "+bogusRevision+" for mirror vendor/basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
 	assertFile(t, repo, "vendor/basic/README.md", "dirty\n")
 	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
 		t.Fatalf("stash list = %q, want autostash restored and dropped", stashList)
@@ -1091,7 +1091,7 @@ func TestSyncCommandReportsUnavailableRecordedRevisionAfterHydration(t *testing.
 
 	stderr := runCommandError(t, repo, []string{"sync", "vendor/basic"})
 
-	assertContains(t, stderr, "recorded revision "+bogusRevision+" for vendor/basic is unavailable after hydration")
+	assertContains(t, stderr, "recorded revision "+bogusRevision+" for mirror vendor/basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
 }
 
 func TestSyncCommandKeepRetainsTemporaryRemote(t *testing.T) {

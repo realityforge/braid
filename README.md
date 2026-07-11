@@ -96,7 +96,7 @@ in your next `git commit` unless you unstage them first.
 Global flags must appear before the command name:
 
 ```bash
-braid [--verbose|-v | --quiet] [--no-cache | --cache-dir <path>] <command> [options]
+braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]
 ```
 
 `--verbose` prints Git command tracing. `--quiet` suppresses progress and other
@@ -551,10 +551,25 @@ braid setup
 braid setup vendor/rails --force
 ```
 
-The local cache is enabled by default. Without overrides, Braid stores it under
-the OS user cache directory with a `braid` child directory. Use
-`BRAID_LOCAL_CACHE_DIR` or `--cache-dir` to choose a location, and use
-`BRAID_USE_LOCAL_CACHE=false` or `--no-cache` to disable it.
+The local cache is enabled by default. Without overrides, Braid stores
+repository-local per-mirror bare caches under `.git/braid/cache`. These caches
+are implementation state and can be rebuilt by `braid add`, `braid setup`,
+`braid status`, `braid pull`, `braid diff`, `braid push`, or `braid sync` while
+the upstream still serves the recorded revisions from `.braids.json`.
+
+Repository-local caches are shallow for common branch, tag, and full-SHA
+revision workflows. Fetching from a shallow cache can make the downstream Git
+repository report as shallow because Git records the shallow mirror commits in
+`.git/shallow`; those commits are Braid mirror objects, not the downstream
+branch history. If an upstream has removed a recorded revision and the
+repository-local cache was deleted, Braid fails instead of guessing a base.
+
+Use `BRAID_GLOBAL_CACHE_DIR` or `--global-cache-dir` to choose a shared full-cache
+location, and use `BRAID_USE_LOCAL_CACHE=false` or `--no-cache` to disable
+caching.
+
+The old `BRAID_LOCAL_CACHE_DIR` environment variable and `--cache-dir` flag have
+been replaced by `BRAID_GLOBAL_CACHE_DIR` and `--global-cache-dir`.
 
 Mirror paths stored in `.braids.json` always use repo-root-relative `/`
 separators, and ordinary Braid output uses those same repo-root-relative paths.
@@ -565,8 +580,8 @@ inside the Git working tree, and stored config paths remain relative.
 
 Commands without a `local_path`, such as `braid status`, `braid diff`,
 `braid setup`, `braid pull`, and `braid sync`, operate on the repository-wide
-mirror set from any subdirectory. Relative `--cache-dir` values and
-`BRAID_LOCAL_CACHE_DIR` values remain relative to the process directory. Git
+mirror set from any subdirectory. Relative `--global-cache-dir` values and
+`BRAID_GLOBAL_CACHE_DIR` values remain relative to the process directory. Git
 diff arguments after `braid diff ... --` are passed through as raw `git diff`
 arguments from the process directory; Braid only anchors its own internal mirror
 pathspecs.

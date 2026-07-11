@@ -26,25 +26,24 @@ func TestExecutableSetupCacheModes(t *testing.T) {
 
 	remote := remoteName("main", "vendor/repo")
 
-	defaultEnv := env.without("BRAID_LOCAL_CACHE_DIR")
-	setupDefault := runBraid(t, defaultEnv, downstream, braid, "--quiet", "setup", "vendor/repo")
+	setupDefault := runBraid(t, env, downstream, braid, "--quiet", "setup", "vendor/repo")
 	assertResult(t, setupDefault, 0, "", "")
-	defaultCacheURL := cachePath(defaultEnv.defaultBraidCacheDir(), upstream)
-	assertRemoteURL(t, defaultEnv, downstream, remote, defaultCacheURL)
-	statusDefault := runBraid(t, defaultEnv, downstream, braid, "--quiet", "status", "vendor/repo")
+	defaultCacheURL := repositoryCachePath(t, downstream, "vendor/repo", configMirror{URL: upstream, Branch: "main"})
+	assertRemoteURL(t, env, downstream, remote, defaultCacheURL)
+	statusDefault := runBraid(t, env, downstream, braid, "--quiet", "status", "vendor/repo")
 	assertExit(t, statusDefault, 0)
 	assertEmpty(t, "default cache status stderr", statusDefault.stderr)
 	assertContains(t, statusDefault.stdout, "(Removed Locally)")
 	assertPathExists(t, filepath.Join(defaultCacheURL, "HEAD"))
-	assertNoRemote(t, defaultEnv, downstream, remote)
+	assertNoRemote(t, env, downstream, remote)
 
-	envDisabled := defaultEnv.with("BRAID_USE_LOCAL_CACHE", "false")
+	envDisabled := env.with("BRAID_USE_LOCAL_CACHE", "false")
 	setupDisabled := runBraid(t, envDisabled, downstream, braid, "--quiet", "setup", "vendor/repo")
 	assertResult(t, setupDisabled, 0, "", "")
 	assertRemoteURL(t, envDisabled, downstream, remote, upstream)
 
 	gitOK(t, envDisabled, downstream, "remote", "rm", remote)
-	setupCacheDir := runBraid(t, envDisabled, downstream, braid, "--quiet", "--cache-dir", "explicit-cache", "setup", "vendor/repo")
+	setupCacheDir := runBraid(t, envDisabled, downstream, braid, "--quiet", "--global-cache-dir", "explicit-cache", "setup", "vendor/repo")
 	assertResult(t, setupCacheDir, 0, "", "")
 	assertRemoteURL(t, envDisabled, downstream, remote, cachePath(filepath.Join(processWorkingDir(t, downstream), "explicit-cache"), upstream))
 
@@ -53,10 +52,10 @@ func TestExecutableSetupCacheModes(t *testing.T) {
 	assertResult(t, setupNoCache, 0, "", "")
 	assertRemoteURL(t, env, downstream, remote, upstream)
 
-	invalid := runBraid(t, env, downstream, braid, "--no-cache", "--cache-dir", "cache", "setup")
+	invalid := runBraid(t, env, downstream, braid, "--no-cache", "--global-cache-dir", "cache", "setup")
 	assertExit(t, invalid, 2)
 	assertEmpty(t, "invalid cache stdout", invalid.stdout)
-	assertContains(t, invalid.stderr, "--no-cache and --cache-dir cannot be used together")
+	assertContains(t, invalid.stderr, "--no-cache and --global-cache-dir cannot be used together")
 }
 
 func TestExecutableFailurePaths(t *testing.T) {
