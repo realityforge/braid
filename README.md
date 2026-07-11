@@ -45,6 +45,7 @@ aspects of the mirroring process such as;
 * whether the mirror is locked to a particular version of the external library.
 * whether the mirror is tracking a tag or a branch.
 * whether the mirror includes the entire external library or just a subdirectory.
+* whether a subdirectory mirror uses Git partial clone to avoid unrelated blobs.
 
 ## Install
 
@@ -73,7 +74,7 @@ unrelated staged, unstaged, and untracked work untouched and out of Braid's
 commits. `status`, `diff`, and `push` are the usual commands for deciding
 whether to pull, prepare a patch, or send local mirror changes upstream.
 
-Use `--no-commit` with `add`, `pull`, or `remove` to stage Braid's changes
+Use `--no-commit` with `add`, `pull`, `remove`, or `upgrade-config` to stage Braid's changes
 without creating the automatic commit. Braid stages only `.braids.json` and the
 selected mirror paths; unrelated staged files stay staged and will be included
 in your next `git commit` unless you unstage them first.
@@ -109,6 +110,16 @@ braid help
 braid add help
 braid add --help
 ```
+
+For an upstream with large blobs outside the mirrored subdirectory, opt into
+Git partial clone with `braid add <url> <local_path> --path <remote_path>
+--partial-clone`. This stores `"partial_clone": true` in config version 2 and
+uses Git's `blob:none` filter for repository-local cache hydration and fetches.
+The upstream server must support Git object filtering. The setting is ignored
+when caching is disabled or a global cache is selected.
+
+Repositories with config version 1 must run `braid upgrade-config`. The command
+commits the version 2 config by default; pass `--no-commit` to stage it instead.
 
 ### Shell Completion
 

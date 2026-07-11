@@ -317,7 +317,7 @@ func TestAddCommandScopedPrecheckBlocksDirtyConfig(t *testing.T) {
 	}
 	testutil.Git(t, repo, "add", config.FileName)
 	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
-	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":1,\"mirrors\":{}}\n")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"mirrors\":{}}\n")
 
 	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
 	assertContains(t, stderr, "local changes are present in .braids.json")
@@ -331,7 +331,7 @@ func TestAddCommandScopedPrecheckRunsBeforeDefaultBranchLookup(t *testing.T) {
 	}
 	testutil.Git(t, repo, "add", config.FileName)
 	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
-	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":1,\"mirrors\":{}}\n")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"mirrors\":{}}\n")
 
 	missingUpstream := filepath.Join(t.TempDir(), "missing-upstream")
 	stderr := runCommandError(t, repo, []string{"add", missingUpstream, "vendor/basic"})

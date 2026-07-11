@@ -426,9 +426,13 @@ func (g Git) RemoteRemove(ctx context.Context, remote string) error {
 }
 
 func (g Git) Fetch(ctx context.Context, args ...string) error {
-	gitArgs := append([]string{"fetch"}, args...)
-	_, err := g.RunOK(ctx, gitArgs...)
+	_, err := g.FetchResult(ctx, args...)
 	return err
+}
+
+func (g Git) FetchResult(ctx context.Context, args ...string) (Result, error) {
+	gitArgs := append([]string{"fetch"}, args...)
+	return g.RunOK(ctx, gitArgs...)
 }
 
 func (g Git) CloneMirror(ctx context.Context, url, dir string) error {

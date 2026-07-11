@@ -1,0 +1,157 @@
+meta:
+  project: partial-clone-cache
+  last_updated: 2026-07-11
+  required_full_gates:
+    - bazel run @rules_go//go -- fmt ./...
+    - git diff --exit-code
+    - git --version
+    - 'git merge-tree --write-tree "--merge-base=HEAD^{tree}" "HEAD^{tree}" "HEAD^{tree}"'
+    - bazel test --test_env=PATH //...
+    - bazel run @rules_go//go -- vet ./...
+    - bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+    - bazel test --test_env=PATH //integration/...
+  statuses:
+    - pending
+    - in_progress
+    - completed
+    - cancelled
+
+current_focus: complete
+
+tasks:
+  - id: T01
+    title: Add config v2 model and exact v1 migration parsing
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Version 2 strictly reads and writes optional partial_clone
+      - partial_clone requires a non-empty upstream path
+      - Ordinary loading rejects v1 with an actionable upgrade diagnostic
+      - Exact v1 migration parsing preserves all mirror semantics
+    files_touched:
+      - internal/config/config.go
+      - internal/config/config_test.go
+      - internal/mirror/mirror.go
+      - internal/mirror/mirror_test.go
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T02
+    title: Add CLI contracts and upgrade-config behavior
+    status: completed
+    priority: high
+    depends_on: [T01]
+    acceptance_criteria:
+      - add accepts --partial-clone only with --path
+      - upgrade-config commits only .braids.json by default
+      - --no-commit stages only .braids.json
+      - Missing, dirty, v2 no-op, and unsupported-version cases are covered
+      - Failures restore original config worktree bytes and index entry
+      - Post-commit failure restores the original HEAD before config snapshots
+      - Unrelated staged and worktree changes remain byte-for-byte unchanged
+    files_touched:
+      - internal/cli/cli.go
+      - internal/cli/cli_test.go
+      - internal/command/upgrade_config.go
+      - internal/command/upgrade_config_test.go
+      - internal/command/no_commit.go
+      - internal/command/completion.go
+      - internal/command/completion_test.go
+      - internal/command/preflight.go
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T03
+    title: Implement repository-local partial-clone cache lifecycle
+    status: completed
+    priority: high
+    depends_on: [T01]
+    acceptance_criteria:
+      - Both cache transport legs use blob:none for configured mirrors
+      - Cache is a valid promisor repository that can lazily obtain selected blobs
+      - Filter-incapable upstream fails without full-fetch fallback
+      - Policy mismatch atomically rebuilds the stable cache path
+      - Interrupted and failed swaps preserve or recover the last valid cache
+      - Cache metadata and promisor remote configuration are validated explicitly
+      - Partial downstream fetch connects directly to upstream and remains filtered
+    files_touched:
+      - internal/command/cache.go
+      - internal/command/cache_test.go
+      - internal/command/setup.go
+      - internal/command/setup_test.go
+      - internal/gitexec/gitexec.go
+      - internal/gitexec/gitexec_test.go
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T04
+    title: Wire partial clone through commands and add behavioral coverage
+    status: completed
+    priority: high
+    depends_on: [T02, T03]
+    acceptance_criteria:
+      - add persists partial_clone and materializes only the configured subtree
+      - Pull and every shared cache hydration consumer honor the mirror policy
+      - Global and disabled cache modes retain existing full-fetch behavior
+      - Branch, tag, and revision tracking remain correct
+      - Temporary downstream promisor state is cleaned and recreated by a later process
+    files_touched:
+      - internal/command/add.go
+      - internal/command/add_test.go
+      - internal/command/update_test.go
+      - internal/command/diff_test.go
+      - internal/command/push_test.go
+      - internal/command/sync_test.go
+      - internal/command/status_test.go
+      - integration/lifecycle_test.go
+      - integration/support.go
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T05
+    title: Update user and migration documentation
+    status: completed
+    priority: medium
+    depends_on: [T02, T04]
+    acceptance_criteria:
+      - README documents config v2, add flag, cache scope, and server requirement
+      - Migration guide accurately distinguishes JSON v1 upgrade from Ruby legacy upgrades
+      - CLI usage and completion surfaces are synchronized
+    files_touched:
+      - README.md
+      - docs/migration-from-ruby-braid.md
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+  - id: T06
+    title: Run CI parity and final implementation review
+    status: completed
+    priority: high
+    depends_on: [T05]
+    acceptance_criteria:
+      - All mandated CI-parity commands pass
+      - Final diff contains only intentional changes and no scratch artifacts
+      - Task evidence and plan alignment are current
+    files_touched:
+      - plans/partial-clone-cache/20-task-board.yaml
+    evidence: []
+    commit:
+      hash: not_required
+      message: not_required
+
+history:
+  - timestamp: 2026-07-11
+    task: T01-T06
+    commit: not_required
+    note: Implementation and three-round alignment review completed; final CI-parity gates passed.

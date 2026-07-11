@@ -57,11 +57,12 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 	}
 
 	m, err := mirror.NewFromOptions(addOptions.URL, mirror.Options{
-		LocalPath:  addOptions.LocalPath,
-		Branch:     addOptions.Branch,
-		Tag:        addOptions.Tag,
-		Revision:   addOptions.Revision,
-		RemotePath: addOptions.RemotePath,
+		LocalPath:    addOptions.LocalPath,
+		Branch:       addOptions.Branch,
+		Tag:          addOptions.Tag,
+		Revision:     addOptions.Revision,
+		RemotePath:   addOptions.RemotePath,
+		PartialClone: addOptions.PartialClone,
 	})
 	if err != nil {
 		return err

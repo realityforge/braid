@@ -170,6 +170,9 @@ func (cache CacheConfig) RemoteURL(m mirror.Mirror) string {
 	case CacheModeGlobal:
 		return CachePath(cache.Dir, m.URL)
 	case CacheModeRepositoryLocal:
+		if m.PartialClone {
+			return m.URL
+		}
 		return RepositoryCachePath(cache.Dir, m)
 	default:
 		return m.URL
@@ -189,14 +192,14 @@ func (cache CacheConfig) TipRef(m mirror.Mirror) string {
 }
 
 func cacheResolveRecordedRevision(cache CacheConfig, m mirror.Mirror, requested string) string {
-	if requested != "" && cache.Enabled && cache.Mode == CacheModeRepositoryLocal {
+	if requested != "" && cache.Enabled && cache.Mode == CacheModeRepositoryLocal && !m.PartialClone {
 		return cache.RecordedRef(m)
 	}
 	return requested
 }
 
 func cacheResolveRequestedRevision(cache CacheConfig, m mirror.Mirror, requested string) string {
-	if requested != "" && cache.Enabled && cache.Mode == CacheModeRepositoryLocal {
+	if requested != "" && cache.Enabled && cache.Mode == CacheModeRepositoryLocal && !m.PartialClone {
 		return cache.RequestedRef(m)
 	}
 	return requested
@@ -237,14 +240,20 @@ func fetchMirror(ctx context.Context, git fetchGit, cache CacheConfig, m mirror.
 		fmt.Sprintf("Braid: fetched mirror %s", m.Path),
 		func() error {
 			if cache.Enabled && cache.Mode == CacheModeRepositoryLocal {
-				args := []string{"--update-shallow", "-n", m.Remote()}
+				args := []string{"--update-shallow", "-n"}
+				if m.PartialClone {
+					args = append(args, "--filter=blob:none")
+				}
+				args = append(args, m.Remote())
 				if m.Branch != "" {
 					args = append(args, "+refs/heads/"+m.Branch+":refs/remotes/"+m.Remote()+"/"+m.Branch)
 				}
 				if m.Tag != "" {
 					args = append(args, "+refs/tags/"+m.Tag+":"+m.LocalRef())
 				}
-				args = append(args, "+refs/braid/*:refs/braid/*")
+				if !m.PartialClone {
+					args = append(args, "+refs/braid/*:refs/braid/*")
+				}
 				return git.Fetch(ctx, args...)
 			}
 			if err := git.Fetch(ctx, "-n", m.Remote()); err != nil {
@@ -289,16 +298,35 @@ func (cache MirrorObjectCache) hydrateRepositoryLocal(ctx context.Context, m mir
 	}
 	defer release()
 
-	if err := cache.ensureRepositoryLocalCache(ctx, cachePath); err != nil {
+	backupPath, err := cache.ensureRepositoryLocalCache(ctx, cachePath, m)
+	if err != nil {
 		return err
 	}
+	hydrateErr := cache.hydrateRepositoryLocalReady(ctx, cachePath, m, extraRevisions...)
+	if backupPath == "" {
+		return hydrateErr
+	}
+	if hydrateErr != nil {
+		_ = os.RemoveAll(cachePath)
+		if restoreErr := os.Rename(backupPath, cachePath); restoreErr != nil {
+			return fmt.Errorf("%w; failed to restore previous cache: %w", hydrateErr, restoreErr)
+		}
+		return hydrateErr
+	}
+	if err := os.RemoveAll(backupPath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cache MirrorObjectCache) hydrateRepositoryLocalReady(ctx context.Context, cachePath string, m mirror.Mirror, extraRevisions ...string) error {
 	cacheGit := gitexec.New(cachePath, cache.Verbose, cache.Trace)
 	full := false
 
 	recordedRevision := strings.TrimSpace(m.Revision)
 	if recordedRevision != "" {
 		if isFullObjectID(recordedRevision) {
-			if err := cache.fetchFullObjectID(ctx, cacheGit, m.URL, recordedRevision, cache.Config.RecordedRef(m)); err != nil {
+			if err := cache.fetchFullObjectID(ctx, cacheGit, m, recordedRevision, cache.Config.RecordedRef(m)); err != nil {
 				full = true
 				if err := cache.fetchFullMirror(ctx, cachePath, cacheGit, m); err != nil {
 					return err
@@ -325,7 +353,7 @@ func (cache MirrorObjectCache) hydrateRepositoryLocal(ctx context.Context, m mir
 			continue
 		}
 		if isFullObjectID(revision) {
-			if err := cache.fetchFullObjectID(ctx, cacheGit, m.URL, revision, cache.Config.RequestedRef(m)); err != nil {
+			if err := cache.fetchFullObjectID(ctx, cacheGit, m, revision, cache.Config.RequestedRef(m)); err != nil {
 				full = true
 				if err := cache.fetchFullMirror(ctx, cachePath, cacheGit, m); err != nil {
 					return err
@@ -349,7 +377,7 @@ func (cache MirrorObjectCache) hydrateRepositoryLocal(ctx context.Context, m mir
 	switch {
 	case m.Branch != "":
 		if !full {
-			if err := cacheGit.Fetch(ctx, "--depth=1", m.URL, "+refs/heads/"+m.Branch+":refs/heads/"+m.Branch); err != nil {
+			if err := cache.fetchRepositoryLocal(ctx, cacheGit, m, "--depth=1", "+refs/heads/"+m.Branch+":refs/heads/"+m.Branch); err != nil {
 				return err
 			}
 		}
@@ -357,10 +385,13 @@ func (cache MirrorObjectCache) hydrateRepositoryLocal(ctx context.Context, m mir
 		if err != nil {
 			return err
 		}
-		return cacheGit.UpdateRef(ctx, cache.Config.TipRef(m), resolved)
+		if err := cacheGit.UpdateRef(ctx, cache.Config.TipRef(m), resolved); err != nil {
+			return err
+		}
+		return cache.materializeRemotePath(ctx, cacheGit, m, resolved)
 	case m.Tag != "":
 		if !full {
-			if err := cacheGit.Fetch(ctx, "--depth=1", m.URL, "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag); err != nil {
+			if err := cache.fetchRepositoryLocal(ctx, cacheGit, m, "--depth=1", "+refs/tags/"+m.Tag+":refs/tags/"+m.Tag); err != nil {
 				return err
 			}
 		}
@@ -368,42 +399,83 @@ func (cache MirrorObjectCache) hydrateRepositoryLocal(ctx context.Context, m mir
 		if err != nil {
 			return err
 		}
-		return cacheGit.UpdateRef(ctx, cache.Config.TipRef(m), resolved)
+		if err := cacheGit.UpdateRef(ctx, cache.Config.TipRef(m), resolved); err != nil {
+			return err
+		}
+		return cache.materializeRemotePath(ctx, cacheGit, m, resolved)
 	}
 	return nil
 }
 
-func (cache MirrorObjectCache) ensureRepositoryLocalCache(ctx context.Context, cachePath string) error {
+func (cache MirrorObjectCache) materializeRemotePath(ctx context.Context, git gitexec.Git, m mirror.Mirror, revision string) error {
+	if !m.PartialClone {
+		return nil
+	}
+	result, err := git.RunOK(ctx, "rev-list", "--objects", revision, "--", m.RemotePath)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if _, err := git.RunOK(ctx, "cat-file", "-e", fields[0]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cache MirrorObjectCache) ensureRepositoryLocalCache(ctx context.Context, cachePath string, m mirror.Mirror) (string, error) {
+	backupPath := ""
+	recoveryPath := cachePath + ".backup"
+	if _, err := os.Stat(recoveryPath); err == nil {
+		_ = os.RemoveAll(cachePath)
+		if err := os.Rename(recoveryPath, cachePath); err != nil {
+			return "", err
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
 	if info, err := os.Stat(cachePath); err == nil {
 		replace := !info.IsDir()
 		if !replace {
 			if _, err := os.Stat(filepath.Join(cachePath, ".git")); err == nil {
 				replace = true
 			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
+				return "", err
 			}
 		}
 		if !replace {
 			bare, err := isBareRepository(ctx, cachePath, cache.Verbose, cache.Trace)
 			if err == nil && bare {
-				return nil
+				cacheGit := gitexec.New(cachePath, cache.Verbose, cache.Trace)
+				matches, configErr := repositoryLocalCacheMatches(ctx, cacheGit, m)
+				if configErr != nil {
+					return "", configErr
+				}
+				if matches {
+					return "", cache.configureRepositoryLocalCache(ctx, cacheGit, m)
+				}
 			}
 			replace = true
 		}
 		if replace {
-			if err := os.RemoveAll(cachePath); err != nil {
-				return err
+			backupPath = recoveryPath
+			if err := os.Rename(cachePath, backupPath); err != nil {
+				return "", err
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	tempPath, err := os.MkdirTemp(filepath.Dir(cachePath), ".tmp-"+filepath.Base(cachePath)+"-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	cleanup := true
 	defer func() {
@@ -412,12 +484,80 @@ func (cache MirrorObjectCache) ensureRepositoryLocalCache(ctx context.Context, c
 		}
 	}()
 	if err := gitexec.New(".", cache.Verbose, cache.Trace).InitBare(ctx, tempPath); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Rename(tempPath, cachePath); err != nil {
-		return err
+		return "", err
 	}
 	cleanup = false
+	if err := cache.configureRepositoryLocalCache(ctx, gitexec.New(cachePath, cache.Verbose, cache.Trace), m); err != nil {
+		_ = os.RemoveAll(cachePath)
+		if backupPath != "" {
+			_ = os.Rename(backupPath, cachePath)
+		}
+		return "", err
+	}
+	return backupPath, nil
+}
+
+func repositoryLocalCacheMatches(ctx context.Context, git gitexec.Git, m mirror.Mirror) (bool, error) {
+	mode, modeSet, err := git.ConfigGet(ctx, "--bool", "braid.partialClone")
+	if err != nil {
+		return false, err
+	}
+	if !modeSet {
+		_, versionSet, err := git.ConfigGet(ctx, "braid.cacheVersion")
+		if err != nil {
+			return false, err
+		}
+		return !versionSet && !m.PartialClone, nil
+	}
+	version, versionSet, err := git.ConfigGet(ctx, "braid.cacheVersion")
+	if err != nil {
+		return false, err
+	}
+	if !versionSet || version != "1" || mode != fmt.Sprint(m.PartialClone) {
+		return false, nil
+	}
+	if !m.PartialClone {
+		return true, nil
+	}
+	checks := []struct{ key, want string }{
+		{"remote.braid-upstream.url", m.URL},
+		{"remote.braid-upstream.promisor", "true"},
+		{"remote.braid-upstream.partialclonefilter", "blob:none"},
+	}
+	for _, check := range checks {
+		value, ok, err := git.ConfigGet(ctx, check.key)
+		if err != nil {
+			return false, err
+		}
+		if !ok || value != check.want {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (cache MirrorObjectCache) configureRepositoryLocalCache(ctx context.Context, git gitexec.Git, m mirror.Mirror) error {
+	if err := git.ConfigSet(ctx, "braid.cacheVersion", "1"); err != nil {
+		return err
+	}
+	if err := git.ConfigSet(ctx, "braid.partialClone", fmt.Sprint(m.PartialClone)); err != nil {
+		return err
+	}
+	if !m.PartialClone {
+		return nil
+	}
+	if err := git.ConfigSet(ctx, "remote.braid-upstream.url", m.URL); err != nil {
+		return err
+	}
+	if err := git.ConfigSet(ctx, "remote.braid-upstream.promisor", "true"); err != nil {
+		return err
+	}
+	if err := git.ConfigSet(ctx, "remote.braid-upstream.partialclonefilter", "blob:none"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -429,8 +569,8 @@ func isBareRepository(ctx context.Context, path string, verbose bool, trace ioWr
 	return out == "true", nil
 }
 
-func (cache MirrorObjectCache) fetchFullObjectID(ctx context.Context, git gitexec.Git, url, objectID, ref string) error {
-	return git.Fetch(ctx, "--depth=1", url, objectID+":"+ref)
+func (cache MirrorObjectCache) fetchFullObjectID(ctx context.Context, git gitexec.Git, m mirror.Mirror, objectID, ref string) error {
+	return cache.fetchRepositoryLocal(ctx, git, m, "--depth=1", objectID+":"+ref)
 }
 
 func (cache MirrorObjectCache) fetchFullMirror(ctx context.Context, cachePath string, git gitexec.Git, m mirror.Mirror) error {
@@ -440,8 +580,27 @@ func (cache MirrorObjectCache) fetchFullMirror(ctx context.Context, cachePath st
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	args = append(args, m.URL, "+refs/*:refs/*")
-	return git.Fetch(ctx, args...)
+	args = append(args, "+refs/*:refs/*")
+	return cache.fetchRepositoryLocal(ctx, git, m, args...)
+}
+
+func (cache MirrorObjectCache) fetchRepositoryLocal(ctx context.Context, git gitexec.Git, m mirror.Mirror, args ...string) error {
+	refspec := args[len(args)-1]
+	options := args[:len(args)-1]
+	remote := m.URL
+	if m.PartialClone {
+		remote = "braid-upstream"
+		options = append([]string{"--filter=blob:none"}, options...)
+	}
+	args = append(append(options, remote), refspec)
+	result, err := git.FetchResult(ctx, args...)
+	if err != nil {
+		return err
+	}
+	if m.PartialClone && strings.Contains(result.Stderr, "filtering not recognized") {
+		return fmt.Errorf("upstream %s does not support partial clone filtering", m.URL)
+	}
+	return nil
 }
 
 func acquireCacheLock(ctx context.Context, lockPath, mirrorPath string) (func(), error) {

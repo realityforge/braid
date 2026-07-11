@@ -10,7 +10,7 @@ import (
 
 func TestParseModernConfig(t *testing.T) {
 	cfg, err := Parse([]byte(`{
-  "config_version": 1,
+  "config_version": 2,
   "mirrors": {
     "vendor/repo": {
       "url": "https://example.test/repo.git",
@@ -50,12 +50,12 @@ func TestParseRejectsUnsupportedConfigs(t *testing.T) {
 	}{
 		{name: "future version", json: `{"config_version":999,"mirrors":{}}`, want: "newer than supported"},
 		{name: "missing version", json: `{"mirrors":{}}`, want: "missing config_version"},
-		{name: "missing mirrors", json: `{"config_version":1}`, want: "missing mirrors"},
-		{name: "unknown root field", json: `{"config_version":1,"mirrors":{},"extra":true}`, want: "unknown field"},
-		{name: "unknown mirror field", json: `{"config_version":1,"mirrors":{"x":{"url":"u","revision":"r","extra":true}}}`, want: "unknown field"},
-		{name: "missing url", json: `{"config_version":1,"mirrors":{"x":{"revision":"r"}}}`, want: "missing url"},
-		{name: "missing revision", json: `{"config_version":1,"mirrors":{"x":{"url":"u"}}}`, want: "missing revision"},
-		{name: "branch tag conflict", json: `{"config_version":1,"mirrors":{"x":{"url":"u","branch":"main","tag":"v1","revision":"r"}}}`, want: "cannot specify both branch and tag"},
+		{name: "missing mirrors", json: `{"config_version":2}`, want: "missing mirrors"},
+		{name: "unknown root field", json: `{"config_version":2,"mirrors":{},"extra":true}`, want: "unknown field"},
+		{name: "unknown mirror field", json: `{"config_version":2,"mirrors":{"x":{"url":"u","revision":"r","extra":true}}}`, want: "unknown field"},
+		{name: "missing url", json: `{"config_version":2,"mirrors":{"x":{"revision":"r"}}}`, want: "missing url"},
+		{name: "missing revision", json: `{"config_version":2,"mirrors":{"x":{"url":"u"}}}`, want: "missing revision"},
+		{name: "branch tag conflict", json: `{"config_version":2,"mirrors":{"x":{"url":"u","branch":"main","tag":"v1","revision":"r"}}}`, want: "cannot specify both branch and tag"},
 	}
 
 	for _, test := range tests {
@@ -131,7 +131,7 @@ func TestMarshalJSONStableFormat(t *testing.T) {
 		t.Fatalf("MarshalJSON returned error: %v", err)
 	}
 	want := `{
-  "config_version": 1,
+  "config_version": 2,
   "mirrors": {
     "vendor/a": {
       "url": "https://example.test/a.git",
@@ -173,5 +173,26 @@ func TestWriteAndLoadFile(t *testing.T) {
 	}
 	if got.URL != "https://example.test/repo.git" || got.Branch != "main" || got.Revision != "abc123" {
 		t.Fatalf("loaded mirror = %#v", got)
+	}
+}
+
+func TestUpgradeV1(t *testing.T) {
+	cfg, err := UpgradeV1([]byte(`{"config_version":1,"mirrors":{"vendor/repo":{"url":"u","path":"lib","revision":"r"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := cfg.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"config_version": 2`) {
+		t.Fatalf("upgraded config = %s", data)
+	}
+}
+
+func TestPartialCloneRequiresPath(t *testing.T) {
+	_, err := Parse([]byte(`{"config_version":2,"mirrors":{"vendor/repo":{"url":"u","revision":"r","partial_clone":true}}}`))
+	if err == nil || !strings.Contains(err.Error(), "partial clone requires path") {
+		t.Fatalf("error = %v", err)
 	}
 }

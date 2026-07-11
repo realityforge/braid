@@ -11,17 +11,18 @@ var DefaultVersion = "0.0.0-dev"
 type Command string
 
 const (
-	CommandAdd        Command = "add"
-	CommandPull       Command = "pull"
-	CommandRemove     Command = "remove"
-	CommandDiff       Command = "diff"
-	CommandPush       Command = "push"
-	CommandSync       Command = "sync"
-	CommandSetup      Command = "setup"
-	CommandVersion    Command = "version"
-	CommandStatus     Command = "status"
-	CommandCompletion Command = "completion"
-	CommandComplete   Command = "__complete"
+	CommandAdd           Command = "add"
+	CommandPull          Command = "pull"
+	CommandRemove        Command = "remove"
+	CommandDiff          Command = "diff"
+	CommandPush          Command = "push"
+	CommandSync          Command = "sync"
+	CommandSetup         Command = "setup"
+	CommandVersion       Command = "version"
+	CommandStatus        Command = "status"
+	CommandCompletion    Command = "completion"
+	CommandComplete      Command = "__complete"
+	CommandUpgradeConfig Command = "upgrade-config"
 )
 
 type GlobalOptions struct {
@@ -33,14 +34,17 @@ type GlobalOptions struct {
 }
 
 type AddOptions struct {
-	URL        string
-	LocalPath  string
-	Branch     string
-	Tag        string
-	Revision   string
-	RemotePath string
-	NoCommit   bool
+	URL          string
+	LocalPath    string
+	Branch       string
+	Tag          string
+	Revision     string
+	RemotePath   string
+	NoCommit     bool
+	PartialClone bool
 }
+
+type UpgradeConfigOptions struct{ NoCommit bool }
 
 type UpdateOptions struct {
 	LocalPath string
@@ -100,16 +104,17 @@ type Invocation struct {
 	Command Command
 	Help    bool
 
-	Add        AddOptions
-	Update     UpdateOptions
-	Remove     RemoveOptions
-	Diff       DiffOptions
-	Push       PushOptions
-	Sync       SyncOptions
-	Setup      SetupOptions
-	Status     StatusOptions
-	Completion CompletionOptions
-	Complete   CompleteOptions
+	Add           AddOptions
+	Update        UpdateOptions
+	Remove        RemoveOptions
+	Diff          DiffOptions
+	Push          PushOptions
+	Sync          SyncOptions
+	Setup         SetupOptions
+	Status        StatusOptions
+	Completion    CompletionOptions
+	Complete      CompleteOptions
+	UpgradeConfig UpgradeConfigOptions
 }
 
 type Handler interface {
@@ -131,14 +136,15 @@ func New() App {
 	return App{
 		Version: DefaultVersion,
 		Handler: map[Command]Handler{
-			CommandAdd:    notImplemented(CommandAdd),
-			CommandPull:   notImplemented(CommandPull),
-			CommandRemove: notImplemented(CommandRemove),
-			CommandDiff:   notImplemented(CommandDiff),
-			CommandPush:   notImplemented(CommandPush),
-			CommandSync:   notImplemented(CommandSync),
-			CommandSetup:  notImplemented(CommandSetup),
-			CommandStatus: notImplemented(CommandStatus),
+			CommandAdd:           notImplemented(CommandAdd),
+			CommandPull:          notImplemented(CommandPull),
+			CommandRemove:        notImplemented(CommandRemove),
+			CommandDiff:          notImplemented(CommandDiff),
+			CommandPush:          notImplemented(CommandPush),
+			CommandSync:          notImplemented(CommandSync),
+			CommandSetup:         notImplemented(CommandSetup),
+			CommandStatus:        notImplemented(CommandStatus),
+			CommandUpgradeConfig: notImplemented(CommandUpgradeConfig),
 		},
 	}
 }
@@ -272,6 +278,8 @@ func Parse(args []string) (Invocation, error) {
 		return inv, parseCompletion(commandArgs, &inv.Completion)
 	case CommandComplete:
 		return inv, parseComplete(commandArgs, &inv.Complete)
+	case CommandUpgradeConfig:
+		return inv, parseUpgradeConfig(commandArgs, &inv.UpgradeConfig)
 	default:
 		return inv, usageError("unknown command %s", commandText)
 	}
@@ -326,6 +334,7 @@ func parseAdd(args []string, options *AddOptions) error {
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
 		valueFlag("--path", "-p", "path", func(value string) { options.RemotePath = value }),
 		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
+		boolFlag("--partial-clone", "", func() { options.PartialClone = true }),
 	}, func(pos []string, _ []string) {
 		positionals = pos
 	})
@@ -340,6 +349,9 @@ func parseAdd(args []string, options *AddOptions) error {
 	}
 	if options.Tag != "" && options.Revision != "" {
 		return usageError("add cannot combine --tag and --revision")
+	}
+	if options.PartialClone && options.RemotePath == "" {
+		return usageError("add --partial-clone requires --path")
 	}
 	options.URL = positionals[0]
 	if len(positionals) == 2 {
@@ -520,6 +532,19 @@ func parseComplete(args []string, options *CompleteOptions) error {
 	return nil
 }
 
+func parseUpgradeConfig(args []string, options *UpgradeConfigOptions) error {
+	var positionals []string
+	err := parseCommandArgs(CommandUpgradeConfig, args, []flagSpec{
+		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
+	}, func(pos []string, _ []string) {
+		positionals = pos
+	})
+	if err != nil {
+		return err
+	}
+	return requireArgRange("upgrade-config", positionals, 0, 0)
+}
+
 func normalizeLocalPathArg(value string) string {
 	return strings.ReplaceAll(value, `\`, "/")
 }
@@ -620,6 +645,8 @@ func parseCommand(value string) (Command, bool) {
 		return CommandCompletion, true
 	case string(CommandComplete):
 		return CommandComplete, true
+	case string(CommandUpgradeConfig):
+		return CommandUpgradeConfig, true
 	default:
 		return "", false
 	}
@@ -666,6 +693,8 @@ commands:
   version   Show braid version
   completion
             Print Bash completion script
+  upgrade-config
+            Upgrade .braids.json to the current version
 
 Run "braid <command> help" for command-specific usage.
 `, "\n")
@@ -674,7 +703,7 @@ Run "braid <command> help" for command-specific usage.
 func CommandUsage(command Command) string {
 	switch command {
 	case CommandAdd:
-		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit]\n"
+		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit] [--partial-clone]\n"
 	case CommandPull:
 		return "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"
 	case CommandRemove:
@@ -693,6 +722,8 @@ func CommandUsage(command Command) string {
 		return "usage: braid status [local_path]\n"
 	case CommandCompletion:
 		return "usage: braid completion bash\n"
+	case CommandUpgradeConfig:
+		return "usage: braid upgrade-config [--no-commit]\n"
 	default:
 		return Usage()
 	}
