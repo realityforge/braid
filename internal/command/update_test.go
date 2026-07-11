@@ -623,7 +623,7 @@ func TestUpdateCommandAllPrechecksEligibleMirrorsBeforeUpdating(t *testing.T) {
 		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
 	}
 	if remotes := strings.TrimSpace(testutil.Git(t, repo, "remote").Stdout); remotes != "" {
-		t.Fatalf("remotes = %q, want no setup side effects", remotes)
+		t.Fatalf("remotes = %q, want no remote side effects", remotes)
 	}
 }
 

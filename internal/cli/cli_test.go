@@ -123,11 +123,6 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{Command: CommandSync, Sync: SyncOptions{LocalPaths: []string{"vendor/a"}, PullOnly: true, Autostash: true, Keep: true}},
 		},
 		{
-			name: "setup",
-			args: []string{"--verbose", "setup", "vendor/repo", "--force"},
-			want: Invocation{Global: GlobalOptions{Verbose: true}, Command: CommandSetup, Setup: SetupOptions{LocalPath: "vendor/repo", Force: true}},
-		},
-		{
 			name: "version",
 			args: []string{"version"},
 			want: Invocation{Command: CommandVersion},
@@ -233,7 +228,6 @@ func TestParseNormalizesLocalPathArguments(t *testing.T) {
 		{name: "diff selector", args: []string{"diff", `vendor\repo`}, want: "vendor/repo"},
 		{name: "push selector", args: []string{"push", `vendor\repo`}, want: "vendor/repo"},
 		{name: "sync selector", args: []string{"sync", `vendor\repo`}, want: "vendor/repo"},
-		{name: "setup selector", args: []string{"setup", `vendor\repo`}, want: "vendor/repo"},
 		{name: "status selector", args: []string{"status", `vendor\repo`}, want: "vendor/repo"},
 	}
 
@@ -267,8 +261,6 @@ func gotLocalPath(inv Invocation) string {
 			return ""
 		}
 		return inv.Sync.LocalPaths[0]
-	case CommandSetup:
-		return inv.Setup.LocalPath
 	case CommandStatus:
 		return inv.Status.LocalPath
 	default:
@@ -353,7 +345,6 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 		CommandDiff,
 		CommandPush,
 		CommandSync,
-		CommandSetup,
 		CommandStatus,
 	} {
 		if usage := CommandUsage(command); strings.Contains(usage, "--verbose") || strings.Contains(usage, "|-v") || strings.Contains(usage, "--quiet") {

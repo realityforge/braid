@@ -553,19 +553,12 @@ stages the mirror content removal and `.braids.json` update.
 
 ### Remotes, Cache, And Paths
 
-Braid normally creates Git remotes as needed and removes them when the command
-finishes. Use `setup` when you want Braid-managed remotes to exist in the
-repository, for example before inspecting them with Git:
-
-```bash
-braid setup
-braid setup vendor/rails --force
-```
+Braid creates Git remotes as needed and removes them when the command finishes.
 
 The local cache is enabled by default. Without overrides, Braid stores
 repository-local per-mirror bare caches under `.git/braid/cache`. These caches
-are implementation state and can be rebuilt by `braid add`, `braid setup`,
-`braid status`, `braid pull`, `braid diff`, `braid push`, or `braid sync` while
+are implementation state and can be rebuilt by `braid add`, `braid status`,
+`braid pull`, `braid diff`, `braid push`, or `braid sync` while
 the upstream still serves the recorded revisions from `.braids.json`.
 
 Repository-local caches are shallow for common branch, tag, and full-SHA
@@ -590,7 +583,7 @@ lookup or storage. Absolute `local_path` inputs are accepted only when they are
 inside the Git working tree, and stored config paths remain relative.
 
 Commands without a `local_path`, such as `braid status`, `braid diff`,
-`braid setup`, `braid pull`, and `braid sync`, operate on the repository-wide
+`braid pull`, and `braid sync`, operate on the repository-wide
 mirror set from any subdirectory. Relative `--global-cache-dir` values and
 `BRAID_GLOBAL_CACHE_DIR` values remain relative to the process directory. Git
 diff arguments after `braid diff ... --` are passed through as raw `git diff`
@@ -622,7 +615,6 @@ includes it.
 | `push` | Push committed local mirror changes upstream. |
 | `sync [local_path...] [--pull-only] [--autostash] [--keep]` | Push changed branch mirrors, then pull selected mirrors. |
 | `remove [--no-commit]` | Remove mirrored content and config. |
-| `setup` | Add or refresh Braid-managed Git remotes. |
 | `version` | Print the Braid version. |
 | `completion bash` | Print the Bash completion script. |
 

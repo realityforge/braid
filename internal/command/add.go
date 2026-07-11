@@ -106,7 +106,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		}
 	}
 
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
 	remote := m.Remote()

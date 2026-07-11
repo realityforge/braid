@@ -18,7 +18,6 @@ func TestRequirementsForPreflightMatrix(t *testing.T) {
 		want    Requirements
 	}{
 		{command: cli.CommandVersion, want: Requirements{}},
-		{command: cli.CommandSetup, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandStatus, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandDiff, want: Requirements{Git: true, Root: true, Config: true}},
 		{command: cli.CommandAdd, want: Requirements{Git: true, Root: true, MayWrite: true}},

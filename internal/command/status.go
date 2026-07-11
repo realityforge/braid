@@ -73,7 +73,7 @@ func (h StatusHandler) statusOne(ctx context.Context, git StatusGit, cache Cache
 			return err
 		}
 	}
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
 	defer func() {

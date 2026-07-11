@@ -8,7 +8,6 @@ import (
 
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
 
@@ -132,53 +131,6 @@ func TestProgressDiffHydrationKeepsDataOnStdoutAndQuietSuppresses(t *testing.T) 
 	stdout, stderr = runCommandOKWithOutput(t, quietClone, []string{"--quiet", "diff", "vendor/basic"})
 	assertContains(t, stdout, "diff --git a/README.md b/README.md")
 	assertContains(t, stdout, "quiet changed")
-	assertNoProgressOutput(t, stderr)
-}
-
-func TestProgressSetupReportsLocalRemoteChangesInPathOrder(t *testing.T) {
-	upstreamA := testutil.InitRepo(t)
-	testutil.WriteFile(t, upstreamA, "README.md", "a\n")
-	revisionA := testutil.CommitAll(t, upstreamA, "a")
-	upstreamZ := testutil.InitRepo(t)
-	testutil.WriteFile(t, upstreamZ, "README.md", "z\n")
-	revisionZ := testutil.CommitAll(t, upstreamZ, "z")
-
-	repo := initDownstream(t)
-	cfg := config.Empty()
-	for _, m := range []mirror.Mirror{
-		{Path: "vendor/z", URL: upstreamZ, Branch: "main", Revision: revisionZ},
-		{Path: "vendor/a", URL: upstreamA, Branch: "main", Revision: revisionA},
-	} {
-		if err := cfg.Add(m); err != nil {
-			t.Fatalf("add mirror config: %v", err)
-		}
-	}
-	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	testutil.Git(t, repo, "add", config.FileName)
-	testutil.Git(t, repo, "commit", "-m", "configure mirrors")
-
-	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"setup"})
-	assertEmptyOutput(t, "setup stdout", stdout)
-	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/a",
-		"Braid: updated cache for mirror vendor/a",
-		"Braid: setting up mirror remote vendor/a",
-		"Braid: set up mirror remote vendor/a",
-		"Braid: updating cache for mirror vendor/z",
-		"Braid: updated cache for mirror vendor/z",
-		"Braid: setting up mirror remote vendor/z",
-		"Braid: set up mirror remote vendor/z",
-	)
-	assertNotContains(t, stderr, "Braid: fetching mirror")
-
-	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"setup"})
-	assertEmptyOutput(t, "second setup stdout", stdout)
-	assertEmptyOutput(t, "second setup stderr", stderr)
-
-	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"--quiet", "setup", "--force"})
-	assertEmptyOutput(t, "quiet force setup stdout", stdout)
 	assertNoProgressOutput(t, stderr)
 }
 

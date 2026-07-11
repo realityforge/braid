@@ -322,7 +322,7 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 			return err
 		}
 	}
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
 	if !keep {

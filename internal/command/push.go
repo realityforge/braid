@@ -93,7 +93,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 			return pushResult{}, err
 		}
 	}
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return pushResult{}, err
 	}
 	if !keep {

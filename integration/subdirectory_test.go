@@ -35,10 +35,6 @@ func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 		localPath: {URL: upstream, Branch: "main", Revision: baseRevision},
 	})
 
-	setup := runBraid(t, env, workDir, braid, "--quiet", "setup", "vendor/basic")
-	assertResult(t, setup, 0, "", "")
-	assertRemoteURL(t, env, downstream, remote, repositoryCachePath(t, downstream, localPath, configMirror{URL: upstream, Branch: "main"}))
-
 	status := runBraid(t, env, workDir, braid, "--quiet", "status", "vendor/basic")
 	assertExit(t, status, 0)
 	assertEmpty(t, "subdir status stderr", status.stderr)

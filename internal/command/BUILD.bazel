@@ -15,7 +15,7 @@ go_library(
         "push_message.go",
         "push_provenance.go",
         "remove.go",
-        "setup.go",
+		"remote.go",
         "status.go",
         "sync.go",
         "update.go",
@@ -123,14 +123,6 @@ go_test(
 go_test(
     name = "remove_test",
     srcs = ["remove_test.go"],
-    embed = [":command_test_support"],
-    timeout = "short",
-    deps = COMMAND_TEST_DEPS,
-)
-
-go_test(
-    name = "configure_command_test",
-    srcs = ["setup_test.go"],
     embed = [":command_test_support"],
     timeout = "short",
     deps = COMMAND_TEST_DEPS,

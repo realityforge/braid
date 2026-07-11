@@ -82,7 +82,7 @@ func (h DiffHandler) processDiffGit(repo RepoContext, inv cli.Invocation, trace 
 }
 
 func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) (err error) {
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
 	if !options.Keep {

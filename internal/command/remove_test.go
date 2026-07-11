@@ -21,8 +21,8 @@ func TestRemoveCommandDeletesContentConfigAndRemote(t *testing.T) {
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
-	runCommandOK(t, repo, []string{"setup", "vendor/basic"})
 	remote := loadMirror(t, repo, "vendor/basic").Remote()
+	testutil.Git(t, repo, "remote", "add", remote, upstream)
 	writeFailingPreCommitHook(t, repo)
 
 	runCommandOK(t, repo, []string{"remove", "vendor/basic"})
@@ -111,8 +111,8 @@ func TestRemoveCommandKeepsRemote(t *testing.T) {
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
-	runCommandOK(t, repo, []string{"setup", "vendor/basic"})
 	remote := loadMirror(t, repo, "vendor/basic").Remote()
+	testutil.Git(t, repo, "remote", "add", remote, upstream)
 
 	runCommandOK(t, repo, []string{"remove", "vendor/basic", "--keep"})
 	remotes := testutil.Git(t, repo, "remote").Stdout
@@ -128,8 +128,8 @@ func TestRemoveCommandNoCommitKeepKeepsRemoteOnly(t *testing.T) {
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
-	runCommandOK(t, repo, []string{"setup", "vendor/basic"})
 	remote := loadMirror(t, repo, "vendor/basic").Remote()
+	testutil.Git(t, repo, "remote", "add", remote, upstream)
 
 	runCommandOK(t, repo, []string{"remove", "vendor/basic", "--keep", "--no-commit"})
 

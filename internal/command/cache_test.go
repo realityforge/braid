@@ -280,8 +280,8 @@ func TestFetchMirrorFromRepositoryLocalCacheFetchesBraidRefs(t *testing.T) {
 		t.Fatalf("Hydrate returned error: %v", err)
 	}
 	git := gitexec.New(repo, false, nil)
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
-		t.Fatalf("setupOne returned error: %v", err)
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
+		t.Fatalf("configureMirrorRemote returned error: %v", err)
 	}
 	if err := fetchMirror(ctx, git, cache, m, progressReporter{}); err != nil {
 		t.Fatalf("fetchMirror returned error: %v", err)
@@ -310,8 +310,8 @@ func TestFetchTagMirrorFromRepositoryLocalCacheUsesRemoteTrackingRef(t *testing.
 		t.Fatalf("Hydrate returned error: %v", err)
 	}
 	git := gitexec.New(repo, false, nil)
-	if err := setupOne(ctx, git, m, true, cache); err != nil {
-		t.Fatalf("setupOne returned error: %v", err)
+	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
+		t.Fatalf("configureMirrorRemote returned error: %v", err)
 	}
 	if err := fetchMirror(ctx, git, cache, m, progressReporter{}); err != nil {
 		t.Fatalf("fetchMirror returned error: %v", err)
