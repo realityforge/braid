@@ -224,8 +224,8 @@ Both tools enable a local mirror cache by default, but the cache layout changed.
 Ruby Braid defaults to `~/.braid/cache` and derives cache child paths by
 sanitizing the upstream URL. Current Go Braid defaults to repository-local
 per-mirror bare caches under `.git/braid/cache` and derives cache child paths
-from a SHA-256 hash of the upstream URL, local path, upstream path, and tracking
-mode.
+from a SHA-256-derived key covering the upstream URL, local path, upstream path,
+and tracking mode.
 
 Current controls:
 

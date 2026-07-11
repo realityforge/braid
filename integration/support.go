@@ -335,7 +335,7 @@ func mirrorCacheID(localPath string, m configMirror) string {
 	}
 	parts := []string{m.URL, localPath, m.Path, tracking, m.Branch, m.Tag}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:16])
 }
 
 func remoteName(tracking, localPath string) string {

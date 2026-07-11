@@ -176,8 +176,8 @@ func TestMirrorCacheIDUsesStableWindowsSafeKey(t *testing.T) {
 	if got != gotAgain {
 		t.Fatalf("MirrorCacheID is not stable: %q then %q", got, gotAgain)
 	}
-	if len(got) != 64 {
-		t.Fatalf("cache id length = %d, want 64", len(got))
+	if len(got) != 32 {
+		t.Fatalf("cache id length = %d, want 32", len(got))
 	}
 	if strings.ContainsAny(got, "<>:\"/\\|?*") {
 		t.Fatalf("cache id %q contains Windows-invalid filename characters", got)

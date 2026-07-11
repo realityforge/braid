@@ -22,6 +22,7 @@ const (
 	CacheModeDisabled        CacheMode = "disabled"
 	CacheModeRepositoryLocal CacheMode = "repository-local"
 	CacheModeGlobal          CacheMode = "global"
+	mirrorCacheIDBytes                 = 16
 )
 
 type CacheConfig struct {
@@ -140,7 +141,9 @@ func MirrorCacheID(m mirror.Mirror) string {
 		m.Tag,
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return hex.EncodeToString(sum[:])
+	// The ID appears in both the cache directory and Braid refs; keep it short
+	// enough for default Windows path limits while retaining 128 bits of hash.
+	return hex.EncodeToString(sum[:mirrorCacheIDBytes])
 }
 
 func runtimeCache(global cli.GlobalOptions) (CacheConfig, error) {
