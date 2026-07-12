@@ -41,9 +41,11 @@ complete -o default -o bashdefault -F _braid braid
 `
 
 type completionFlag struct {
-	long  string
-	short string
-	value bool
+	long         string
+	short        string
+	value        bool
+	completion   cli.CompletionRole
+	availability cli.Availability
 }
 
 type completionLine struct {
@@ -59,67 +61,29 @@ type commandArgState struct {
 	positionals []string
 }
 
-var globalCompletionFlags = []completionFlag{
-	{long: "--help", short: "-h"},
-	{long: "--verbose", short: "-v"},
-	{long: "--quiet"},
-	{long: "--no-cache"},
-	{long: "--global-cache-dir", value: true},
+func globalCompletionFlags() []completionFlag {
+	help := cli.Help()
+	return append(completionFlags(cli.GlobalOptionsSpec()), completionFlag{long: help.Long, short: help.Short})
 }
 
-var commandCompletionFlags = map[string][]completionFlag{
-	string(cli.CommandAdd): {
-		{long: "--name", value: true},
-		{long: "--branch", short: "-b", value: true},
-		{long: "--tag", short: "-t", value: true},
-		{long: "--revision", short: "-r", value: true},
-		{long: "--no-commit"},
-		{long: "--partial-clone"},
-	},
-	string(cli.CommandPull): {
-		{long: "--branch", short: "-b", value: true},
-		{long: "--tag", short: "-t", value: true},
-		{long: "--revision", short: "-r", value: true},
-		{long: "--keep"},
-		{long: "--no-commit"},
-	},
-	string(cli.CommandRemove): {
-		{long: "--keep"},
-		{long: "--no-commit"},
-	},
-	string(cli.CommandDiff): {
-		{long: "--keep"},
-		{long: "--"},
-	},
-	string(cli.CommandPush): {
-		{long: "--branch", short: "-b", value: true},
-		{long: "--message", short: "-m", value: true},
-		{long: "--keep"},
-	},
-	string(cli.CommandSync): {
-		{long: "--pull-only"},
-		{long: "--autostash"},
-		{long: "--keep"},
-	},
-	string(cli.CommandStatus):        {},
-	string(cli.CommandVersion):       {},
-	string(cli.CommandUpgradeConfig): {{long: "--no-commit"}},
+func completionFlags(options []cli.OptionSpec) []completionFlag {
+	flags := make([]completionFlag, 0, len(options))
+	for _, option := range options {
+		flags = append(flags, completionFlag{long: option.Long, short: option.Short, value: option.TakesValue(), completion: option.Completion, availability: option.Availability})
+	}
+	return flags
 }
 
-var rootCompletionCommands = []string{
-	string(cli.CommandAdd),
-	string(cli.CommandPull),
-	"update",
-	"up",
-	string(cli.CommandRemove),
-	string(cli.CommandDiff),
-	string(cli.CommandPush),
-	string(cli.CommandSync),
-	string(cli.CommandStatus),
-	string(cli.CommandVersion),
-	string(cli.CommandCompletion),
-	string(cli.CommandUpgradeConfig),
-	"help",
+func rootCompletionCommands() []string {
+	commands := []string{cli.Help().Command}
+	for _, spec := range cli.CommandSpecs() {
+		if spec.Hidden {
+			continue
+		}
+		commands = append(commands, spec.Name)
+		commands = append(commands, spec.Aliases...)
+	}
+	return commands
 }
 
 func (h CompletionHandler) Run(inv cli.Invocation, stdout, _ io.Writer) error {
@@ -155,99 +119,119 @@ func (h CompleteHandler) completeBash(ctx context.Context, words []string) []str
 }
 
 func (h CompleteHandler) completeRoot(line completionLine) []string {
-	if flag, ok := valueFlagAwaitingCurrent(line.globalArgs, globalCompletionFlags); ok {
-		if flag.long == "--global-cache-dir" {
-			return pathCandidates(h.Options.WorkDir, line.current, true, "")
-		}
+	flags := globalCompletionFlags()
+	if helpPresent(line.globalArgs) {
 		return nil
 	}
-	if strings.HasPrefix(line.current, "--global-cache-dir=") {
-		value := strings.TrimPrefix(line.current, "--global-cache-dir=")
-		return pathCandidates(h.Options.WorkDir, value, true, "--global-cache-dir=")
+	if flag, ok := valueFlagAwaitingCurrent(line.globalArgs, flags); ok {
+		return h.optionValueCandidates(flag, line.current, "")
+	}
+	if name, value, ok := strings.Cut(line.current, "="); ok {
+		if flag, _, matched := matchCompletionFlag(name, flags); matched {
+			return h.optionValueCandidates(flag, value, name+"=")
+		}
 	}
 
 	var candidates []string
 	if line.current == "" || strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, optionCandidates(line.current, globalCompletionFlags, line.globalArgs, true)...)
+		candidates = append(candidates, optionCandidates(line.current, flags, line.globalArgs, cli.GlobalConflictsSpec(), nil)...)
 	}
 	if line.current == "" || !strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, prefixed(rootCompletionCommands, line.current)...)
+		candidates = append(candidates, prefixed(rootCompletionCommands(), line.current)...)
 	}
 	return uniqueSorted(candidates)
+}
+
+func (h CompleteHandler) optionValueCandidates(flag completionFlag, current, prefix string) []string {
+	switch flag.completion {
+	case cli.CompletionDirectory:
+		return pathCandidates(h.Options.WorkDir, current, true, prefix)
+	case cli.CompletionFilesystem:
+		return pathCandidates(h.Options.WorkDir, current, false, prefix)
+	default:
+		return nil
+	}
 }
 
 func (h CompleteHandler) completeCommand(ctx context.Context, line completionLine) []string {
 	if line.command == string(cli.CommandComplete) {
 		return nil
 	}
-	if line.command == string(cli.CommandCompletion) {
-		return completeCompletionCommand(line)
-	}
-
-	command := canonicalCompletionCommand(line.command)
-	flags, ok := commandCompletionFlags[command]
-	if !ok {
+	spec, ok := cli.CommandSpecForName(line.command)
+	if !ok || spec.Hidden {
 		return nil
+	}
+	if helpPresent(line.commandArgs) {
+		return nil
+	}
+	flags := completionFlags(spec.Options)
+	if spec.Passthrough != nil {
+		flags = append(flags, completionFlag{long: "--"})
 	}
 	if len(line.commandArgs) == 0 {
-		flags = append(append([]completionFlag(nil), flags...), completionFlag{long: "--help", short: "-h"})
+		help := cli.Help()
+		flags = append(append([]completionFlag(nil), flags...), completionFlag{long: help.Long, short: help.Short})
 	}
-	if _, ok := valueFlagAwaitingCurrent(line.commandArgs, flags); ok {
-		return nil
+	if flag, ok := valueFlagAwaitingCurrent(line.commandArgs, flags); ok {
+		return h.optionValueCandidates(flag, line.current, "")
 	}
-	if command == string(cli.CommandDiff) && commandArgsContainDiffSeparator(line.commandArgs) {
+	if name, value, hasEquals := strings.Cut(line.current, "="); hasEquals {
+		if flag, _, matched := matchCompletionFlag(name, flags); matched {
+			return h.optionValueCandidates(flag, value, name+"=")
+		}
+	}
+	if spec.Passthrough != nil && commandArgsContainDiffSeparator(line.commandArgs) {
 		return pathCandidates(h.Options.WorkDir, line.current, false, "")
 	}
 
-	state := parseCompletedCommandArgs(command, line.commandArgs, flags)
-	optionFlags := flags
-	if command == string(cli.CommandAdd) && len(state.positionals) > 0 && strings.HasPrefix(state.positionals[0], ":") {
-		optionFlags = []completionFlag{{long: "--no-commit"}}
-	}
+	state := parseCompletedCommandArgs(line.commandArgs, flags)
 	var candidates []string
 	if line.current == "" || strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, optionCandidates(line.current, optionFlags, line.commandArgs, false)...)
+		candidates = append(candidates, optionCandidates(line.current, flags, line.commandArgs, spec.Conflicts, state.positionals)...)
 	}
 	if line.current == "" || !strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, h.pathCandidatesForCommand(ctx, command, line, state)...)
+		candidates = append(candidates, h.positionalCandidates(ctx, spec, line, state)...)
 		if len(line.commandArgs) == 0 {
-			candidates = append(candidates, prefixed([]string{"help"}, line.current)...)
+			candidates = append(candidates, prefixed([]string{cli.Help().Command}, line.current)...)
 		}
 	}
 	return uniqueSorted(candidates)
 }
 
-func canonicalCompletionCommand(command string) string {
-	switch command {
-	case "update", "up":
-		return string(cli.CommandPull)
-	default:
-		return command
+func helpPresent(args []string) bool {
+	for _, arg := range args {
+		if cli.Help().Matches(arg) {
+			return true
+		}
 	}
+	return false
 }
 
-func completeCompletionCommand(line completionLine) []string {
-	state := parseCompletedCommandArgs(line.command, line.commandArgs, nil)
-	if len(state.positionals) > 0 {
+func (h CompleteHandler) positionalCandidates(ctx context.Context, spec cli.CommandSpec, line completionLine, state commandArgState) []string {
+	position, ok := positionalAt(spec.Positionals, len(state.positionals))
+	if !ok {
 		return nil
 	}
-	return prefixed([]string{"bash", "help", "--help", "-h"}, line.current)
+	switch position.Completion {
+	case cli.CompletionFilesystem:
+		return pathCandidates(h.Options.WorkDir, line.current, false, "")
+	case cli.CompletionMirror:
+		return h.mirrorPathCandidates(ctx, line.current, state.positionals)
+	case cli.CompletionStatic:
+		return prefixed(position.Values, line.current)
+	default:
+		return nil
+	}
 }
 
-func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, command string, line completionLine, state commandArgState) []string {
-	switch command {
-	case string(cli.CommandAdd):
-		if len(state.positionals) >= 1 {
-			return pathCandidates(h.Options.WorkDir, line.current, false, "")
-		}
-	case string(cli.CommandPull), string(cli.CommandRemove), string(cli.CommandDiff), string(cli.CommandPush), string(cli.CommandStatus):
-		if len(state.positionals) == 0 {
-			return h.mirrorPathCandidates(ctx, line.current, nil)
-		}
-	case string(cli.CommandSync):
-		return h.mirrorPathCandidates(ctx, line.current, state.positionals)
+func positionalAt(positionals []cli.PositionalSpec, index int) (cli.PositionalSpec, bool) {
+	if index < len(positionals) {
+		return positionals[index], true
 	}
-	return nil
+	if len(positionals) > 0 && positionals[len(positionals)-1].Repeatable {
+		return positionals[len(positionals)-1], true
+	}
+	return cli.PositionalSpec{}, false
 }
 
 func parseCompletionLine(words []string) completionLine {
@@ -258,9 +242,10 @@ func parseCompletionLine(words []string) completionLine {
 	line.current = words[len(words)-1]
 	completed := words[:len(words)-1]
 
+	globalFlags := globalCompletionFlags()
 	for i := 0; i < len(completed); {
 		word := completed[i]
-		if flag, inlineValue, ok := matchCompletionFlag(word, globalCompletionFlags); ok {
+		if flag, inlineValue, ok := matchCompletionFlag(word, globalFlags); ok {
 			line.globalArgs = append(line.globalArgs, word)
 			i++
 			if flag.value && inlineValue == "" && i < len(completed) {
@@ -281,11 +266,11 @@ func parseCompletionLine(words []string) completionLine {
 	return line
 }
 
-func parseCompletedCommandArgs(command string, args []string, flags []completionFlag) commandArgState {
+func parseCompletedCommandArgs(args []string, flags []completionFlag) commandArgState {
 	var state commandArgState
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if command == string(cli.CommandDiff) && arg == "--" {
+		if arg == "--" {
 			return state
 		}
 		if strings.HasPrefix(arg, "-") {
@@ -309,10 +294,13 @@ func commandArgsContainDiffSeparator(args []string) bool {
 	return false
 }
 
-func optionCandidates(prefix string, flags []completionFlag, args []string, global bool) []string {
+func optionCandidates(prefix string, flags []completionFlag, args []string, conflicts []cli.ConflictSpec, positionals []string) []string {
 	var candidates []string
 	for _, flag := range flags {
-		if suppressFlag(flag, args, global) {
+		if !flag.availability.Allows(positionals) {
+			continue
+		}
+		if suppressFlag(flag, flags, args, conflicts) {
 			continue
 		}
 		for _, name := range []string{flag.long, flag.short} {
@@ -327,26 +315,34 @@ func optionCandidates(prefix string, flags []completionFlag, args []string, glob
 	return uniqueSorted(candidates)
 }
 
-func suppressFlag(flag completionFlag, args []string, global bool) bool {
+func suppressFlag(flag completionFlag, flags []completionFlag, args []string, conflicts []cli.ConflictSpec) bool {
 	if !flag.value && flagPresent(flag, args) {
 		return true
 	}
-	if !global {
-		return false
+	for _, conflict := range conflicts {
+		contains := false
+		otherPresent := false
+		for _, option := range conflict.Options {
+			if option == flag.long {
+				contains = true
+				continue
+			}
+			otherPresent = otherPresent || flagPresent(completionFlagForLong(flags, option), args)
+		}
+		if contains && otherPresent {
+			return true
+		}
 	}
+	return false
+}
 
-	switch flag.long {
-	case "--quiet":
-		return flagPresent(completionFlag{long: "--verbose", short: "-v"}, args)
-	case "--verbose":
-		return flagPresent(completionFlag{long: "--quiet"}, args)
-	case "--no-cache":
-		return flagPresent(completionFlag{long: "--global-cache-dir", value: true}, args)
-	case "--global-cache-dir":
-		return flagPresent(completionFlag{long: "--no-cache"}, args)
-	default:
-		return false
+func completionFlagForLong(flags []completionFlag, long string) completionFlag {
+	for _, flag := range flags {
+		if flag.long == long {
+			return flag
+		}
 	}
+	return completionFlag{long: long}
 }
 
 func flagPresent(flag completionFlag, args []string) bool {

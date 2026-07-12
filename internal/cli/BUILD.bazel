@@ -2,14 +2,20 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "cli",
-    srcs = ["cli.go"],
+    srcs = [
+        "cli.go",
+        "schema.go",
+    ],
     importpath = "braid/internal/cli",
     visibility = ["//visibility:public"],
 )
 
 go_test(
     name = "cli_test",
-    srcs = ["cli_test.go"],
+    srcs = [
+        "cli_test.go",
+        "schema_test.go",
+    ],
     embed = [":cli"],
     timeout = "short",
 )

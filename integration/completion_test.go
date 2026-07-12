@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"braid/internal/clitest"
 )
 
 func TestExecutableBashCompletion(t *testing.T) {
@@ -51,38 +53,37 @@ func TestExecutableBashCompletionCoversEveryCommandAndOptionPosition(t *testing.
 	env := newProcessEnv(t, root)
 	braid := braidBinary(t)
 
-	tests := []struct {
-		command     string
-		positionals []string
-		options     []string
-	}{
-		{command: "add", positionals: []string{"https://example.test/repo.git"}, options: []string{"--name", "--branch", "-b", "--tag", "-t", "--revision", "-r", "--no-commit", "--partial-clone"}},
-		{command: "pull", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "update", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "up", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "remove", positionals: []string{"mirror"}, options: []string{"--keep", "--no-commit"}},
-		{command: "diff", positionals: []string{"mirror"}, options: []string{"--keep", "--"}},
-		{command: "push", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--message", "-m", "--keep"}},
-		{command: "sync", positionals: []string{"mirror"}, options: []string{"--pull-only", "--autostash", "--keep"}},
-		{command: "status", positionals: []string{"mirror"}},
-		{command: "version"},
-		{command: "upgrade-config", options: []string{"--no-commit"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.command, func(t *testing.T) {
-			before := completeExecutable(t, env, root, braid, tt.command, "")
-			for _, option := range append(append([]string(nil), tt.options...), "--help", "-h") {
-				assertCompletionCandidate(t, before, option)
+	for _, test := range clitest.CompletionContractCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			candidates := completeExecutable(t, env, root, braid, test.Words...)
+			if test.WantEmpty && len(candidates) != 0 {
+				t.Fatalf("completion candidates = %#v, want empty", candidates)
 			}
-			assertCompletionCandidate(t, before, "help")
+			for _, want := range test.Want {
+				assertCompletionCandidate(t, candidates, want)
+			}
+			for _, unwanted := range test.Unwanted {
+				assertNoCompletionCandidate(t, candidates, unwanted)
+			}
+		})
+	}
+}
 
-			if len(tt.positionals) == 0 {
+func TestExecutableCLIEnforcesGeneratedPositionalConstraints(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	for _, test := range clitest.SyntaxConstraintCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			result := runBraid(t, env, root, braid, test.Args...)
+			if test.WantError != "" {
+				assertExit(t, result, 2)
+				assertContains(t, result.stderr, test.WantError)
 				return
 			}
-			after := completeExecutable(t, env, root, braid, append([]string{tt.command}, append(tt.positionals, "")...)...)
-			for _, option := range tt.options {
-				assertCompletionCandidate(t, after, option)
+			if result.exitCode == 2 {
+				t.Fatalf("valid syntax %v returned usage exit: stderr = %q", test.Args, result.stderr)
 			}
 		})
 	}

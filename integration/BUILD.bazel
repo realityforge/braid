@@ -41,6 +41,7 @@ go_test(
     data = ["//cmd/braid"],
     embed = [":test_support"],
     timeout = "short",
+    deps = ["//internal/clitest"],
 )
 
 go_test(

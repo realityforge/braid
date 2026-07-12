@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"braid/internal/clitest"
 	"braid/internal/testutil"
 )
 
@@ -113,42 +114,18 @@ func TestCompleteCommandOptions(t *testing.T) {
 
 func TestCompleteEveryCommandOptionAtEveryValidPosition(t *testing.T) {
 	dir := t.TempDir()
-	tests := []struct {
-		command     string
-		positionals []string
-		options     []string
-	}{
-		{command: "add", positionals: []string{"https://example.test/repo.git"}, options: []string{"--name", "--branch", "-b", "--tag", "-t", "--revision", "-r", "--no-commit", "--partial-clone"}},
-		{command: "pull", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "update", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "up", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
-		{command: "remove", positionals: []string{"mirror"}, options: []string{"--keep", "--no-commit"}},
-		{command: "diff", positionals: []string{"mirror"}, options: []string{"--keep", "--"}},
-		{command: "push", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--message", "-m", "--keep"}},
-		{command: "sync", positionals: []string{"mirror"}, options: []string{"--pull-only", "--autostash", "--keep"}},
-		{command: "status", positionals: []string{"mirror"}},
-		{command: "version"},
-		{command: "upgrade-config", options: []string{"--no-commit"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.command, func(t *testing.T) {
-			before := completeCandidates(t, dir, tt.command, "")
-			for _, option := range append(append([]string(nil), tt.options...), "--help", "-h") {
-				assertCandidate(t, before, option)
+	for _, test := range clitest.CompletionContractCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			candidates := completeCandidates(t, dir, test.Words...)
+			if test.WantEmpty && len(candidates) != 0 {
+				t.Fatalf("candidates = %#v, want empty", candidates)
 			}
-			assertCandidate(t, before, "help")
-
-			if len(tt.positionals) == 0 {
-				return
+			for _, want := range test.Want {
+				assertCandidate(t, candidates, want)
 			}
-			after := completeCandidates(t, dir, append([]string{tt.command}, append(tt.positionals, "")...)...)
-			for _, option := range tt.options {
-				assertCandidate(t, after, option)
+			for _, unwanted := range test.Unwanted {
+				assertNoCandidate(t, candidates, unwanted)
 			}
-			assertNoCandidate(t, after, "--help")
-			assertNoCandidate(t, after, "-h")
-			assertNoCandidate(t, after, "help")
 		})
 	}
 }
