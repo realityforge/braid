@@ -183,6 +183,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "old cache dir flag", args: []string{"--cache-dir", "cache", "version"}, want: "--cache-dir has been replaced by --global-cache-dir"},
 		{name: "old cache dir equals flag", args: []string{"--cache-dir=cache", "version"}, want: "--cache-dir has been replaced by --global-cache-dir"},
 		{name: "quiet verbose conflict", args: []string{"--quiet", "--verbose", "version"}, want: "--quiet and --verbose cannot be used together"},
+		{name: "global boolean inline value", args: []string{"--verbose=true", "version"}, want: "flag --verbose does not take a value"},
 		{name: "verbose quiet conflict", args: []string{"--verbose", "--quiet", "version"}, want: "--quiet and --verbose cannot be used together"},
 		{name: "empty global cache dir", args: []string{"--global-cache-dir=", "version"}, want: "--global-cache-dir requires a non-empty value"},
 		{name: "existing source needs mirror", args: []string{"add", ":source"}, want: "add to an existing source requires at least one mirror"},

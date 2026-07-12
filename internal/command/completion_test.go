@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"braid/internal/clitest"
 	"braid/internal/testutil"
 )
 
@@ -32,8 +33,8 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertCandidate(t, candidates, "pull")
 	assertCandidate(t, candidates, "completion")
 	assertCandidate(t, candidates, "help")
-	assertNoCandidate(t, candidates, "update")
-	assertNoCandidate(t, candidates, "up")
+	assertCandidate(t, candidates, "update")
+	assertCandidate(t, candidates, "up")
 	assertNoCandidate(t, candidates, "__complete")
 
 	candidates = completeCandidates(t, dir, "--")
@@ -41,6 +42,9 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--quiet")
 	assertCandidate(t, candidates, "--no-cache")
 	assertCandidate(t, candidates, "--global-cache-dir")
+	assertCandidate(t, candidates, "--help")
+	candidates = completeCandidates(t, dir, "-")
+	assertCandidate(t, candidates, "-h")
 
 	candidates = completeCandidates(t, dir, "--verbose", "")
 	assertNoCandidate(t, candidates, "--verbose")
@@ -102,8 +106,27 @@ func TestCompleteCommandOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--no-commit")
 
 	candidates = completeCandidates(t, dir, "completion", "")
-	if got, want := strings.Join(candidates, "\n"), "bash"; got != want {
-		t.Fatalf("completion candidates = %q, want %q", got, want)
+	assertCandidate(t, candidates, "bash")
+	assertCandidate(t, candidates, "help")
+	assertCandidate(t, candidates, "--help")
+	assertCandidate(t, candidates, "-h")
+}
+
+func TestCompleteEveryCommandOptionAtEveryValidPosition(t *testing.T) {
+	dir := t.TempDir()
+	for _, test := range clitest.CompletionContractCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			candidates := completeCandidates(t, dir, test.Words...)
+			if test.WantEmpty && len(candidates) != 0 {
+				t.Fatalf("candidates = %#v, want empty", candidates)
+			}
+			for _, want := range test.Want {
+				assertCandidate(t, candidates, want)
+			}
+			for _, unwanted := range test.Unwanted {
+				assertNoCandidate(t, candidates, unwanted)
+			}
+		})
 	}
 }
 
@@ -157,9 +180,7 @@ func TestCompleteMirrorPathsAreSilentOutsideRepository(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("__complete exit = %d, stderr = %q", code, stderr.String())
 	}
-	if stdout.String() != "" {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
+	assertCandidate(t, splitCompletionLines(stdout.String()), "help")
 	if stderr.String() != "" {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}

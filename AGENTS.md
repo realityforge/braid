@@ -15,6 +15,11 @@
 - Integration tests should create local upstream/downstream repositories in
   `t.TempDir()`, configure local user identity, and disable GPG signing unless
   the test explicitly covers signing config propagation.
+- Any change to the CLI interface, including commands, aliases, options,
+  positional arguments, or help forms, must include both unit-level and
+  integration completion tests. The tests must exercise completion at every
+  valid position affected by the change, including before and after positional
+  arguments where options are accepted.
 
 ## Non-Negotiable CI Parity
 

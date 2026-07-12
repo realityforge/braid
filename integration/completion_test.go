@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"braid/internal/clitest"
 )
 
 func TestExecutableBashCompletion(t *testing.T) {
@@ -25,17 +27,66 @@ func TestExecutableBashCompletion(t *testing.T) {
 	assertCompletionCandidate(t, rootCandidates, "add")
 	assertCompletionCandidate(t, rootCandidates, "pull")
 	assertCompletionCandidate(t, rootCandidates, "completion")
-	assertNoCompletionCandidate(t, rootCandidates, "update")
-	assertNoCompletionCandidate(t, rootCandidates, "up")
+	assertCompletionCandidate(t, rootCandidates, "update")
+	assertCompletionCandidate(t, rootCandidates, "up")
 	assertNoCompletionCandidate(t, rootCandidates, "__complete")
 
 	globalFlags := completeExecutable(t, env, root, braid, "--")
 	assertCompletionCandidate(t, globalFlags, "--verbose")
 	assertCompletionCandidate(t, globalFlags, "--quiet")
 	assertCompletionCandidate(t, globalFlags, "--global-cache-dir")
+	assertCompletionCandidate(t, globalFlags, "--help")
+	shortGlobalFlags := completeExecutable(t, env, root, braid, "-")
+	assertCompletionCandidate(t, shortGlobalFlags, "-h")
 
-	noRepoMirrors := runBraid(t, env, root, braid, "__complete", "bash", "--", "status", "")
-	assertResult(t, noRepoMirrors, 0, "", "")
+	completionArgs := completeExecutable(t, env, root, braid, "completion", "")
+	for _, candidate := range []string{"bash", "help", "--help", "-h"} {
+		assertCompletionCandidate(t, completionArgs, candidate)
+	}
+
+	noRepoMirrors := completeExecutable(t, env, root, braid, "status", "")
+	assertCompletionCandidate(t, noRepoMirrors, "help")
+}
+
+func TestExecutableBashCompletionCoversEveryCommandAndOptionPosition(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	for _, test := range clitest.CompletionContractCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			candidates := completeExecutable(t, env, root, braid, test.Words...)
+			if test.WantEmpty && len(candidates) != 0 {
+				t.Fatalf("completion candidates = %#v, want empty", candidates)
+			}
+			for _, want := range test.Want {
+				assertCompletionCandidate(t, candidates, want)
+			}
+			for _, unwanted := range test.Unwanted {
+				assertNoCompletionCandidate(t, candidates, unwanted)
+			}
+		})
+	}
+}
+
+func TestExecutableCLIEnforcesGeneratedPositionalConstraints(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	for _, test := range clitest.SyntaxConstraintCases() {
+		t.Run(test.Name, func(t *testing.T) {
+			result := runBraid(t, env, root, braid, test.Args...)
+			if test.WantError != "" {
+				assertExit(t, result, 2)
+				assertContains(t, result.stderr, test.WantError)
+				return
+			}
+			if result.exitCode == 2 {
+				t.Fatalf("valid syntax %v returned usage exit: stderr = %q", test.Args, result.stderr)
+			}
+		})
+	}
 }
 
 func TestExecutableBashCompletionMirrorPathsFromSubdirectory(t *testing.T) {

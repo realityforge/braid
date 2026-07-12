@@ -225,17 +225,10 @@ func Parse(args []string) (Invocation, error) {
 	if len(rest) == 0 {
 		return inv, usageError("missing command")
 	}
-	if inv.Global.NoCache && inv.Global.GlobalCacheDirSet {
-		return inv, usageError("--no-cache and --global-cache-dir cannot be used together")
-	}
-	if inv.Global.Verbose && inv.Global.Quiet {
-		return inv, usageError("--quiet and --verbose cannot be used together")
-	}
-
 	commandText := rest[0]
-	if commandText == "help" || commandText == "--help" || commandText == "-h" {
+	if Help().Matches(commandText) {
 		inv.Help = true
-		return inv, requireNoArgs("help", rest[1:])
+		return inv, requireNoArgs(Help().Command, rest[1:])
 	}
 	if strings.HasPrefix(commandText, "-") {
 		return inv, usageError("unknown global flag %s", commandText)
@@ -267,7 +260,8 @@ func Parse(args []string) (Invocation, error) {
 	case CommandSync:
 		return inv, parseSync(commandArgs, &inv.Sync)
 	case CommandVersion:
-		return inv, requireNoArgs("version", commandArgs)
+		_, err := parseCommandSyntax(CommandVersion, commandArgs)
+		return inv, err
 	case CommandStatus:
 		return inv, parseStatus(commandArgs, &inv.Status)
 	case CommandCompletion:
@@ -282,80 +276,88 @@ func Parse(args []string) (Invocation, error) {
 }
 
 func parseGlobal(args []string, global *GlobalOptions) ([]string, error) {
+	options := GlobalOptionsSpec()
+	present := map[string]bool{}
 	i := 0
 	for i < len(args) {
 		arg := args[i]
-		switch {
-		case arg == "--no-cache":
-			global.NoCache = true
-			i++
-		case arg == "--verbose" || arg == "-v":
-			global.Verbose = true
-			i++
-		case arg == "--quiet":
-			global.Quiet = true
-			i++
-		case arg == "--cache-dir" || strings.HasPrefix(arg, "--cache-dir="):
+		if arg == "--cache-dir" || strings.HasPrefix(arg, "--cache-dir=") {
 			return nil, usageError("--cache-dir has been replaced by --global-cache-dir")
-		case arg == "--global-cache-dir":
+		}
+		name, inlineValue, hasEquals := strings.Cut(arg, "=")
+		option, matched := matchOption(name, options)
+		if !matched {
+			return args[i:], validateOptionConflicts(present, GlobalConflictsSpec())
+		}
+		present[option.Long] = true
+		if !option.TakesValue() && hasEquals {
+			return nil, usageError("flag %s does not take a value", option.Long)
+		}
+		value := inlineValue
+		if option.TakesValue() && !hasEquals {
 			if i+1 >= len(args) {
-				return nil, usageError("--global-cache-dir requires a value")
+				return nil, usageError("%s requires a value", option.Long)
 			}
-			if args[i+1] == "" {
-				return nil, usageError("--global-cache-dir requires a non-empty value")
-			}
-			global.GlobalCacheDir = args[i+1]
-			global.GlobalCacheDirSet = true
-			i += 2
-		case strings.HasPrefix(arg, "--global-cache-dir="):
-			value := strings.TrimPrefix(arg, "--global-cache-dir=")
-			if value == "" {
-				return nil, usageError("--global-cache-dir requires a non-empty value")
-			}
+			i++
+			value = args[i]
+		}
+		if option.TakesValue() && value == "" {
+			return nil, usageError("%s requires a non-empty value", option.Long)
+		}
+		switch option.Long {
+		case "--no-cache":
+			global.NoCache = true
+		case "--verbose":
+			global.Verbose = true
+		case "--quiet":
+			global.Quiet = true
+		case "--global-cache-dir":
 			global.GlobalCacheDir = value
 			global.GlobalCacheDirSet = true
-			i++
-		default:
-			return args[i:], nil
+		}
+		i++
+	}
+	return nil, validateOptionConflicts(present, GlobalConflictsSpec())
+}
+
+func validateOptionConflicts(present map[string]bool, conflicts []ConflictSpec) error {
+	for _, conflict := range conflicts {
+		all := true
+		for _, option := range conflict.Options {
+			all = all && present[option]
+		}
+		if all {
+			return usageError("%s", conflict.Error)
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+func matchOption(name string, options []OptionSpec) (OptionSpec, bool) {
+	for _, option := range options {
+		if name == option.Long || (option.Short != "" && name == option.Short) {
+			return option, true
+		}
+	}
+	return OptionSpec{}, false
 }
 
 func parseAdd(args []string, options *AddOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandAdd, args, []flagSpec{
-		valueFlag("--name", "", "name", func(value string) { options.SourceName = value }),
-		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
-		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
-		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
-		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
-		boolFlag("--partial-clone", "", func() { options.PartialClone = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandAdd, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("add", positionals, 1, -1); err != nil {
-		return err
-	}
-	if options.Tag != "" && options.Branch != "" {
-		return usageError("add cannot combine --tag and --branch")
-	}
-	if options.Tag != "" && options.Revision != "" {
-		return usageError("add cannot combine --tag and --revision")
-	}
+	positionals := parsed.positionals
+	options.SourceName = parsed.value("--name")
+	options.Branch = parsed.value("--branch")
+	options.Tag = parsed.value("--tag")
+	options.Revision = parsed.value("--revision")
+	options.NoCommit = parsed.has("--no-commit")
+	options.PartialClone = parsed.has("--partial-clone")
 	if strings.HasPrefix(positionals[0], ":") {
 		options.ExistingSource = strings.TrimPrefix(positionals[0], ":")
 		if options.ExistingSource == "" {
 			return usageError("add source selector requires a name")
-		}
-		if options.SourceName != "" || options.Branch != "" || options.Tag != "" || options.Revision != "" || options.PartialClone {
-			return usageError("add to an existing source cannot use --name, --branch, --tag, --revision, or --partial-clone")
-		}
-		if len(positionals) == 1 {
-			return usageError("add to an existing source requires at least one mirror")
 		}
 	} else {
 		options.URL = positionals[0]
@@ -383,140 +385,96 @@ func parseAdd(args []string, options *AddOptions) error {
 }
 
 func parseUpdate(args []string, options *UpdateOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandPull, args, []flagSpec{
-		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
-		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
-		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
-		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandPull, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("pull", positionals, 0, 1); err != nil {
-		return err
-	}
+	positionals := parsed.positionals
+	options.Branch = parsed.value("--branch")
+	options.Tag = parsed.value("--tag")
+	options.Revision = parsed.value("--revision")
+	options.Keep = parsed.has("--keep")
+	options.NoCommit = parsed.has("--no-commit")
 	if len(positionals) == 1 {
 		options.LocalPath = normalizeLocalPathArg(positionals[0])
-	} else if options.Branch != "" || options.Tag != "" || options.Revision != "" {
-		return usageError("pull without local_path cannot use --branch, --tag, or --revision")
-	}
-	if options.Tag != "" && options.Branch != "" {
-		return usageError("pull cannot combine --tag and --branch")
-	}
-	if options.Tag != "" && options.Revision != "" {
-		return usageError("pull cannot combine --tag and --revision")
 	}
 	return nil
 }
 
 func parseRemove(args []string, options *RemoveOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandRemove, args, []flagSpec{
-		boolFlag("--keep", "", func() { options.Keep = true }),
-		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandRemove, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("remove", positionals, 1, 1); err != nil {
-		return err
-	}
-	options.LocalPath = normalizeLocalPathArg(positionals[0])
+	options.LocalPath = normalizeLocalPathArg(parsed.positionals[0])
+	options.Keep = parsed.has("--keep")
+	options.NoCommit = parsed.has("--no-commit")
 	return nil
 }
 
 func parseDiff(args []string, options *DiffOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandDiff, args, []flagSpec{
-		boolFlag("--keep", "", func() { options.Keep = true }),
-	}, func(pos []string, passthrough []string) {
-		positionals = pos
-		options.GitDiffArgs = passthrough
-	})
+	parsed, err := parseCommandSyntax(CommandDiff, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("diff", positionals, 0, 1); err != nil {
-		return err
+	if len(parsed.positionals) == 1 {
+		options.LocalPath = normalizeLocalPathArg(parsed.positionals[0])
 	}
-	if len(positionals) == 1 {
-		options.LocalPath = normalizeLocalPathArg(positionals[0])
-	}
+	options.Keep = parsed.has("--keep")
+	options.GitDiffArgs = parsed.passthrough
 	return nil
 }
 
 func parsePush(args []string, options *PushOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandPush, args, []flagSpec{
-		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
-		valueFlag("--message", "-m", "message", func(value string) { options.Message = value }),
-		boolFlag("--keep", "", func() { options.Keep = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandPush, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("push", positionals, 1, 1); err != nil {
-		return err
-	}
+	options.Branch = parsed.value("--branch")
+	options.Message = parsed.value("--message")
+	options.Keep = parsed.has("--keep")
 	if options.Message != "" && strings.TrimSpace(options.Message) == "" {
 		return usageError("--message requires a non-empty message value")
 	}
-	options.LocalPath = normalizeLocalPathArg(positionals[0])
+	options.LocalPath = normalizeLocalPathArg(parsed.positionals[0])
 	return nil
 }
 
 func parseSync(args []string, options *SyncOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandSync, args, []flagSpec{
-		boolFlag("--pull-only", "", func() { options.PullOnly = true }),
-		boolFlag("--autostash", "", func() { options.Autostash = true }),
-		boolFlag("--keep", "", func() { options.Keep = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandSync, args)
 	if err != nil {
 		return err
 	}
-	options.LocalPaths = make([]string, 0, len(positionals))
-	for _, positional := range positionals {
+	options.PullOnly = parsed.has("--pull-only")
+	options.Autostash = parsed.has("--autostash")
+	options.Keep = parsed.has("--keep")
+	options.LocalPaths = make([]string, 0, len(parsed.positionals))
+	for _, positional := range parsed.positionals {
 		options.LocalPaths = append(options.LocalPaths, normalizeLocalPathArg(positional))
 	}
 	return nil
 }
 
 func parseStatus(args []string, options *StatusOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandStatus, args, nil, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandStatus, args)
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("status", positionals, 0, 1); err != nil {
-		return err
-	}
-	if len(positionals) == 1 {
-		options.LocalPath = normalizeLocalPathArg(positionals[0])
+	if len(parsed.positionals) == 1 {
+		options.LocalPath = normalizeLocalPathArg(parsed.positionals[0])
 	}
 	return nil
 }
 
 func parseCompletion(args []string, options *CompletionOptions) error {
-	if err := requireArgRange("completion", args, 1, 1); err != nil {
+	parsed, err := parseCommandSyntax(CommandCompletion, args)
+	if err != nil {
 		return err
 	}
-	if args[0] != "bash" {
-		return usageError("unknown completion shell %s", args[0])
+	if parsed.positionals[0] != "bash" {
+		return usageError("unknown completion shell %s", parsed.positionals[0])
 	}
-	options.Shell = args[0]
+	options.Shell = parsed.positionals[0]
 	return nil
 }
 
@@ -524,151 +482,42 @@ func parseComplete(args []string, options *CompleteOptions) error {
 	if len(args) < 2 {
 		return usageError("__complete requires shell and -- separator")
 	}
-	if args[0] != "bash" {
-		return usageError("unknown completion shell %s", args[0])
+	parsed, err := parseCommandSyntax(CommandComplete, args)
+	if err != nil {
+		return err
 	}
-	if args[1] != "--" {
-		return usageError("__complete requires -- separator")
+	if parsed.positionals[0] != "bash" {
+		return usageError("unknown completion shell %s", parsed.positionals[0])
 	}
-	options.Shell = args[0]
-	options.Args = append([]string(nil), args[2:]...)
+	options.Shell = parsed.positionals[0]
+	options.Args = append([]string(nil), parsed.passthrough...)
 	return nil
 }
 
 func parseUpgradeConfig(args []string, options *UpgradeConfigOptions) error {
-	var positionals []string
-	err := parseCommandArgs(CommandUpgradeConfig, args, []flagSpec{
-		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
-	}, func(pos []string, _ []string) {
-		positionals = pos
-	})
+	parsed, err := parseCommandSyntax(CommandUpgradeConfig, args)
 	if err != nil {
 		return err
 	}
-	return requireArgRange("upgrade-config", positionals, 0, 0)
+	options.NoCommit = parsed.has("--no-commit")
+	return nil
 }
 
 func normalizeLocalPathArg(value string) string {
 	return strings.ReplaceAll(value, `\`, "/")
 }
 
-type flagSpec struct {
-	long      string
-	short     string
-	valueName string
-	setValue  func(string)
-	setBool   func()
-}
-
-func valueFlag(long, short, valueName string, set func(string)) flagSpec {
-	return flagSpec{long: long, short: short, valueName: valueName, setValue: set}
-}
-
-func boolFlag(long, short string, set func()) flagSpec {
-	return flagSpec{long: long, short: short, setBool: set}
-}
-
-func parseCommandArgs(command Command, args []string, flags []flagSpec, done func([]string, []string)) error {
-	var positionals []string
-	var passthrough []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if command == CommandDiff && arg == "--" {
-			passthrough = append(passthrough, args[i+1:]...)
-			break
-		}
-		if strings.HasPrefix(arg, "-") {
-			spec, inlineValue, matched := matchFlag(arg, flags)
-			if !matched {
-				return usageError("unknown flag for %s: %s", command, arg)
-			}
-			if spec.setBool != nil {
-				if inlineValue != "" {
-					return usageError("flag %s does not take a value", spec.long)
-				}
-				spec.setBool()
-				continue
-			}
-			value := inlineValue
-			if value == "" {
-				if i+1 >= len(args) {
-					return usageError("%s requires a %s value", spec.long, spec.valueName)
-				}
-				value = args[i+1]
-				i++
-			}
-			if value == "" {
-				return usageError("%s requires a non-empty %s value", spec.long, spec.valueName)
-			}
-			spec.setValue(value)
-			continue
-		}
-		positionals = append(positionals, arg)
-	}
-	done(positionals, passthrough)
-	return nil
-}
-
-func matchFlag(arg string, flags []flagSpec) (flagSpec, string, bool) {
-	name := arg
-	inlineValue := ""
-	if before, after, ok := strings.Cut(arg, "="); ok {
-		name = before
-		inlineValue = after
-	}
-	for _, spec := range flags {
-		if name == spec.long || (spec.short != "" && name == spec.short) {
-			return spec, inlineValue, true
-		}
-	}
-	return flagSpec{}, "", false
-}
-
 func parseCommand(value string) (Command, bool) {
-	switch value {
-	case string(CommandAdd):
-		return CommandAdd, true
-	case string(CommandPull), "update", "up":
-		return CommandPull, true
-	case string(CommandRemove):
-		return CommandRemove, true
-	case string(CommandDiff):
-		return CommandDiff, true
-	case string(CommandPush):
-		return CommandPush, true
-	case string(CommandSync):
-		return CommandSync, true
-	case string(CommandVersion):
-		return CommandVersion, true
-	case string(CommandStatus):
-		return CommandStatus, true
-	case string(CommandCompletion):
-		return CommandCompletion, true
-	case string(CommandComplete):
-		return CommandComplete, true
-	case string(CommandUpgradeConfig):
-		return CommandUpgradeConfig, true
-	default:
-		return "", false
-	}
+	spec, ok := CommandSpecForName(value)
+	return spec.Command, ok
 }
 
 func isCommandHelp(args []string) bool {
-	return len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h")
+	return len(args) == 1 && Help().Matches(args[0])
 }
 
 func requireNoArgs(command string, args []string) error {
 	if len(args) > 0 {
-		return usageError("%s received extra argument(s)", command)
-	}
-	return nil
-}
-
-func requireArgRange(command string, args []string, min, max int) error {
-	if len(args) < min {
-		return usageError("%s requires %d argument(s)", command, min)
-	}
-	if max >= 0 && len(args) > max {
 		return usageError("%s received extra argument(s)", command)
 	}
 	return nil
@@ -679,50 +528,48 @@ func usageError(format string, args ...interface{}) error {
 }
 
 func Usage() string {
-	return strings.TrimLeft(`
-usage: braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]
-
-commands:
-  add       Add a source or mirrors to an existing source
-  pull      Pull one source or every eligible source
-  remove    Remove a mirror or source
-  diff      Show local mirror changes
-  push      Push one source's local mirror changes upstream
-  sync      Push local mirror changes, then pull sources
-  status    Show mirror status
-  version   Show braid version
-  completion
-            Print Bash completion script
-  upgrade-config
-            Upgrade .braids.json to the current version
-
-Run "braid <command> help" for command-specific usage.
-`, "\n")
+	var groups []string
+	for _, conflict := range GlobalConflictsSpec() {
+		var options []string
+		for _, option := range GlobalOptionsSpec() {
+			for _, name := range conflict.Options {
+				if option.Long == name {
+					options = append(options, option.UsageName())
+				}
+			}
+		}
+		groups = append(groups, "["+strings.Join(options, " | ")+"]")
+	}
+	var output strings.Builder
+	fmt.Fprintf(&output, "usage: braid %s <command> [options]\n\ncommands:\n", strings.Join(groups, " "))
+	for _, spec := range CommandSpecs() {
+		if spec.Hidden {
+			continue
+		}
+		if len(spec.Name) <= 7 {
+			fmt.Fprintf(&output, "  %-9s %s\n", spec.Name, spec.Summary)
+		} else {
+			fmt.Fprintf(&output, "  %s\n            %s\n", spec.Name, spec.Summary)
+		}
+	}
+	fmt.Fprintf(&output, "\nRun \"braid <command> %s\" for command-specific usage.\n", Help().Command)
+	return output.String()
 }
 
 func CommandUsage(command Command) string {
-	switch command {
-	case CommandAdd:
-		return "usage: braid add <url|:source> [local_path[=upstream_path]...] [--name <name>] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--no-commit] [--partial-clone]\n"
-	case CommandPull:
-		return "usage: braid pull [local_path|:source] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"
-	case CommandRemove:
-		return "usage: braid remove <local_path|:source> [--keep] [--no-commit]\n"
-	case CommandDiff:
-		return "usage: braid diff [local_path|:source] [--keep] [-- <git_diff_arg>...]\n"
-	case CommandPush:
-		return "usage: braid push <local_path|:source> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"
-	case CommandSync:
-		return "usage: braid sync [local_path|:source ...] [--pull-only] [--autostash] [--keep]\n"
-	case CommandVersion:
-		return "usage: braid version\n"
-	case CommandStatus:
-		return "usage: braid status [local_path|:source]\n"
-	case CommandCompletion:
-		return "usage: braid completion bash\n"
-	case CommandUpgradeConfig:
-		return "usage: braid upgrade-config [--no-commit]\n"
-	default:
+	spec, ok := CommandSpecForCommand(command)
+	if !ok || spec.Hidden {
 		return Usage()
 	}
+	parts := []string{"usage:", "braid", spec.Name}
+	for _, positional := range spec.Positionals {
+		parts = append(parts, positional.Usage)
+	}
+	for _, option := range spec.Options {
+		parts = append(parts, "["+option.UsageName()+"]")
+	}
+	if spec.Passthrough != nil && spec.Passthrough.Usage != "" {
+		parts = append(parts, spec.Passthrough.Usage)
+	}
+	return strings.Join(parts, " ") + "\n"
 }
