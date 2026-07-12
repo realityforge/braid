@@ -60,6 +60,7 @@ type commandArgState struct {
 }
 
 var globalCompletionFlags = []completionFlag{
+	{long: "--help", short: "-h"},
 	{long: "--verbose", short: "-v"},
 	{long: "--quiet"},
 	{long: "--no-cache"},
@@ -101,12 +102,15 @@ var commandCompletionFlags = map[string][]completionFlag{
 		{long: "--keep"},
 	},
 	string(cli.CommandStatus):        {},
+	string(cli.CommandVersion):       {},
 	string(cli.CommandUpgradeConfig): {{long: "--no-commit"}},
 }
 
 var rootCompletionCommands = []string{
 	string(cli.CommandAdd),
 	string(cli.CommandPull),
+	"update",
+	"up",
 	string(cli.CommandRemove),
 	string(cli.CommandDiff),
 	string(cli.CommandPush),
@@ -185,6 +189,9 @@ func (h CompleteHandler) completeCommand(ctx context.Context, line completionLin
 	if !ok {
 		return nil
 	}
+	if len(line.commandArgs) == 0 {
+		flags = append(append([]completionFlag(nil), flags...), completionFlag{long: "--help", short: "-h"})
+	}
 	if _, ok := valueFlagAwaitingCurrent(line.commandArgs, flags); ok {
 		return nil
 	}
@@ -203,6 +210,9 @@ func (h CompleteHandler) completeCommand(ctx context.Context, line completionLin
 	}
 	if line.current == "" || !strings.HasPrefix(line.current, "-") {
 		candidates = append(candidates, h.pathCandidatesForCommand(ctx, command, line, state)...)
+		if len(line.commandArgs) == 0 {
+			candidates = append(candidates, prefixed([]string{"help"}, line.current)...)
+		}
 	}
 	return uniqueSorted(candidates)
 }
@@ -218,10 +228,10 @@ func canonicalCompletionCommand(command string) string {
 
 func completeCompletionCommand(line completionLine) []string {
 	state := parseCompletedCommandArgs(line.command, line.commandArgs, nil)
-	if len(state.positionals) > 0 || strings.HasPrefix(line.current, "-") {
+	if len(state.positionals) > 0 {
 		return nil
 	}
-	return prefixed([]string{"bash"}, line.current)
+	return prefixed([]string{"bash", "help", "--help", "-h"}, line.current)
 }
 
 func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, command string, line completionLine, state commandArgState) []string {

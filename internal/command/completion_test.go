@@ -32,8 +32,8 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertCandidate(t, candidates, "pull")
 	assertCandidate(t, candidates, "completion")
 	assertCandidate(t, candidates, "help")
-	assertNoCandidate(t, candidates, "update")
-	assertNoCandidate(t, candidates, "up")
+	assertCandidate(t, candidates, "update")
+	assertCandidate(t, candidates, "up")
 	assertNoCandidate(t, candidates, "__complete")
 
 	candidates = completeCandidates(t, dir, "--")
@@ -41,6 +41,9 @@ func TestCompleteRootCommandsAndGlobalOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--quiet")
 	assertCandidate(t, candidates, "--no-cache")
 	assertCandidate(t, candidates, "--global-cache-dir")
+	assertCandidate(t, candidates, "--help")
+	candidates = completeCandidates(t, dir, "-")
+	assertCandidate(t, candidates, "-h")
 
 	candidates = completeCandidates(t, dir, "--verbose", "")
 	assertNoCandidate(t, candidates, "--verbose")
@@ -102,8 +105,51 @@ func TestCompleteCommandOptions(t *testing.T) {
 	assertCandidate(t, candidates, "--no-commit")
 
 	candidates = completeCandidates(t, dir, "completion", "")
-	if got, want := strings.Join(candidates, "\n"), "bash"; got != want {
-		t.Fatalf("completion candidates = %q, want %q", got, want)
+	assertCandidate(t, candidates, "bash")
+	assertCandidate(t, candidates, "help")
+	assertCandidate(t, candidates, "--help")
+	assertCandidate(t, candidates, "-h")
+}
+
+func TestCompleteEveryCommandOptionAtEveryValidPosition(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		command     string
+		positionals []string
+		options     []string
+	}{
+		{command: "add", positionals: []string{"https://example.test/repo.git"}, options: []string{"--name", "--branch", "-b", "--tag", "-t", "--revision", "-r", "--no-commit", "--partial-clone"}},
+		{command: "pull", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "update", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "up", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "remove", positionals: []string{"mirror"}, options: []string{"--keep", "--no-commit"}},
+		{command: "diff", positionals: []string{"mirror"}, options: []string{"--keep", "--"}},
+		{command: "push", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--message", "-m", "--keep"}},
+		{command: "sync", positionals: []string{"mirror"}, options: []string{"--pull-only", "--autostash", "--keep"}},
+		{command: "status", positionals: []string{"mirror"}},
+		{command: "version"},
+		{command: "upgrade-config", options: []string{"--no-commit"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			before := completeCandidates(t, dir, tt.command, "")
+			for _, option := range append(append([]string(nil), tt.options...), "--help", "-h") {
+				assertCandidate(t, before, option)
+			}
+			assertCandidate(t, before, "help")
+
+			if len(tt.positionals) == 0 {
+				return
+			}
+			after := completeCandidates(t, dir, append([]string{tt.command}, append(tt.positionals, "")...)...)
+			for _, option := range tt.options {
+				assertCandidate(t, after, option)
+			}
+			assertNoCandidate(t, after, "--help")
+			assertNoCandidate(t, after, "-h")
+			assertNoCandidate(t, after, "help")
+		})
 	}
 }
 
@@ -157,9 +203,7 @@ func TestCompleteMirrorPathsAreSilentOutsideRepository(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("__complete exit = %d, stderr = %q", code, stderr.String())
 	}
-	if stdout.String() != "" {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
+	assertCandidate(t, splitCompletionLines(stdout.String()), "help")
 	if stderr.String() != "" {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}

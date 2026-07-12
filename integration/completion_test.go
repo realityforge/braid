@@ -25,17 +25,67 @@ func TestExecutableBashCompletion(t *testing.T) {
 	assertCompletionCandidate(t, rootCandidates, "add")
 	assertCompletionCandidate(t, rootCandidates, "pull")
 	assertCompletionCandidate(t, rootCandidates, "completion")
-	assertNoCompletionCandidate(t, rootCandidates, "update")
-	assertNoCompletionCandidate(t, rootCandidates, "up")
+	assertCompletionCandidate(t, rootCandidates, "update")
+	assertCompletionCandidate(t, rootCandidates, "up")
 	assertNoCompletionCandidate(t, rootCandidates, "__complete")
 
 	globalFlags := completeExecutable(t, env, root, braid, "--")
 	assertCompletionCandidate(t, globalFlags, "--verbose")
 	assertCompletionCandidate(t, globalFlags, "--quiet")
 	assertCompletionCandidate(t, globalFlags, "--global-cache-dir")
+	assertCompletionCandidate(t, globalFlags, "--help")
+	shortGlobalFlags := completeExecutable(t, env, root, braid, "-")
+	assertCompletionCandidate(t, shortGlobalFlags, "-h")
 
-	noRepoMirrors := runBraid(t, env, root, braid, "__complete", "bash", "--", "status", "")
-	assertResult(t, noRepoMirrors, 0, "", "")
+	completionArgs := completeExecutable(t, env, root, braid, "completion", "")
+	for _, candidate := range []string{"bash", "help", "--help", "-h"} {
+		assertCompletionCandidate(t, completionArgs, candidate)
+	}
+
+	noRepoMirrors := completeExecutable(t, env, root, braid, "status", "")
+	assertCompletionCandidate(t, noRepoMirrors, "help")
+}
+
+func TestExecutableBashCompletionCoversEveryCommandAndOptionPosition(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	tests := []struct {
+		command     string
+		positionals []string
+		options     []string
+	}{
+		{command: "add", positionals: []string{"https://example.test/repo.git"}, options: []string{"--name", "--branch", "-b", "--tag", "-t", "--revision", "-r", "--no-commit", "--partial-clone"}},
+		{command: "pull", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "update", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "up", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--tag", "-t", "--revision", "-r", "--keep", "--no-commit"}},
+		{command: "remove", positionals: []string{"mirror"}, options: []string{"--keep", "--no-commit"}},
+		{command: "diff", positionals: []string{"mirror"}, options: []string{"--keep", "--"}},
+		{command: "push", positionals: []string{"mirror"}, options: []string{"--branch", "-b", "--message", "-m", "--keep"}},
+		{command: "sync", positionals: []string{"mirror"}, options: []string{"--pull-only", "--autostash", "--keep"}},
+		{command: "status", positionals: []string{"mirror"}},
+		{command: "version"},
+		{command: "upgrade-config", options: []string{"--no-commit"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			before := completeExecutable(t, env, root, braid, tt.command, "")
+			for _, option := range append(append([]string(nil), tt.options...), "--help", "-h") {
+				assertCompletionCandidate(t, before, option)
+			}
+			assertCompletionCandidate(t, before, "help")
+
+			if len(tt.positionals) == 0 {
+				return
+			}
+			after := completeExecutable(t, env, root, braid, append([]string{tt.command}, append(tt.positionals, "")...)...)
+			for _, option := range tt.options {
+				assertCompletionCandidate(t, after, option)
+			}
+		})
+	}
 }
 
 func TestExecutableBashCompletionMirrorPathsFromSubdirectory(t *testing.T) {
