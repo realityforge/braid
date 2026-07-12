@@ -10,7 +10,7 @@ import (
 
 	"braid/internal/cli"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 	"braid/internal/testutil"
 )
 
@@ -163,12 +163,7 @@ func TestCachePathUsesStableWindowsSafeHashKey(t *testing.T) {
 }
 
 func TestMirrorCacheIDUsesStableWindowsSafeKey(t *testing.T) {
-	m := mirror.Mirror{
-		URL:        `https://example.test/repo?name=bad*chars|"<>@\windows\path`,
-		Path:       `vendor\repo`,
-		RemotePath: `pkg/lib`,
-		Branch:     "main",
-	}
+	m := testSourceMirror(`vendor\repo`, "pkg/lib", `https://example.test/repo?name=bad*chars|"<>@\windows\path`, "main", "", "", false)
 
 	got := MirrorCacheID(m)
 	gotAgain := MirrorCacheID(m)
@@ -184,15 +179,40 @@ func TestMirrorCacheIDUsesStableWindowsSafeKey(t *testing.T) {
 	}
 
 	changedPath := m
-	changedPath.Path = "vendor/other"
-	if other := MirrorCacheID(changedPath); other == got {
-		t.Fatalf("MirrorCacheID did not change when mirror path changed")
+	changedPath.LocalPath = "vendor/other"
+	if other := MirrorCacheID(changedPath); other != got {
+		t.Fatalf("MirrorCacheID changed when mirror path changed")
 	}
 
 	changedRemotePath := m
-	changedRemotePath.RemotePath = "cmd/app"
-	if other := MirrorCacheID(changedRemotePath); other == got {
-		t.Fatalf("MirrorCacheID did not change when remote path changed")
+	changedRemotePath.UpstreamPath = "cmd/app"
+	if other := MirrorCacheID(changedRemotePath); other != got {
+		t.Fatalf("MirrorCacheID changed when remote path changed")
+	}
+	changedName := m
+	changedName.Name = "other"
+	if other := MirrorCacheID(changedName); other == got {
+		t.Fatal("MirrorCacheID did not change with source name")
+	}
+	changedKind := m
+	changedKind.Tracking = source.TagTracking{Tag: "main"}
+	if other := MirrorCacheID(changedKind); other == got {
+		t.Fatal("MirrorCacheID did not distinguish branch and tag tracking with the same name")
+	}
+}
+
+func TestRepositoryLocalReadinessRefChangesWithMirrorTopology(t *testing.T) {
+	cache := CacheConfig{Enabled: true, Mode: CacheModeRepositoryLocal}
+	m := testSourceMirror("vendor/basic", "pkg", "https://example.test/repo.git", "main", "", strings.Repeat("a", 40), false)
+	before := cache.RecordedRef(m)
+	m.Mirrors = append(m.Mirrors, source.Mirror{LocalPath: "licenses/repo", UpstreamPath: "LICENSE"})
+	afterAdd := cache.RecordedRef(m)
+	if afterAdd == before {
+		t.Fatal("recorded readiness ref did not change after adding a mirror")
+	}
+	m.Mirrors = []source.Mirror{{LocalPath: "vendor/basic", UpstreamPath: ""}}
+	if afterRoot := cache.RecordedRef(m); afterRoot == before || afterRoot == afterAdd {
+		t.Fatal("recorded readiness ref did not change after promoting hydration to the root")
 	}
 }
 
@@ -203,7 +223,7 @@ func TestRepositoryLocalHydrateBranchPinsRefs(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := testutil.InitRepo(t)
 	cache := repositoryLocalCacheForTest(t, ctx, repo)
-	m := mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: revision}
+	m := testSourceMirror("vendor/basic", "", upstream, "main", "", revision, false)
 
 	if err := (MirrorObjectCache{Config: cache}).Hydrate(ctx, m); err != nil {
 		t.Fatalf("Hydrate returned error: %v", err)
@@ -224,7 +244,7 @@ func TestRepositoryLocalHydrateShortRevisionUsesFullFallback(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := testutil.InitRepo(t)
 	cache := repositoryLocalCacheForTest(t, ctx, repo)
-	m := mirror.Mirror{Path: "vendor/revision", URL: upstream, Revision: revision[:12]}
+	m := testSourceMirror("vendor/revision", "", upstream, "", "", revision[:12], false)
 
 	if err := (MirrorObjectCache{Config: cache}).Hydrate(ctx, m); err != nil {
 		t.Fatalf("Hydrate returned error: %v", err)
@@ -247,7 +267,7 @@ func TestRepositoryLocalHydrateReplacesFileCachePath(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := testutil.InitRepo(t)
 	cache := repositoryLocalCacheForTest(t, ctx, repo)
-	m := mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: revision}
+	m := testSourceMirror("vendor/basic", "", upstream, "main", "", revision, false)
 	cachePath := RepositoryCachePath(cache.Dir, m)
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		t.Fatalf("create cache parent: %v", err)
@@ -274,7 +294,7 @@ func TestFetchMirrorFromRepositoryLocalCacheFetchesBraidRefs(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := testutil.InitRepo(t)
 	cache := repositoryLocalCacheForTest(t, ctx, repo)
-	m := mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: revision}
+	m := testSourceMirror("vendor/basic", "", upstream, "main", "", revision, false)
 
 	if err := (MirrorObjectCache{Config: cache}).Hydrate(ctx, m); err != nil {
 		t.Fatalf("Hydrate returned error: %v", err)
@@ -304,7 +324,7 @@ func TestFetchTagMirrorFromRepositoryLocalCacheUsesRemoteTrackingRef(t *testing.
 	testutil.Git(t, upstream, "tag", "v1")
 	repo := testutil.InitRepo(t)
 	cache := repositoryLocalCacheForTest(t, ctx, repo)
-	m := mirror.Mirror{Path: "vendor/basic", URL: upstream, Tag: "v1", Revision: revision}
+	m := testSourceMirror("vendor/basic", "", upstream, "", "v1", revision, false)
 
 	if err := (MirrorObjectCache{Config: cache}).Hydrate(ctx, m); err != nil {
 		t.Fatalf("Hydrate returned error: %v", err)
@@ -322,7 +342,7 @@ func TestFetchTagMirrorFromRepositoryLocalCacheUsesRemoteTrackingRef(t *testing.
 }
 
 func TestAcquireCacheLockTimesOut(t *testing.T) {
-	lockPath := filepath.Join(t.TempDir(), "mirror.git.lock")
+	lockPath := filepath.Join(t.TempDir(), "source.git.lock")
 	if err := os.Mkdir(lockPath, 0o700); err != nil {
 		t.Fatalf("create lock: %v", err)
 	}
@@ -336,7 +356,7 @@ func TestAcquireCacheLockTimesOut(t *testing.T) {
 	})
 
 	_, err := acquireCacheLock(context.Background(), lockPath, "vendor/basic")
-	if err == nil || !strings.Contains(err.Error(), "timed out waiting for cache lock for mirror vendor/basic") {
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for cache lock for source :vendor/basic") {
 		t.Fatalf("acquireCacheLock error = %v, want timeout diagnostic", err)
 	}
 }

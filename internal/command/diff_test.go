@@ -78,8 +78,8 @@ func TestDiffCommandAllMirrors(t *testing.T) {
 	testutil.WriteFile(t, repo, "vendor/two/README.md", "two changed\n")
 
 	out := runCommandOK(t, repo, []string{"diff"})
-	assertContains(t, out, "Braid: Diffing vendor/one")
-	assertContains(t, out, "Braid: Diffing vendor/two")
+	assertContains(t, out, "Braid: Diffing mirror vendor/one")
+	assertContains(t, out, "Braid: Diffing mirror vendor/two")
 	assertContains(t, out, "one changed")
 	assertContains(t, out, "two changed")
 }
@@ -128,7 +128,7 @@ func TestDiffCommandMirrorVariants(t *testing.T) {
 				testutil.WriteFile(t, upstream, "lib/component.txt", "subdir base\n")
 				return testutil.CommitAll(t, upstream, "subdir base")
 			},
-			addArgs:   func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			addArgs:   func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib=lib"} },
 			localPath: "vendor/lib",
 			localFile: "vendor/lib/component.txt",
 			wantPath:  "component.txt",
@@ -168,7 +168,7 @@ func TestDiffCommandSingleFilePrefixes(t *testing.T) {
 	testutil.CommitAll(t, upstream, "single file")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"})
+	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
 	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "changed license\n")
 
 	out := runCommandOK(t, repo, []string{"diff", "licenses/THIRD_PARTY.txt"})
@@ -182,7 +182,7 @@ func TestDiffCommandSingleFileFromSubdirectoryUsesTopAnchoredLimiter(t *testing.
 	testutil.CommitAll(t, upstream, "single file")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"})
+	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
 	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "changed license\n")
 	workDir := filepath.Join(repo, "apps", "web")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {

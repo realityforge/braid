@@ -12,8 +12,8 @@ import (
 	"braid/internal/cli"
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
 	"braid/internal/pathcheck"
+	"braid/internal/source"
 )
 
 type AddHandler struct {
@@ -52,48 +52,85 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 	}
 
 	addOptions := inv.Add
-	if addOptions.Revision != "" {
-		addOptions.Branch = ""
-	}
-
-	m, err := mirror.NewFromOptions(addOptions.URL, mirror.Options{
-		LocalPath:    addOptions.LocalPath,
-		Branch:       addOptions.Branch,
-		Tag:          addOptions.Tag,
-		Revision:     addOptions.Revision,
-		RemotePath:   addOptions.RemotePath,
-		PartialClone: addOptions.PartialClone,
-	})
-	if err != nil {
-		return err
-	}
-	m.Path, err = normalizeLocalPath(repo, m.Path)
-	if err != nil {
-		return err
-	}
-	if err := validateNewMirrorPath(cfg, m); err != nil {
-		return err
-	}
-	if mirrorOverlapsConfig(m.Path) {
-		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
-	}
-	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), false, m.Path); err != nil {
-		return err
-	}
-	if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options, repo), m.Path); err != nil {
-		return err
-	}
-
-	if addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
-		branch, err := defaultBranch(ctx, git, addOptions.URL, m.Path, progress)
+	var s source.Source
+	addingExisting := addOptions.ExistingSource != ""
+	if addingExisting {
+		s, err = cfg.SourceByNameRequired(addOptions.ExistingSource)
 		if err != nil {
 			return err
 		}
-		addOptions.Branch = branch
-		m.Branch = branch
+	} else {
+		name := addOptions.SourceName
+		if name == "" {
+			name = source.DerivedName(addOptions.URL)
+		}
+		if !source.ValidName(name) {
+			return fmt.Errorf("invalid source name %q; specify --name", name)
+		}
+		if _, exists := cfg.SourceByName(name); exists {
+			return fmt.Errorf("source name already exists: %s", name)
+		}
+		tracking := source.Tracking(source.RevisionTracking{})
+		if addOptions.Branch != "" {
+			tracking = source.BranchTracking{Branch: addOptions.Branch}
+		} else if addOptions.Tag != "" {
+			tracking = source.TagTracking{Tag: addOptions.Tag}
+		}
+		s = source.Source{Name: name, URL: source.CleanURL(addOptions.URL), Tracking: tracking, Revision: addOptions.Revision, PartialClone: addOptions.PartialClone}
 	}
-	if err := validateNewMirrorRemote(cfg, m); err != nil {
+	requested := addOptions.Mirrors
+	if len(requested) == 0 {
+		requested = []cli.MirrorMapping{{LocalPath: s.Name}}
+	}
+	newMirrors := make([]source.Mirror, 0, len(requested))
+	existingPaths := cfg.LocalPaths()
+	for _, mapping := range requested {
+		localPath, normalizeErr := normalizeLocalPath(repo, mapping.LocalPath)
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		sm := source.Mirror{LocalPath: localPath, UpstreamPath: mapping.UpstreamPath}
+		candidate := s.WithMirror(sm)
+		if err := pathcheck.ValidateLocal(localPath, existingPaths); err != nil {
+			return err
+		}
+		if candidate.UpstreamPath != "" {
+			if err := pathcheck.ValidateUpstream(candidate.UpstreamPath); err != nil {
+				return err
+			}
+		}
+		if err := validateNewMirrorPath(cfg, candidate); err != nil {
+			return err
+		}
+		if mirrorOverlapsConfig(localPath) {
+			return fmt.Errorf("mirror path %q overlaps %s", localPath, config.FileName)
+		}
+		if err := ensureAddTargetAvailable(ctx, git, configRoot(h.Options, repo), localPath); err != nil {
+			return err
+		}
+		newMirrors = append(newMirrors, sm)
+		existingPaths = append(existingPaths, localPath)
+		s.Mirrors = append(s.Mirrors, sm)
+	}
+	paths := make([]string, 0, len(newMirrors))
+	for _, mirror := range newMirrors {
+		paths = append(paths, mirror.LocalPath)
+	}
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), false, paths...); err != nil {
 		return err
+	}
+	if !addingExisting && addOptions.Branch == "" && addOptions.Tag == "" && addOptions.Revision == "" {
+		branch, branchErr := defaultBranch(ctx, git, s.URL, ":"+s.Name, progress)
+		if branchErr != nil {
+			return branchErr
+		}
+		s.Tracking = source.BranchTracking{Branch: branch}
+	}
+	primary := s.WithMirror(newMirrors[0])
+	if !addingExisting {
+		if err := validateNewMirrorRemote(cfg, primary); err != nil {
+			return err
+		}
 	}
 
 	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, trace)
@@ -101,15 +138,15 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return err
 	}
 	if cache.Enabled {
-		if err := fetchCache(ctx, cache, m, inv.Global.Verbose, progress, trace); err != nil {
+		if err := fetchCache(ctx, cache, primary, inv.Global.Verbose, progress, trace); err != nil {
 			return err
 		}
 	}
 
-	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
+	if err := configureMirrorRemote(ctx, git, primary, true, cache); err != nil {
 		return err
 	}
-	remote := m.Remote()
+	remote := primary.Remote()
 	cleanupRemote := func(cause error, completed string) error {
 		if err := git.RemoteRemove(ctx, remote); err != nil {
 			if cause != nil {
@@ -120,21 +157,26 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return cause
 	}
 
-	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
+	if err := fetchMirror(ctx, git, cache, primary, progress); err != nil {
 		return cleanupRemote(err, "")
 	}
 
-	revision, err := resolveAddRevision(ctx, git, m, cacheResolveRecordedRevision(cache, m, addOptions.Revision))
+	var revision string
+	if addingExisting {
+		revision, err = git.RevParse(ctx, s.Revision+"^{commit}")
+	} else {
+		revision, err = resolveAddRevision(ctx, git, primary, cacheResolveRecordedRevision(cache, primary, addOptions.Revision))
+	}
 	if err != nil {
 		return cleanupRemote(err, "")
 	}
-	item, err := itemAtRevision(ctx, git, m, revision)
-	if err != nil {
-		return cleanupRemote(err, "")
+	s.Revision = revision
+	if addingExisting {
+		err = cfg.UpdateSource(s)
+	} else {
+		err = cfg.AddSource(s)
 	}
-
-	m.Revision = revision
-	if err := cfg.Add(m); err != nil {
+	if err != nil {
 		return cleanupRemote(err, "")
 	}
 	configData, err := cfg.MarshalJSON()
@@ -146,9 +188,16 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		return cleanupRemote(err, "")
 	}
 
-	mirrorTree, err := git.MakeTreeWithItemIn(ctx, "HEAD", m.Path, item)
-	if err != nil {
-		return cleanupRemote(err, "")
+	mirrorTree := "HEAD"
+	for _, mirror := range newMirrors {
+		item, itemErr := itemAtRevision(ctx, git, s.WithMirror(mirror), revision)
+		if itemErr != nil {
+			return cleanupRemote(itemErr, "")
+		}
+		mirrorTree, err = git.MakeTreeWithItemIn(ctx, mirrorTree, mirror.LocalPath, item)
+		if err != nil {
+			return cleanupRemote(err, "")
+		}
 	}
 	finalTree, err := git.MakeTreeWithItemIn(ctx, mirrorTree, config.FileName, configItem)
 	if err != nil {
@@ -156,34 +205,43 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 	}
 	if addOptions.NoCommit {
 		var warned bool
+		description := ""
+		if addingExisting {
+			description = "addition of mirrors to source ':" + s.Name + "'"
+		}
 		if err := stageNoCommitResult(ctx, git, stdout, noCommitStageOptions{
-			Tree:       finalTree,
-			Action:     "add",
-			MirrorPath: m.Path,
-			Paths:      []string{m.Path, config.FileName},
-			OwnedPaths: []string{m.Path},
-			Quiet:      inv.Global.Quiet,
-			Warned:     &warned,
+			Tree:        finalTree,
+			Action:      "add",
+			MirrorPath:  ":" + s.Name,
+			Description: description,
+			Paths:       append(append([]string{}, paths...), config.FileName),
+			OwnedPaths:  paths,
+			Quiet:       inv.Global.Quiet,
+			Warned:      &warned,
 		}); err != nil {
 			return cleanupRemote(err, "")
 		}
 		return cleanupRemote(nil, "staged changes")
 	}
-	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, addCommitSubject(m))
+	subject := fmt.Sprintf("Braid: Add source '%s' at '%s'", s.Name, shortRevision(s.Revision))
+	if addingExisting {
+		subject = fmt.Sprintf("Braid: Add mirrors to source '%s'", s.Name)
+	}
+	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, subject)
 	if err != nil {
 		return cleanupRemote(err, "")
 	}
 	if !committed {
 		return cleanupRemote(errors.New("add produced no commit"), "")
 	}
-	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
+	if err := git.RestorePathspecsFromHead(ctx, append(paths, config.FileName)...); err != nil {
 		return cleanupRemote(err, "")
 	}
 	return cleanupRemote(nil, "committed")
 }
 
 func defaultBranch(ctx context.Context, git AddGit, url, localPath string, progress progressReporter) (branch string, err error) {
-	op, err := progress.Start(fmt.Sprintf("Braid: detecting default branch for mirror %s", localPath))
+	op, err := progress.Start(fmt.Sprintf("Braid: detecting default branch for source %s", localPath))
 	if err != nil {
 		return "", err
 	}
@@ -206,30 +264,26 @@ func defaultBranch(ctx context.Context, git AddGit, url, localPath string, progr
 		_ = op.Abort()
 		return "", errors.New("failed to detect default branch; specify --branch")
 	}
-	if err := op.Complete(fmt.Sprintf("Braid: detected default branch for mirror %s", localPath)); err != nil {
+	if err := op.Complete(fmt.Sprintf("Braid: detected default branch for source %s", localPath)); err != nil {
 		return "", err
 	}
 	return targets[0], nil
 }
 
-func validateNewMirrorPath(cfg config.Config, candidate mirror.Mirror) error {
-	if err := pathcheck.ValidateLocal(candidate.Path, cfg.Paths()); err != nil {
+func validateNewMirrorPath(cfg config.Config, candidate source.SourceMirror) error {
+	if err := pathcheck.ValidateLocal(candidate.LocalPath, cfg.LocalPaths()); err != nil {
 		return err
 	}
-	if candidate.RemotePath != "" {
-		if err := pathcheck.ValidateUpstream(candidate.RemotePath); err != nil {
+	if candidate.UpstreamPath != "" {
+		if err := pathcheck.ValidateUpstream(candidate.UpstreamPath); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateNewMirrorRemote(cfg config.Config, candidate mirror.Mirror) error {
-	existing := make([]mirror.Mirror, 0, len(cfg.Mirrors))
-	for _, localPath := range cfg.Paths() {
-		existing = append(existing, cfg.Mirrors[localPath])
-	}
-	return pathcheck.CheckRemoteCollision(candidate, existing)
+func validateNewMirrorRemote(cfg config.Config, candidate source.SourceMirror) error {
+	return pathcheck.CheckRemoteCollision(candidate.Source, cfg.SourcesSorted())
 }
 
 func ensureAddTargetAvailable(ctx context.Context, git AddGit, root, target string) error {
@@ -291,15 +345,11 @@ type revParseGit interface {
 	RevParse(context.Context, string) (string, error)
 }
 
-func resolveAddRevision(ctx context.Context, git revParseGit, m mirror.Mirror, requested string) (string, error) {
+func resolveAddRevision(ctx context.Context, git revParseGit, m source.SourceMirror, requested string) (string, error) {
 	if requested != "" {
 		return git.RevParse(ctx, requested+"^{commit}")
 	}
 	return git.RevParse(ctx, m.LocalRef()+"^{commit}")
-}
-
-func addCommitSubject(m mirror.Mirror) string {
-	return fmt.Sprintf("Braid: Add mirror '%s' at '%s'", m.Path, shortRevision(m.Revision))
 }
 
 func shortRevision(revision string) string {

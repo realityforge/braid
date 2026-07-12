@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 func TestValidateLocalPathContract(t *testing.T) {
@@ -98,8 +98,8 @@ func TestCaseFoldCollision(t *testing.T) {
 }
 
 func TestRemoteNameCollision(t *testing.T) {
-	existing := []mirror.Mirror{{Path: "a.b", Branch: "main"}}
-	candidate := mirror.Mirror{Path: "a_b", Branch: "main"}
+	existing := []source.Source{{Name: "a.b", Tracking: source.BranchTracking{Branch: "main"}}}
+	candidate := source.Source{Name: "a_b", Tracking: source.BranchTracking{Branch: "main"}}
 
 	err := CheckRemoteCollision(candidate, existing)
 	if err == nil {

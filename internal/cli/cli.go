@@ -33,14 +33,20 @@ type GlobalOptions struct {
 }
 
 type AddOptions struct {
-	URL          string
+	URL            string
+	SourceName     string
+	ExistingSource string
+	Mirrors        []MirrorMapping
+	Branch         string
+	Tag            string
+	Revision       string
+	NoCommit       bool
+	PartialClone   bool
+}
+
+type MirrorMapping struct {
 	LocalPath    string
-	Branch       string
-	Tag          string
-	Revision     string
-	RemotePath   string
-	NoCommit     bool
-	PartialClone bool
+	UpstreamPath string
 }
 
 type UpgradeConfigOptions struct{ NoCommit bool }
@@ -319,10 +325,10 @@ func parseGlobal(args []string, global *GlobalOptions) ([]string, error) {
 func parseAdd(args []string, options *AddOptions) error {
 	var positionals []string
 	err := parseCommandArgs(CommandAdd, args, []flagSpec{
+		valueFlag("--name", "", "name", func(value string) { options.SourceName = value }),
 		valueFlag("--branch", "-b", "branch", func(value string) { options.Branch = value }),
 		valueFlag("--tag", "-t", "tag", func(value string) { options.Tag = value }),
 		valueFlag("--revision", "-r", "revision", func(value string) { options.Revision = value }),
-		valueFlag("--path", "-p", "path", func(value string) { options.RemotePath = value }),
 		boolFlag("--no-commit", "", func() { options.NoCommit = true }),
 		boolFlag("--partial-clone", "", func() { options.PartialClone = true }),
 	}, func(pos []string, _ []string) {
@@ -331,7 +337,7 @@ func parseAdd(args []string, options *AddOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := requireArgRange("add", positionals, 1, 2); err != nil {
+	if err := requireArgRange("add", positionals, 1, -1); err != nil {
 		return err
 	}
 	if options.Tag != "" && options.Branch != "" {
@@ -340,12 +346,38 @@ func parseAdd(args []string, options *AddOptions) error {
 	if options.Tag != "" && options.Revision != "" {
 		return usageError("add cannot combine --tag and --revision")
 	}
-	if options.PartialClone && options.RemotePath == "" {
-		return usageError("add --partial-clone requires --path")
+	if strings.HasPrefix(positionals[0], ":") {
+		options.ExistingSource = strings.TrimPrefix(positionals[0], ":")
+		if options.ExistingSource == "" {
+			return usageError("add source selector requires a name")
+		}
+		if options.SourceName != "" || options.Branch != "" || options.Tag != "" || options.Revision != "" || options.PartialClone {
+			return usageError("add to an existing source cannot use --name, --branch, --tag, --revision, or --partial-clone")
+		}
+		if len(positionals) == 1 {
+			return usageError("add to an existing source requires at least one mirror")
+		}
+	} else {
+		options.URL = positionals[0]
 	}
-	options.URL = positionals[0]
-	if len(positionals) == 2 {
-		options.LocalPath = normalizeLocalPathArg(positionals[1])
+	for _, raw := range positionals[1:] {
+		local, upstream, found := strings.Cut(raw, "=")
+		local = normalizeLocalPathArg(local)
+		if local == "" {
+			return usageError("add mirror requires a local path")
+		}
+		if strings.Contains(local, "=") {
+			return usageError("add mirror local path cannot contain =")
+		}
+		if !found {
+			upstream = ""
+		}
+		for _, existing := range options.Mirrors {
+			if existing.LocalPath == local {
+				return usageError("duplicate add mirror path %s", local)
+			}
+		}
+		options.Mirrors = append(options.Mirrors, MirrorMapping{LocalPath: local, UpstreamPath: upstream})
 	}
 	return nil
 }
@@ -636,7 +668,7 @@ func requireArgRange(command string, args []string, min, max int) error {
 	if len(args) < min {
 		return usageError("%s requires %d argument(s)", command, min)
 	}
-	if len(args) > max {
+	if max >= 0 && len(args) > max {
 		return usageError("%s received extra argument(s)", command)
 	}
 	return nil
@@ -651,12 +683,12 @@ func Usage() string {
 usage: braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]
 
 commands:
-  add       Add a new mirror
-  pull      Pull one mirror or every eligible mirror
-  remove    Remove a mirror
+  add       Add a source or mirrors to an existing source
+  pull      Pull one source or every eligible source
+  remove    Remove a mirror or source
   diff      Show local mirror changes
-  push      Push local mirror changes upstream
-  sync      Push local mirror changes, then pull mirrors
+  push      Push one source's local mirror changes upstream
+  sync      Push local mirror changes, then pull sources
   status    Show mirror status
   version   Show braid version
   completion
@@ -671,21 +703,21 @@ Run "braid <command> help" for command-specific usage.
 func CommandUsage(command Command) string {
 	switch command {
 	case CommandAdd:
-		return "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit] [--partial-clone]\n"
+		return "usage: braid add <url|:source> [local_path[=upstream_path]...] [--name <name>] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--no-commit] [--partial-clone]\n"
 	case CommandPull:
-		return "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"
+		return "usage: braid pull [local_path|:source] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"
 	case CommandRemove:
-		return "usage: braid remove <local_path> [--keep] [--no-commit]\n"
+		return "usage: braid remove <local_path|:source> [--keep] [--no-commit]\n"
 	case CommandDiff:
-		return "usage: braid diff [local_path] [--keep] [-- <git_diff_arg>...]\n"
+		return "usage: braid diff [local_path|:source] [--keep] [-- <git_diff_arg>...]\n"
 	case CommandPush:
-		return "usage: braid push <local_path> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"
+		return "usage: braid push <local_path|:source> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"
 	case CommandSync:
-		return "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"
+		return "usage: braid sync [local_path|:source ...] [--pull-only] [--autostash] [--keep]\n"
 	case CommandVersion:
 		return "usage: braid version\n"
 	case CommandStatus:
-		return "usage: braid status [local_path]\n"
+		return "usage: braid status [local_path|:source]\n"
 	case CommandCompletion:
 		return "usage: braid completion bash\n"
 	case CommandUpgradeConfig:

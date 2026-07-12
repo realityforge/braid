@@ -68,10 +68,10 @@ var globalCompletionFlags = []completionFlag{
 
 var commandCompletionFlags = map[string][]completionFlag{
 	string(cli.CommandAdd): {
+		{long: "--name", value: true},
 		{long: "--branch", short: "-b", value: true},
 		{long: "--tag", short: "-t", value: true},
 		{long: "--revision", short: "-r", value: true},
-		{long: "--path", short: "-p", value: true},
 		{long: "--no-commit"},
 		{long: "--partial-clone"},
 	},
@@ -193,9 +193,13 @@ func (h CompleteHandler) completeCommand(ctx context.Context, line completionLin
 	}
 
 	state := parseCompletedCommandArgs(command, line.commandArgs, flags)
+	optionFlags := flags
+	if command == string(cli.CommandAdd) && len(state.positionals) > 0 && strings.HasPrefix(state.positionals[0], ":") {
+		optionFlags = []completionFlag{{long: "--no-commit"}}
+	}
 	var candidates []string
 	if line.current == "" || strings.HasPrefix(line.current, "-") {
-		candidates = append(candidates, optionCandidates(line.current, flags, line.commandArgs, false)...)
+		candidates = append(candidates, optionCandidates(line.current, optionFlags, line.commandArgs, false)...)
 	}
 	if line.current == "" || !strings.HasPrefix(line.current, "-") {
 		candidates = append(candidates, h.pathCandidatesForCommand(ctx, command, line, state)...)
@@ -223,7 +227,7 @@ func completeCompletionCommand(line completionLine) []string {
 func (h CompleteHandler) pathCandidatesForCommand(ctx context.Context, command string, line completionLine, state commandArgState) []string {
 	switch command {
 	case string(cli.CommandAdd):
-		if len(state.positionals) == 1 {
+		if len(state.positionals) >= 1 {
 			return pathCandidates(h.Options.WorkDir, line.current, false, "")
 		}
 	case string(cli.CommandPull), string(cli.CommandRemove), string(cli.CommandDiff), string(cli.CommandPush), string(cli.CommandStatus):
@@ -385,7 +389,12 @@ func (h CompleteHandler) mirrorPathCandidates(ctx context.Context, current strin
 	}
 
 	selectedPaths := map[string]bool{}
+	selectedSources := map[string]bool{}
 	for _, value := range selected {
+		if selection, selectionErr := resolveSourceSelection(repo, cfg, value, false); selectionErr == nil {
+			selectedSources[selection.Source.Name] = true
+			continue
+		}
 		localPath, err := normalizeLocalPath(repo, value)
 		if err == nil {
 			selectedPaths[localPath] = true
@@ -393,7 +402,17 @@ func (h CompleteHandler) mirrorPathCandidates(ctx context.Context, current strin
 	}
 
 	var candidates []string
-	for _, localPath := range cfg.Paths() {
+	for _, name := range cfg.SourceNames() {
+		candidate := ":" + name
+		if !selectedSources[name] && strings.HasPrefix(candidate, current) {
+			candidates = append(candidates, candidate)
+		}
+	}
+	for _, item := range cfg.MirrorsSorted() {
+		localPath := item.LocalPath
+		if selectedSources[item.Name] {
+			continue
+		}
 		if selectedPaths[localPath] {
 			continue
 		}

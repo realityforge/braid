@@ -3,38 +3,68 @@ package command
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"braid/internal/config"
-	"braid/internal/mirror"
+	"braid/internal/gitexec"
 	"braid/internal/pathcheck"
+	"braid/internal/source"
 )
 
-func configureMirrorRemote(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig) error {
+type exactRemoteConfigGit interface {
+	SnapshotRemoteConfig(context.Context, string) (gitexec.RemoteConfigSnapshot, error)
+	RestoreRemoteConfig(context.Context, string, gitexec.RemoteConfigSnapshot) error
+}
+
+func configureMirrorRemote(ctx context.Context, git RemoteGit, m source.SourceMirror, force bool, cache CacheConfig) error {
 	return configureMirrorRemoteWithProgress(ctx, git, m, force, cache, progressReporter{})
 }
 
-func configureMirrorRemoteWithProgress(ctx context.Context, git RemoteGit, m mirror.Mirror, force bool, cache CacheConfig, progress progressReporter) error {
+func configureMirrorRemoteWithProgress(ctx context.Context, git RemoteGit, m source.SourceMirror, force bool, cache CacheConfig, progress progressReporter) error {
 	remote := m.Remote()
-	if _, ok, err := git.RemoteURL(ctx, remote); err != nil {
+	if url, ok, err := git.RemoteURL(ctx, remote); err != nil {
 		return err
 	} else if ok {
 		if !force {
 			return nil
 		}
-		return runProgress(progress, "Braid: setting up mirror remote "+m.Path, "Braid: set up mirror remote "+m.Path, func() error {
+		return runProgress(progress, "Braid: setting up source remote :"+m.Name, "Braid: set up source remote :"+m.Name, func() error {
+			var snapshot gitexec.RemoteConfigSnapshot
+			if exact, ok := git.(exactRemoteConfigGit); ok {
+				var snapshotErr error
+				snapshot, snapshotErr = exact.SnapshotRemoteConfig(ctx, remote)
+				if snapshotErr != nil {
+					return snapshotErr
+				}
+			}
 			if err := git.RemoteRemove(ctx, remote); err != nil {
 				return err
 			}
-			return addMirrorRemote(ctx, git, m, cache)
+			if err := addMirrorRemote(ctx, git, m, cache); err != nil {
+				if exact, ok := git.(exactRemoteConfigGit); ok {
+					if restoreErr := exact.RestoreRemoteConfig(ctx, remote, snapshot); restoreErr != nil {
+						return fmt.Errorf("%w; failed to restore existing remote: %w", err, restoreErr)
+					}
+					return err
+				}
+				if _, ok, inspectErr := git.RemoteURL(ctx, remote); inspectErr == nil && ok {
+					_ = git.RemoteRemove(ctx, remote)
+				}
+				if restoreErr := git.RemoteAdd(ctx, remote, url); restoreErr != nil {
+					return fmt.Errorf("%w; failed to restore existing remote: %w", err, restoreErr)
+				}
+				return err
+			}
+			return nil
 		})
 	}
 
-	return runProgress(progress, "Braid: setting up mirror remote "+m.Path, "Braid: set up mirror remote "+m.Path, func() error {
+	return runProgress(progress, "Braid: setting up source remote :"+m.Name, "Braid: set up source remote :"+m.Name, func() error {
 		return addMirrorRemote(ctx, git, m, cache)
 	})
 }
 
-func addMirrorRemote(ctx context.Context, git RemoteGit, m mirror.Mirror, cache CacheConfig) error {
+func addMirrorRemote(ctx context.Context, git RemoteGit, m source.SourceMirror, cache CacheConfig) error {
 	remote := m.Remote()
 	if err := git.RemoteAdd(ctx, remote, cache.RemoteURL(m)); err != nil {
 		return err
@@ -58,22 +88,23 @@ func addMirrorRemote(ctx context.Context, git RemoteGit, m mirror.Mirror, cache 
 
 func validateConfigPaths(cfg config.Config) error {
 	var existingPaths []string
-	var existingMirrors []mirror.Mirror
-	for _, localPath := range cfg.Paths() {
-		m := cfg.Mirrors[localPath]
-		if err := pathcheck.ValidateLocal(m.Path, existingPaths); err != nil {
+	for _, m := range cfg.MirrorsSorted() {
+		if err := pathcheck.ValidateLocal(m.LocalPath, existingPaths); err != nil {
 			return err
 		}
-		if m.RemotePath != "" {
-			if err := pathcheck.ValidateUpstream(m.RemotePath); err != nil {
+		if m.UpstreamPath != "" {
+			if err := pathcheck.ValidateUpstream(m.UpstreamPath); err != nil {
 				return err
 			}
 		}
-		if err := pathcheck.CheckRemoteCollision(m, existingMirrors); err != nil {
+		existingPaths = append(existingPaths, m.LocalPath)
+	}
+	var existingSources []source.Source
+	for _, s := range cfg.SourcesSorted() {
+		if err := pathcheck.CheckRemoteCollision(s, existingSources); err != nil {
 			return err
 		}
-		existingPaths = append(existingPaths, m.Path)
-		existingMirrors = append(existingMirrors, m)
+		existingSources = append(existingSources, s)
 	}
 	return nil
 }

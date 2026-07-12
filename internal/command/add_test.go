@@ -12,6 +12,7 @@ import (
 	"braid/internal/cli"
 	"braid/internal/config"
 	"braid/internal/gitexec"
+	"braid/internal/source"
 	"braid/internal/testutil"
 )
 
@@ -26,10 +27,10 @@ func TestAddCommandDefaultBranchCommitsAndRemovesRemote(t *testing.T) {
 
 	assertFile(t, repo, "vendor/basic/README.md", "hello from upstream\n")
 	m := loadMirror(t, repo, "vendor/basic")
-	if m.URL != upstream || m.Branch != "main" || m.Tag != "" || m.Revision != revision {
+	if m.URL != upstream || m.Branch() != "main" || m.Tag() != "" || m.Revision != revision {
 		t.Fatalf("mirror = %#v, want upstream main at %s", m, revision)
 	}
-	assertCommitSubject(t, repo, "Braid: Add mirror 'vendor/basic' at '"+revision[:7]+"'")
+	assertCommitSubject(t, repo, "Braid: Add source '"+m.Name+"' at '"+revision[:7]+"'")
 	assertCommitIdentity(t, repo)
 	assertNoRemote(t, repo, m.Remote())
 	assertClean(t, repo)
@@ -84,13 +85,13 @@ func TestAddCommandNoCommitStagesContentConfigAndPreservesUnrelatedState(t *test
 
 	stdout, _ := runCommandOKWithOutput(t, repo, []string{"add", upstream, "vendor/basic", "--no-commit"})
 
-	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged add of mirror 'vendor/basic'")
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged add of source ':"+source.DerivedName(upstream)+"'")
 	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
 	assertFile(t, repo, "vendor/basic/README.md", "hello from upstream\n")
 	m := loadMirror(t, repo, "vendor/basic")
-	if m.URL != upstream || m.Branch != "main" || m.Revision != revision {
+	if m.URL != upstream || m.Branch() != "main" || m.Revision != revision {
 		t.Fatalf("mirror = %#v, want staged upstream main at %s", m, revision)
 	}
 	cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout)
@@ -109,7 +110,7 @@ func TestAddCommandNoCommitStagesContentConfigAndPreservesUnrelatedState(t *test
 	assertNoRemote(t, repo, m.Remote())
 }
 
-func TestAddCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
+func TestAddCommandNoCommitQuietPreservesResult(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "quiet\n")
 	testutil.CommitAll(t, upstream, "upstream")
@@ -117,8 +118,8 @@ func TestAddCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
 
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"--quiet", "add", upstream, "vendor/basic", "--no-commit"})
 
-	if stdout != "" || stderr != "" {
-		t.Fatalf("stdout/stderr = %q / %q, want quiet no-commit output empty", stdout, stderr)
+	if stdout != "Braid: staged add of source ':001'\n" || stderr != "" {
+		t.Fatalf("stdout/stderr = %q / %q, want quiet staged result", stdout, stderr)
 	}
 	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nvendor/basic/README.md" {
 		t.Fatalf("cached names = %#v, want staged config and mirror", cached)
@@ -135,7 +136,7 @@ func TestAddCommandNormalizesNativeLocalPathArgument(t *testing.T) {
 
 	assertFile(t, repo, "vendor/native/README.md", "native path\n")
 	m := loadMirror(t, repo, "vendor/native")
-	if m.Path != "vendor/native" || m.Revision != revision {
+	if m.LocalPath != "vendor/native" || m.Revision != revision {
 		t.Fatalf("mirror = %#v, want normalized path at %s", m, revision)
 	}
 }
@@ -188,7 +189,7 @@ func TestAddCommandGlobalVerboseTracesWorktreeAndCacheGit(t *testing.T) {
 	}
 	trace := stderr.String()
 	assertContains(t, trace, `Braid: Executing ["git", "--version"]`)
-	assertContains(t, trace, `Braid: Executing ["git", "fetch", "-n", "main_braid_vendor_basic"]`)
+	assertContains(t, trace, `Braid: Executing ["git", "fetch", "-n", "main_braid_`+source.DerivedName(upstream)+`"]`)
 	assertContains(t, trace, `Braid: Executing ["git", "clone", "--mirror"`)
 }
 
@@ -242,7 +243,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 				testutil.WriteFile(t, upstream, "ignored.txt", "ignored\n")
 				return testutil.CommitAll(t, upstream, "subdir")
 			},
-			args:       func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			args:       func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib=lib"} },
 			wantPath:   "vendor/lib",
 			wantFile:   "vendor/lib/component.txt",
 			wantBranch: "main",
@@ -268,7 +269,7 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 				return testutil.CommitAll(t, upstream, "single file")
 			},
 			args: func(upstream, _ string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
 			},
 			wantPath:   "licenses/THIRD_PARTY.txt",
 			wantFile:   "licenses/THIRD_PARTY.txt",
@@ -295,11 +296,11 @@ func TestAddCommandMirrorVariants(t *testing.T) {
 				t.Fatalf("revision = %q, want %q", m.Revision, revision)
 			}
 			if test.wantLocked {
-				if m.Branch != "" || m.Tag != "" {
+				if m.Branch() != "" || m.Tag() != "" {
 					t.Fatalf("locked mirror has branch/tag: %#v", m)
 				}
-			} else if m.Branch != test.wantBranch || m.Tag != test.wantTag {
-				t.Fatalf("tracking = branch %q tag %q, want branch %q tag %q", m.Branch, m.Tag, test.wantBranch, test.wantTag)
+			} else if m.Branch() != test.wantBranch || m.Tag() != test.wantTag {
+				t.Fatalf("tracking = branch %q tag %q, want branch %q tag %q", m.Branch(), m.Tag(), test.wantBranch, test.wantTag)
 			}
 			assertClean(t, repo)
 		})
@@ -317,7 +318,7 @@ func TestAddCommandScopedPrecheckBlocksDirtyConfig(t *testing.T) {
 	}
 	testutil.Git(t, repo, "add", config.FileName)
 	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
-	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"mirrors\":{}}\n")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"sources\":{}}\n")
 
 	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
 	assertContains(t, stderr, "local changes are present in .braids.json")
@@ -331,7 +332,7 @@ func TestAddCommandScopedPrecheckRunsBeforeDefaultBranchLookup(t *testing.T) {
 	}
 	testutil.Git(t, repo, "add", config.FileName)
 	testutil.Git(t, repo, "commit", "-m", "add empty braid config")
-	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"mirrors\":{}}\n")
+	testutil.WriteFile(t, repo, config.FileName, "{\"config_version\":2,\"sources\":{}}\n")
 
 	missingUpstream := filepath.Join(t.TempDir(), "missing-upstream")
 	stderr := runCommandError(t, repo, []string{"add", missingUpstream, "vendor/basic"})
@@ -477,7 +478,7 @@ func TestAddCommandTags(t *testing.T) {
 
 				assertFile(t, repo, localPath+"/README.md", test.name+"\n")
 				m := loadMirror(t, repo, localPath)
-				if m.Tag != test.tag || m.Branch != "" || m.Revision != revision {
+				if m.Tag() != test.tag || m.Branch() != "" || m.Revision != revision {
 					t.Fatalf("mirror = %#v, want tag %q at %s", m, test.tag, revision)
 				}
 				git := gitexec.New(repo, false, nil)
@@ -511,7 +512,7 @@ func TestAddCommandMissingUpstreamPathCleansUpTemporaryRemote(t *testing.T) {
 
 	repo := initDownstream(t)
 	head := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
-	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/missing", "--path", "does-not-exist"})
+	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/missing=does-not-exist"})
 	if !strings.Contains(stderr, "no tree item exists") {
 		t.Fatalf("stderr = %q, want missing tree item diagnostic", stderr)
 	}
@@ -537,7 +538,7 @@ func TestAddCommandReportsPostCommitRestoreFailure(t *testing.T) {
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
-			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", Mirrors: []cli.MirrorMapping{{LocalPath: "vendor/basic"}}, Branch: "main"},
 		},
 		progressReporter{},
 		new(bytes.Buffer),
@@ -560,13 +561,13 @@ func TestAddCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
-			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main"},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", Mirrors: []cli.MirrorMapping{{LocalPath: "vendor/basic"}}, Branch: "main"},
 		},
 		progressReporter{},
 		new(bytes.Buffer),
 		new(bytes.Buffer),
 	)
-	if err == nil || !strings.Contains(err.Error(), `add committed but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+	if err == nil || !strings.Contains(err.Error(), `add committed but failed to remove temporary remote "main_braid_upstream"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("add error = %v, want post-commit remote cleanup failure", err)
 	}
 	if !git.committed {
@@ -583,13 +584,13 @@ func TestAddCommandNoCommitReportsPostStageRemoteCleanupFailure(t *testing.T) {
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
-			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main", NoCommit: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", Mirrors: []cli.MirrorMapping{{LocalPath: "vendor/basic"}}, Branch: "main", NoCommit: true},
 		},
 		progressReporter{},
 		new(bytes.Buffer),
 		new(bytes.Buffer),
 	)
-	if err == nil || !strings.Contains(err.Error(), `add staged changes but failed to remove temporary remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+	if err == nil || !strings.Contains(err.Error(), `add staged changes but failed to remove temporary remote "main_braid_upstream"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("add error = %v, want post-stage remote cleanup failure", err)
 	}
 	if git.committed {
@@ -606,7 +607,7 @@ func TestAddCommandNoCommitReportsStagingFailure(t *testing.T) {
 		git,
 		cli.Invocation{
 			Global: cli.GlobalOptions{NoCache: true},
-			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", LocalPath: "vendor/basic", Branch: "main", NoCommit: true},
+			Add:    cli.AddOptions{URL: "https://example.invalid/upstream.git", Mirrors: []cli.MirrorMapping{{LocalPath: "vendor/basic"}}, Branch: "main", NoCommit: true},
 		},
 		progressReporter{},
 		new(bytes.Buffer),
@@ -618,6 +619,19 @@ func TestAddCommandNoCommitReportsStagingFailure(t *testing.T) {
 	if git.committed {
 		t.Fatal("CommitTreeWithTemporaryIndex was called for no-commit add")
 	}
+}
+
+func TestAddCommandRejectsNestedGitlink(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	revision := testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "update-index", "--add", "--cacheinfo", "160000,"+revision+",nested/submodule")
+	testutil.Git(t, upstream, "commit", "-m", "add gitlink")
+	repo := initDownstream(t)
+
+	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/basic"})
+	assertContains(t, stderr, "contains an unsupported gitlink")
+	assertNoFile(t, repo, "vendor/basic")
 }
 
 type fakeAddGit struct {
@@ -649,6 +663,9 @@ func (f *fakeAddGit) LsRemote(context.Context, ...string) (string, error) {
 func (f *fakeAddGit) Fetch(context.Context, ...string) error { return nil }
 func (f *fakeAddGit) LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error) {
 	return gitexec.TreeItem{Mode: "100644", Type: "blob", Hash: "blob"}, nil
+}
+func (f *fakeAddGit) TreeContainsGitlink(context.Context, string, string) (bool, error) {
+	return false, nil
 }
 func (f *fakeAddGit) LsFiles(context.Context, string) (string, error) {
 	return "", nil

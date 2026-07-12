@@ -38,7 +38,7 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	update := runBraid(t, env, downstream, braid, "--quiet", "update", "vendor/basic")
 	assertExit(t, update, 0)
 	assertEmpty(t, "conflict update stderr", update.stderr)
-	assertContains(t, update.stdout, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, update.stdout, "  vendor/basic/README.md")
 	assertContains(t, update.stdout, "Braid: warning: unrelated staged changes are present")
 	assertContains(t, update.stdout, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, update.stdout, "git commit -F '.git/MERGE_MSG'")
@@ -46,15 +46,15 @@ func TestExecutableUpdateConflictWritesMergeMessage(t *testing.T) {
 	assertContains(t, conflicted, "<<<<<<<")
 	assertContains(t, conflicted, "local")
 	assertContains(t, conflicted, "remote")
-	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update mirror 'vendor/basic' to '"+shortRevision(remoteRevision)+"'")
+	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update source 'upstream' to '"+shortRevision(remoteRevision)+"'")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
 	})
-	if unmerged := strings.TrimSpace(gitOK(t, env, downstream, "ls-files", "-u").stdout); unmerged != "" {
-		t.Fatalf("unmerged entries = %q, want marker fallback without unmerged entries", unmerged)
+	if unmerged := strings.TrimSpace(gitOK(t, env, downstream, "ls-files", "-u").stdout); len(strings.Split(unmerged, "\n")) != 3 {
+		t.Fatalf("unmerged entries = %q, want stages 1, 2, and 3", unmerged)
 	}
-	if cached := strings.Fields(gitOK(t, env, downstream, "diff", "--cached", "--name-only").stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt" {
-		t.Fatalf("cached names = %#v, want config and staged unrelated file", cached)
+	if cached := strings.Fields(gitOK(t, env, downstream, "diff", "--cached", "--name-only").stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt\nvendor/basic/README.md" {
+		t.Fatalf("cached names = %#v, want config, staged unrelated file, and conflicted mirror", cached)
 	}
 	if got := strings.TrimSpace(gitOK(t, env, downstream, "show", ":staged.txt").stdout); got != "staged content" {
 		t.Fatalf("staged blob = %q, want staged content", got)
@@ -94,15 +94,15 @@ func TestExecutableSubdirectoryConflictRecoveryCommands(t *testing.T) {
 	update := runBraid(t, env, workDir, braid, "--quiet", "update", "../../vendor/basic")
 	assertExit(t, update, 0)
 	assertEmpty(t, "subdir conflict stderr", update.stderr)
-	assertContains(t, update.stdout, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, update.stdout, "  vendor/basic/README.md")
 	assertContains(t, update.stdout, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, update.stdout, "git commit -F '../../.git/MERGE_MSG'")
-	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update mirror 'vendor/basic' to '"+shortRevision(remoteRevision)+"'")
+	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update source 'upstream' to '"+shortRevision(remoteRevision)+"'")
 
 	writeFile(t, downstream, "vendor/basic/README.md", "resolved\n")
 	gitOK(t, env, workDir, "add", "--", ":(top)vendor/basic", ":(top).braids.json")
 	gitOK(t, env, workDir, "commit", "-F", "../../.git/MERGE_MSG")
-	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update mirror 'vendor/basic' to '"+shortRevision(remoteRevision)+"'")
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update source 'upstream' to '"+shortRevision(remoteRevision)+"'")
 	assertFile(t, downstream, "vendor/basic/README.md", "resolved\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},

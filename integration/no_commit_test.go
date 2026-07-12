@@ -34,7 +34,7 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	add := runBraid(t, env, downstream, braid, "add", upstream, "vendor/basic", "--no-commit")
 	assertExit(t, add, 0)
 	assertContains(t, add.stdout, "Braid: warning: unrelated staged changes are present")
-	assertContains(t, add.stdout, "Braid: staged add of mirror 'vendor/basic'")
+	assertContains(t, add.stdout, "Braid: staged add of source ':upstream'")
 	assertFile(t, downstream, "vendor/basic/README.md", "base\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
@@ -57,7 +57,7 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	updateHead := gitOutput(t, env, downstream, "rev-parse", "HEAD")
 	update := runBraid(t, env, workDir, braid, "update", "../../vendor/basic", "--no-commit")
 	assertExit(t, update, 0)
-	assertContains(t, update.stdout, "Braid: staged update of mirror 'vendor/basic'")
+	assertContains(t, update.stdout, "Braid: staged update of source ':upstream'")
 	assertFile(t, downstream, "vendor/basic/README.md", "updated\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: updateRevision},
@@ -68,7 +68,7 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	}
 	commitAll(t, env, downstream, "combined update")
 
-	remote := remoteName("main", "vendor/basic")
+	remote := remoteName("main", "upstream")
 	gitOK(t, env, downstream, "remote", "add", remote, repositoryCachePath(t, downstream, "vendor/basic", configMirror{URL: upstream, Branch: "main"}))
 	writeFile(t, downstream, "remove-staged.txt", "remove staged\n")
 	gitOK(t, env, downstream, "add", "remove-staged.txt")
@@ -76,7 +76,7 @@ func TestExecutableNoCommitAddUpdateRemoveWorkflow(t *testing.T) {
 	remove := runBraid(t, env, downstream, braid, "remove", "vendor/basic", "--keep", "--no-commit")
 	assertExit(t, remove, 0)
 	assertContains(t, remove.stdout, "Braid: warning: unrelated staged changes are present")
-	assertContains(t, remove.stdout, "Braid: staged removal of mirror 'vendor/basic'")
+	assertContains(t, remove.stdout, "Braid: staged removal of source ':upstream'")
 	assertPathMissing(t, downstream, "vendor/basic")
 	assertConfigRaw(t, downstream, map[string]configMirror{})
 	assertRemoteURL(t, env, downstream, remote, repositoryCachePath(t, downstream, "vendor/basic", configMirror{URL: upstream, Branch: "main"}))
@@ -121,9 +121,9 @@ func TestExecutableNoCommitPullAllAndDirtyBlocker(t *testing.T) {
 	pull := runBraid(t, env, downstream, braid, "pull", "--no-commit")
 	assertExit(t, pull, 0)
 	assertNotContains(t, pull.stdout, "Braid: warning: unrelated staged changes are present")
-	assertContains(t, pull.stdout, "Braid: staged update of mirror 'vendor/a'")
-	assertContains(t, pull.stdout, "Braid: staged update of mirror 'vendor/b'")
-	assertContains(t, pull.stdout, "Braid: skipped revision-locked mirrors:\n  vendor/locked\n")
+	assertContains(t, pull.stdout, "Braid: staged update of source ':upstream-a'")
+	assertContains(t, pull.stdout, "Braid: staged update of source ':upstream-b'")
+	assertContains(t, pull.stdout, "Braid: skipped revision-locked sources:\n  :upstream-locked\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/a":      {URL: upstreamA, Branch: "main", Revision: aRevision},
 		"vendor/b":      {URL: upstreamB, Branch: "main", Revision: bRevision},
@@ -173,14 +173,14 @@ func TestExecutableNoCommitPullConflictMatchesExistingRecovery(t *testing.T) {
 	update := runBraid(t, env, downstream, braid, "--quiet", "pull", "vendor/basic", "--no-commit")
 	assertExit(t, update, 0)
 	assertEmpty(t, "conflict update stderr", update.stderr)
-	assertContains(t, update.stdout, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, update.stdout, "  vendor/basic/README.md")
 	assertContains(t, update.stdout, "Braid: warning: unrelated staged changes are present")
 	assertContains(t, update.stdout, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, update.stdout, "git commit -F '.git/MERGE_MSG'")
-	assertNotContains(t, update.stdout, "Braid: staged update of mirror")
+	assertNotContains(t, update.stdout, "Braid: staged update of source")
 	assertContains(t, readFile(t, downstream, "vendor/basic/README.md"), "<<<<<<<")
-	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update mirror 'vendor/basic' to '"+shortRevision(remoteRevision)+"'")
-	assertCachedNames(t, env, downstream, ".braids.json", "staged.txt")
+	assertContains(t, readFile(t, downstream, ".git/MERGE_MSG"), "Braid: Update source 'upstream' to '"+shortRevision(remoteRevision)+"'")
+	assertCachedNames(t, env, downstream, ".braids.json", "staged.txt", "vendor/basic/README.md")
 	if got := gitOutput(t, env, downstream, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}

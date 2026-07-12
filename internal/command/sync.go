@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"braid/internal/cli"
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 type SyncHandler struct {
@@ -18,7 +19,7 @@ type SyncHandler struct {
 
 type syncTarget struct {
 	LocalPath string
-	Mirror    mirror.Mirror
+	Mirror    source.SourceMirror
 }
 
 type syncPushAction struct {
@@ -81,6 +82,7 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 	var runErr error
 	var updateConflict bool
+	var pushedSources []string
 	if !inv.Sync.PullOnly {
 		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr); err != nil {
 			runErr = err
@@ -89,8 +91,11 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 			plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr)
 			if err != nil {
 				runErr = err
-			} else if err := h.runPushPlan(ctx, repo, git, plan, inv, stdout, stderr); err != nil {
-				runErr = err
+			} else {
+				pushedSources, err = h.runPushPlan(ctx, repo, git, plan, inv, stdout, stderr)
+				if err != nil {
+					runErr = err
+				}
 			}
 		}
 	}
@@ -100,17 +105,23 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		updateOptions := cli.UpdateOptions{Keep: inv.Sync.Keep}
 		for _, target := range targets {
 			result, err := update.updateOne(ctx, repo, git, processGit, cache, target.LocalPath, updateOptions, inv.Global.Verbose, inv.Global.Quiet, progress, stdout, stderr)
-			if result.Status == updateStatusConflict && autostashOK {
-				updateConflict = true
+			if result.Status == updateStatusConflict {
+				updateConflict = autostashOK
 				if err != nil {
 					runErr = fmt.Errorf("pull %s: %w", target.LocalPath, err)
 				} else {
 					runErr = fmt.Errorf("pull %s reached conflict state", target.LocalPath)
 				}
+				if len(pushedSources) != 0 {
+					runErr = syncPostPushPullFailure(runErr, pushedSources)
+				}
 				break
 			}
 			if err != nil {
 				runErr = fmt.Errorf("pull %s: %w", target.LocalPath, err)
+				if len(pushedSources) != 0 {
+					runErr = syncPostPushPullFailure(runErr, pushedSources)
+				}
 				break
 			}
 		}
@@ -123,6 +134,9 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 		if restoreErr := h.restoreSyncAutostash(ctx, git, autostash); restoreErr != nil {
 			if runErr != nil {
 				return fmt.Errorf("%w; additionally, %w", runErr, restoreErr)
+			}
+			if len(pushedSources) != 0 {
+				return syncPostPushPullFailure(restoreErr, pushedSources)
 			}
 			return restoreErr
 		}
@@ -145,15 +159,15 @@ func (h SyncHandler) syncGit(repo RepoContext, inv cli.Invocation, trace io.Writ
 
 func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths []string) ([]syncTarget, []string, error) {
 	if len(localPaths) == 0 {
-		targets := make([]syncTarget, 0, len(cfg.Mirrors))
+		targets := make([]syncTarget, 0, len(cfg.Sources))
 		var skippedLocked []string
-		for _, localPath := range cfg.Paths() {
-			m := cfg.Mirrors[localPath]
-			if m.Locked() {
-				skippedLocked = append(skippedLocked, localPath)
+		for _, s := range cfg.SourcesSorted() {
+			if s.Locked() {
+				skippedLocked = append(skippedLocked, ":"+s.Name)
 				continue
 			}
-			targets = append(targets, syncTarget{LocalPath: localPath, Mirror: m})
+			mirror := s.SortedMirrors()[0]
+			targets = append(targets, syncTarget{LocalPath: mirror.LocalPath, Mirror: s.WithMirror(mirror)})
 		}
 		return targets, skippedLocked, nil
 	}
@@ -161,30 +175,30 @@ func (h SyncHandler) syncTargets(repo RepoContext, cfg config.Config, localPaths
 	targets := make([]syncTarget, 0, len(localPaths))
 	seen := map[string]struct{}{}
 	for _, rawPath := range localPaths {
-		localPath, err := normalizeLocalPath(repo, rawPath)
+		selection, err := resolveSourceSelection(repo, cfg, rawPath, false)
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, ok := seen[localPath]; ok {
-			return nil, nil, fmt.Errorf("duplicate sync path: %s", localPath)
+		if _, ok := seen[selection.Source.Name]; ok {
+			continue
 		}
-		seen[localPath] = struct{}{}
-		m, err := cfg.GetRequired(localPath)
-		if err != nil {
-			return nil, nil, err
-		}
-		targets = append(targets, syncTarget{LocalPath: localPath, Mirror: m})
+		seen[selection.Source.Name] = struct{}{}
+		mirror := selection.Mirrors[0]
+		targets = append(targets, syncTarget{LocalPath: mirror.LocalPath, Mirror: selection.Source.WithMirror(mirror)})
 	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Mirror.Name < targets[j].Mirror.Name })
 	return targets, nil, nil
 }
 
 func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext, git syncAutostashGit, targets []syncTarget, autostashEnabled bool) (syncAutostash, bool, error) {
 	paths := make([]string, 0, len(targets))
 	for _, target := range targets {
-		if mirrorOverlapsConfig(target.Mirror.Path) {
-			return syncAutostash{}, false, fmt.Errorf("mirror path %q overlaps %s", target.Mirror.Path, config.FileName)
+		for _, path := range target.Mirror.LocalPaths() {
+			if mirrorOverlapsConfig(path) {
+				return syncAutostash{}, false, fmt.Errorf("mirror path %q overlaps %s", path, config.FileName)
+			}
+			paths = append(paths, path)
 		}
-		paths = append(paths, target.Mirror.Path)
 	}
 	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
 		return syncAutostash{}, false, err
@@ -293,7 +307,7 @@ func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache Cache
 		if !changed {
 			continue
 		}
-		if target.Mirror.Branch == "" {
+		if target.Mirror.Branch() == "" {
 			return syncPushPlan{}, syncNonBranchLocalChangeError(target.LocalPath)
 		}
 		actions = append(actions, syncPushAction{Target: target, BaseRevision: baseRevision})
@@ -316,53 +330,100 @@ func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache Cache
 	return syncPushPlan{Actions: actions}, nil
 }
 
-func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushGit, cache CacheConfig, m mirror.Mirror, keep bool, verbose bool, progress progressReporter, trace io.Writer, fn func() error) (err error) {
+func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushGit, cache CacheConfig, m source.SourceMirror, keep bool, verbose bool, progress progressReporter, trace io.Writer, fn func() error) (err error) {
 	if cache.Enabled {
 		if err := fetchCache(ctx, cache, m, verbose, progress, trace); err != nil {
 			return err
 		}
 	}
+	previousURL, previousExists, err := git.RemoteURL(ctx, m.Remote())
+	if err != nil {
+		return err
+	}
+	var previousConfig gitexec.RemoteConfigSnapshot
+	if previousExists {
+		if exact, ok := git.(exactRemoteConfigGit); ok {
+			previousConfig, err = exact.SnapshotRemoteConfig(ctx, m.Remote())
+			if err != nil {
+				return err
+			}
+		}
+	}
 	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
-	if !keep {
-		defer func() {
-			removeErr := git.RemoteRemove(ctx, m.Remote())
-			if err == nil {
+	defer func() {
+		if keep && err == nil {
+			return
+		}
+		if _, ok, inspectErr := git.RemoteURL(ctx, m.Remote()); inspectErr == nil && ok {
+			if removeErr := git.RemoteRemove(ctx, m.Remote()); removeErr != nil && err == nil {
 				err = removeErr
 			}
-		}()
-	}
+		} else if inspectErr != nil && err == nil {
+			err = inspectErr
+		}
+		if err != nil && previousExists {
+			if exact, ok := git.(exactRemoteConfigGit); ok && previousConfig != nil {
+				if restoreErr := exact.RestoreRemoteConfig(ctx, m.Remote(), previousConfig); restoreErr != nil {
+					err = fmt.Errorf("%w; failed to restore existing remote: %w", err, restoreErr)
+				}
+			} else if restoreErr := git.RemoteAdd(ctx, m.Remote(), previousURL); restoreErr != nil {
+				err = fmt.Errorf("%w; failed to restore existing remote: %w", err, restoreErr)
+			}
+		}
+	}()
 	if err := fetchMirror(ctx, git, cache, m, progress); err != nil {
 		return err
 	}
 	return fn()
 }
 
-func (h SyncHandler) runPushPlan(ctx context.Context, repo RepoContext, git PushGit, plan syncPushPlan, inv cli.Invocation, stdout, stderr io.Writer) error {
+func (h SyncHandler) runPushPlan(ctx context.Context, repo RepoContext, git PushGit, plan syncPushPlan, inv cli.Invocation, stdout, stderr io.Writer) ([]string, error) {
 	push := PushHandler(h)
+	var completed []string
 	for _, action := range plan.Actions {
-		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch, inv.Sync.Keep, "", inv.Global, stdout, stderr)
+		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch(), inv.Sync.Keep, "", inv.Global, stdout, stderr)
 		if err != nil {
-			return err
+			if result.Status == pushStatusPushed {
+				completed = append(completed, ":"+action.Target.Mirror.Name)
+			}
+			return completed, syncPushFailure(err, completed)
 		}
 		if result.Status == pushStatusNotUpToDate {
-			return syncNotUpToDateError(action.Target.LocalPath)
+			return completed, syncPushFailure(syncNotUpToDateError(action.Target.LocalPath), completed)
 		}
+		completed = append(completed, ":"+action.Target.Mirror.Name)
 	}
-	return nil
+	return completed, nil
 }
 
-func committedLocalMirrorChange(ctx context.Context, git PushGit, m mirror.Mirror) (bool, string, error) {
-	localItem, err := git.LsTreeItem(ctx, "HEAD", m.Path)
-	if err != nil {
-		return false, "", err
+func syncPushFailure(cause error, completed []string) error {
+	if len(completed) == 0 {
+		return cause
 	}
+	return fmt.Errorf("%w; sync already pushed %s and cannot roll those upstream updates back; after resolving the failure, run braid sync %s", cause, strings.Join(completed, ", "), strings.Join(completed, " "))
+}
+
+func syncPostPushPullFailure(cause error, completed []string) error {
+	commands := make([]string, 0, len(completed))
+	for _, name := range completed {
+		commands = append(commands, "braid pull "+name)
+	}
+	return fmt.Errorf("%w; sync already pushed %s and cannot roll those upstream updates back; after resolving the failure, run %s", cause, strings.Join(completed, ", "), strings.Join(commands, " and "))
+}
+
+func committedLocalMirrorChange(ctx context.Context, git PushGit, m source.SourceMirror) (bool, string, error) {
 	baseRevision, err := git.RevParse(ctx, m.Revision+"^{commit}")
 	if err != nil {
 		return false, "", err
 	}
-	newTree, err := git.MakeTreeWithItemIn(ctx, baseRevision, m.RemotePath, localItem)
+	for _, mirror := range m.Mirrors {
+		if _, err := git.LsTreeItem(ctx, "HEAD", mirror.LocalPath); err != nil {
+			return false, "", err
+		}
+	}
+	newTree, err := reconstructUpstreamTree(ctx, git, m)
 	if err != nil {
 		return false, "", err
 	}

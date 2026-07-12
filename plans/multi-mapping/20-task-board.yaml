@@ -1,0 +1,92 @@
+meta:
+  project: multi-mirror-sources
+  last_updated: 2026-07-12
+  statuses: [pending, in_progress, completed, cancelled]
+  required_full_gates:
+    - bazel run @rules_go//go -- fmt ./...
+    - git diff --exit-code
+    - bazel test --test_env=PATH //...
+    - bazel run @rules_go//go -- vet ./...
+    - bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+    - bazel test --test_env=PATH //integration/...
+
+current_focus: complete
+
+tasks:
+  - id: T01
+    title: Replace domain and config with sources and mirrors
+    status: completed
+    priority: high
+    depends_on: []
+    acceptance_criteria:
+      - Explicit Source Mirror Tracking types without active-path compatibility fields
+      - Strict canonical v2 sources schema and deterministic v1 upgrade
+      - Global local-path overlap validation
+    files_touched: [internal/source/**, internal/config/**, internal/mirror/**, internal/command/**, internal/pathcheck/**, integration/**]
+    evidence:
+      - command: bazel test //internal/source/... //internal/config/... //internal/pathcheck/...
+        result: pass
+      - command: bazel build //...
+        result: pass
+  - id: T02
+    title: Implement selectors and mirror topology lifecycle
+    status: completed
+    priority: high
+    depends_on: [T01]
+    acceptance_criteria:
+      - Explicit source-name and mirror-path lookup
+      - Both add modes removal scopes and completion contracts
+    files_touched: [internal/cli/**, internal/command/path.go, internal/command/add.go, internal/command/remove.go, internal/command/completion.go]
+    evidence:
+      - command: bazel test //internal/cli:cli_test //internal/command:completion_test
+        result: pass
+      - command: bazel test //internal/command:multi_source_test
+        result: pass
+  - id: T03
+    title: Implement aggregate pull and mirror inspection
+    status: completed
+    priority: high
+    depends_on: [T01, T02]
+    acceptance_criteria:
+      - Atomic aggregate pull including conflict and deletion behavior
+      - Path-scoped diff and two-dimensional status
+    files_touched: [internal/command/update.go, internal/command/status.go, internal/command/diff.go]
+    evidence:
+      - command: bazel test //internal/command:multi_source_test //internal/command:diff_test //internal/command:status_test //internal/command:refresh_command_test
+        result: pass
+  - id: T04
+    title: Implement source push sync cache and provenance
+    status: completed
+    priority: high
+    depends_on: [T03]
+    acceptance_criteria:
+      - Validate overlaps then reconstruct upstream from outermost mirrors
+      - Source-wide sync shared URL cache and per-mirror provenance
+      - Partial clone supports root and union hydration
+    files_touched: [internal/command/push*.go, internal/command/sync.go, internal/command/cache.go, internal/command/remote.go]
+    evidence:
+      - command: bazel test //internal/command:push_test //internal/command:sync_test //internal/command:cache_test
+        result: pass
+  - id: T05
+    title: Complete docs integration validation and review
+    status: completed
+    priority: high
+    depends_on: [T01, T02, T03, T04]
+    acceptance_criteria:
+      - README help migration docs fixtures and integration tests match final contract
+      - All CI parity gates pass
+      - Alignment review reports no actionable findings
+    files_touched: [README.md, docs/**, integration/**, internal/**_test.go, plans/multi-mapping/**]
+    evidence:
+      - command: bazel test --test_env=PATH //...
+        result: pass (29 targets)
+      - command: bazel run @rules_go//go -- vet ./...
+        result: pass
+      - command: bazel run @rules_go//go -- run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.0 run
+        result: pass (0 issues)
+      - command: bazel test --test_env=PATH //integration/...
+        result: pass (7 targets)
+      - command: implementation alignment reviews
+        result: three independent reviewers report no remaining findings
+
+history: []

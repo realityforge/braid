@@ -38,14 +38,13 @@ This is where Braid comes into play. Braid makes it easy to vendor in remote git
 repositories and use an automated mechanism for updating the external library
 and generating patches to upgrade the external library.
 
-Braid creates a file `.braids.json` in the root of your repository that contains
-references to external libraries or mirrors. The configuration allows you to control
-aspects of the mirroring process such as;
+Braid creates a `.braids.json` file in the repository root. It records named
+upstream sources and the local mirrors materialized from each source. The
+configuration controls:
 
-* whether the mirror is locked to a particular version of the external library.
-* whether the mirror is tracking a tag or a branch.
-* whether the mirror includes the entire external library or just a subdirectory.
-* whether a subdirectory mirror uses Git partial clone to avoid unrelated blobs.
+* whether a source is locked to a revision or tracks a tag or branch;
+* which upstream files or directories appear at each local mirror path;
+* whether partial clone avoids unrelated blobs while hydrating the source.
 
 ## Install
 
@@ -83,7 +82,7 @@ in your next `git commit` unless you unstage them first.
 - [Shell completion](#shell-completion)
 - [Output and quiet mode](#output-and-quiet-mode)
 - [Quick start](#quick-start)
-- [Adding mirrors](#adding-mirrors)
+- [Adding sources and mirrors](#adding-sources-and-mirrors)
 - [Checking status and local changes](#checking-status-and-local-changes)
 - [Pulling mirrors](#pulling-mirrors)
 - [Syncing mirrors](#syncing-mirrors)
@@ -111,9 +110,9 @@ braid add help
 braid add --help
 ```
 
-For an upstream with large blobs outside the mirrored subdirectory, opt into
-Git partial clone with `braid add <url> <local_path> --path <remote_path>
---partial-clone`. This stores `"partial_clone": true` in config version 2 and
+For an upstream with large blobs, opt into Git partial clone with
+`braid add <url> <local_path>=<upstream_path> --partial-clone`. This stores
+`"partial_clone": true` on the source in config version 2 and
 uses Git's `blob:none` filter for repository-local cache hydration and fetches.
 The upstream server must support Git object filtering. The setting is ignored
 when caching is disabled or a global cache is selected.
@@ -136,16 +135,16 @@ Bash completion setup, for example:
 braid completion bash > /usr/local/etc/bash_completion.d/braid
 ```
 
-The Bash completion covers global options, commands, command options, and
-configured mirror paths. Mirror path candidates are printed relative to the
+The Bash completion covers global options, commands, command options, source
+selectors, and configured mirror paths. Mirror path candidates are printed relative to the
 directory where completion is invoked, matching how Braid resolves path
 arguments.
 
 ### Output And Quiet Mode
 
 Commands that contact an upstream repository or update the local cache print
-start and completion messages on `stderr`, for example fetching a mirror,
-updating the cache, checking whether a mirror is current, pushing upstream, or
+start and completion messages on `stderr`, for example fetching a source,
+updating the cache, checking whether a source is current, pushing upstream, or
 setting up Braid-managed remotes. In an interactive terminal, long-running
 operations append `.` about every five seconds and print the completion message
 on a new line. Non-interactive output is line-based and does not print dots.
@@ -154,20 +153,20 @@ Command-requested data stays on `stdout` and is not suppressed by `--quiet`.
 This includes `status`, `diff`, `help`, and `version` output. Warnings, errors,
 and recovery or result messages also remain visible under `--quiet`; examples
 include push provenance warnings, pull conflict instructions, skipped
-revision-locked mirror lists, and push stop messages such as "Mirror is not up
+revision-locked source lists, and push stop messages such as "Source is not up
 to date."
 
 ### Quick Start
 
-Start anywhere inside an existing Git repository. Add a mirror at the path where
-you want the upstream content to live, relative to your current directory:
+Start anywhere inside an existing Git repository. Add a named upstream source
+and one local mirror:
 
 ```bash
 braid add <upstream-git-url> lib/grit
 ```
 
-Braid copies the upstream content into `lib/grit`, records the mirror in
-`.braids.json`, and creates a `Braid: Add mirror ...` commit. If you do not
+Braid copies the upstream content into `lib/grit`, records the source and mirror
+in `.braids.json`, and creates a `Braid: Add source ...` commit. If you do not
 specify `--branch`, `--tag`, or `--revision`, Braid tracks the upstream
 repository's default branch.
 
@@ -217,7 +216,7 @@ a different branch or handle each step separately.
 braid pull lib/grit
 ```
 
-### Adding Mirrors
+### Adding Sources And Mirrors
 
 Add a whole upstream repository:
 
@@ -225,11 +224,13 @@ Add a whole upstream repository:
 braid add https://github.com/rails/rails.git vendor/rails
 ```
 
-Add only a subdirectory or a single file from upstream:
+Add several local mirrors from one source snapshot. Omit `=upstream_path` to
+mirror the repository root:
 
 ```bash
-braid add https://github.com/twbs/bootstrap.git vendor/assets/bootstrap --path dist
-braid add <upstream-git-url> licenses/PROJECT-LICENSE.txt --path LICENSE.txt
+braid add https://github.com/twbs/bootstrap.git --name bootstrap \
+  vendor/assets/bootstrap=dist \
+  licenses/BOOTSTRAP-LICENSE.txt=LICENSE
 ```
 
 Track a specific branch or tag:
@@ -239,17 +240,23 @@ braid add https://github.com/rails/rails.git vendor/rails --branch 5-0-stable
 braid add https://github.com/rails/rails.git vendor/rails-7 --tag v7.0.0
 ```
 
-Lock a mirror to an explicit revision when you do not want ordinary
+Lock a source to an explicit revision when you do not want ordinary
 `braid pull` runs to move it:
 
 ```bash
 braid add https://github.com/rails/rails.git vendor/rails --revision 5850a65
 ```
 
-The `local_path` argument is optional. If you omit it, Braid derives the local
-path from the upstream repository name, or from the `--path` basename when
-mirroring a subdirectory or file, and places that derived path under your current
-directory.
+The source name is optional and normally derived from the URL basename. With no
+mirror arguments, Braid creates one root mirror at that name. Add mirrors later
+from the recorded source revision with:
+
+```bash
+braid add :bootstrap docs/bootstrap=docs
+```
+
+Each mirror argument is `local_path[=upstream_path]`; no `=` means the upstream
+root. Local paths cannot contain `=`.
 
 Before adding, Braid checks any existing `.braids.json` and requires the target
 path to be available. Tracked, staged, unstaged, or untracked content at the
@@ -262,61 +269,63 @@ they will be included in a normal `git commit`.
 
 ### Checking Status And Local Changes
 
-Show every configured mirror, or just one mirror:
+Show every configured mirror, one mirror, or every mirror for a source:
 
 ```bash
 braid status
 braid status vendor/rails
+braid status :rails
 ```
 
 Status output includes the recorded revision and tracking mode, such as
-`[BRANCH=main]`, `[TAG=v1.0]`, or `[REVISION LOCKED]`. It also reports useful
-state markers:
-
-- `(Remote Modified)`: the tracked branch or tag points at a different upstream
-  revision.
-- `(Locally Modified)`: the vendored files differ from the recorded upstream
-  revision.
-- `(Removed Locally)`: the configured mirror path is no longer present in the
-  downstream repository.
+`[BRANCH=main]`, `[TAG=v1.0]`, or `[REVISION LOCKED]`. It prints two states as
+`(Content State, Source State)`. Content states include `Up To Date`, `Modified
+Locally`, `Modified Remotely`, `Removed Locally`, `Removed Remotely`, and
+`Modified Locally And Remotely`. Source state is `Current`, `Behind`, or
+`Locked`, so a source can be behind while one mirror's content is unchanged.
 
 Show local changes as a Git diff:
 
 ```bash
 braid diff
 braid diff vendor/rails
+braid diff :rails
 braid diff vendor/rails -- --stat
 braid diff vendor/rails -- --cached
 ```
+
+A mirror-path selector diffs only that local mirror. A `:source` selector diffs
+every mirror belonging to the source.
 
 Arguments after `--` are passed to `git diff`. This is useful for generating
 patches, limiting output, or checking staged changes only.
 
 ### Pulling Mirrors
 
-Pull one mirror to the newest revision for its tracked branch or tag:
+Pull one source to the newest revision for its tracked branch or tag. A mirror
+path is an alias for its whole source:
 
 ```bash
 braid pull vendor/rails
 ```
 
-Pull every branch and tag mirror in lexicographic mirror path order:
+Pull every eligible source in lexicographic source-name order:
 
 ```bash
 braid pull
 ```
 
-Revision-locked mirrors are skipped by `braid pull` without a path. When any
+Revision-locked sources are skipped by `braid pull` without a selector. When any
 are skipped, a successful no-path pull prints:
 
 ```text
-Braid: skipped revision-locked mirrors:
-  vendor/a
-  vendor/z
+Braid: skipped revision-locked sources:
+  :a
+  :z
 ```
 
-Explicit-path pulls do not print this skipped-mirror note. Strategy changes
-require a local path:
+Explicit pulls do not print this skipped-source note. Strategy changes require
+a source name or mirror path:
 
 ```bash
 braid pull vendor/rails --revision <revision>
@@ -324,10 +333,10 @@ braid pull vendor/rails --branch main
 braid pull vendor/rails --tag <tag>
 ```
 
-Before pulling, Braid requires `.braids.json` and the mirror path being pulled
+Before pulling, Braid requires `.braids.json` and every mirror path in the source
 to be clean in both the index and working tree. For `braid pull` without a
-path, that scoped cleanliness check covers every eligible branch or tag mirror
-before any mirror is fetched or updated.
+selector, that scoped cleanliness check covers every mirror of every eligible
+source before any source is fetched or updated.
 
 Use `--no-commit` to stage a pull without creating the automatic Braid commit:
 
@@ -337,10 +346,9 @@ braid pull --no-commit
 git commit
 ```
 
-For no-path `braid pull --no-commit`, eligible mirrors are processed in
-lexicographic path order after the initial scoped cleanliness check. If a later
-mirror fails or conflicts, earlier staged mirror updates are left in place for
-manual resolution. Revision-locked mirrors are still skipped and reported.
+For no-path `braid pull --no-commit`, eligible sources are processed in source
+name order. Each source resolves one revision and updates all its mirrors as one
+aggregate tree merge and one staged transaction.
 
 If a pull conflicts with local mirror changes, Braid leaves conflict markers
 in the mirror working tree, stages the updated `.braids.json`, and writes a
@@ -349,7 +357,7 @@ prepared `MERGE_MSG`. Resolve the conflicts, then run the `git add` and
 `braid pull`. They use this shape:
 
 ```bash
-git add -- ':(top)vendor/rails' ':(top).braids.json'
+git add -- ':(top)vendor/rails' ':(top)licenses/RAILS-LICENSE' ':(top).braids.json'
 git commit -F '<MERGE_MSG path printed by Braid>'
 ```
 
@@ -360,32 +368,33 @@ mirror path and `.braids.json` from `HEAD`, then remove `.git/MERGE_MSG`.
 
 ### Syncing Mirrors
 
-`braid sync` runs the safe push-then-pull workflow for branch mirrors:
+`braid sync` runs the safe push-then-pull workflow for branch-tracking sources:
 
 ```bash
 braid sync vendor/rails
 braid sync vendor/rails vendor/rack
 ```
 
-With no paths, `braid sync` selects every configured branch or tag mirror in
-lexicographic mirror path order and skips revision-locked mirrors, matching
-no-path `braid pull`. When any revision-locked mirrors are skipped, successful
+With no selectors, `braid sync` selects every configured branch or tag source in
+lexicographic source-name order and skips revision-locked sources, matching
+no-selector `braid pull`. When any revision-locked sources are skipped, successful
 no-path `braid sync` and `braid sync --pull-only` runs print:
 
 ```text
-Braid: skipped revision-locked mirrors:
-  vendor/a
-  vendor/z
+Braid: skipped revision-locked sources:
+  :a
+  :z
 ```
 
-Explicit paths are processed in the order provided, may name branch, tag, or
-revision mirrors, and do not print this skipped-mirror note.
+Explicit selectors may be `:source` names or mirror paths. Aliases for the same
+source are deduplicated, selected sources run in source-name order, and explicit
+selection does not print the skipped-source note.
 
 Before any fetch, push, editor, worktree write, config write, or pull commit,
 `sync` checks unresolved Git operation state, `.braids.json`, and every selected
 mirror path for index and working tree changes. Dirty mirrors outside an
-explicit selection do not block that explicit sync. Ignored-only files under a
-selected mirror do not block the default check.
+explicit selection do not block that explicit sync. Ignored files under a
+selected mirror block unless `--autostash` preserves them.
 
 Use `--autostash` when selected mirror paths have uncommitted work that should
 be carried across the sync:
@@ -405,7 +414,7 @@ autostash is created.
 
 Autostash does not push uncommitted mirror changes. The push phase still uses
 only the mirror content recorded in downstream `HEAD`. When sync pushes a
-changed branch mirror, each upstream push uses the same commit-message review
+changed branch source, each upstream push uses the same commit-message review
 flow described for `braid push`, including optional generated-message prompts
 when configured.
 
@@ -417,24 +426,24 @@ index state. If automatic restoration succeeds but the saved stash cannot be
 dropped safely, Braid leaves your restored work in place, keeps the stash
 recoverable, and tells you to inspect `git stash list` before manual cleanup.
 
-The default push phase only auto-pushes branch-tracking mirrors with committed
-local mirror changes. Branch mirrors without committed local changes are skipped
+The default push phase only auto-pushes branch-tracking sources with committed
+local mirror changes. Branch sources without committed local changes are skipped
 quietly and still update normally, even if upstream has moved. Selected tag or
-revision mirrors with committed local changes stop the sync because `sync` has
+revision-locked sources with committed local changes stop the sync because `sync` has
 no `--branch`; run `braid push <path> --branch <branch>` for that explicit push
 intent, or rerun with `--pull-only` if you only intended to pull.
 
-If a changed branch mirror's upstream branch moved since the recorded revision,
+If a changed branch source's upstream branch moved since the recorded revision,
 `sync` fails before any mirror is pushed. Pull first, resolve conflicts if
 needed, commit, then rerun `braid sync`. If the selected mirror path itself was
 deleted from downstream `HEAD`, `sync` also fails rather than trying to push the
 deletion of the mirror root; deletions inside an existing mirror directory are
 ordinary local mirror changes.
 
-`sync` pushes mirrors sequentially. If an earlier mirror push succeeds and a
-later mirror's generator or commit editor fails, the earlier upstream commit may
+`sync` pushes sources sequentially. If an earlier source push succeeds and a
+later source's generator or commit editor fails, the earlier upstream commit may
 already exist and the pull phase is skipped. Rerun `braid sync` after resolving
-the failure to record downstream mirror revisions.
+the failure to record downstream source revisions.
 
 Use `--pull-only` to run only the pull phase with the same scoped precheck:
 
@@ -452,9 +461,9 @@ braid sync vendor/rails --keep
 
 ### Pushing Local Changes Upstream
 
-`braid push` creates an upstream commit from the mirror content recorded in your
-downstream `HEAD`, opens Git's commit editor for the upstream commit message, and
-pushes that commit.
+`braid push` reconstructs one upstream tree from every mirror in the selected
+source as recorded in downstream `HEAD`, opens Git's commit editor for one
+upstream commit message, and pushes that commit.
 
 For non-interactive pushes, pass the upstream commit message explicitly:
 
@@ -509,21 +518,21 @@ message file, or writes only whitespace, Braid opens the normal editor template
 with commented diagnostics and provenance guidance when available. Those
 comments are stripped from the final commit message if left in place.
 
-For branch mirrors, pushing without `--branch` targets the tracked branch:
+For branch-tracking sources, pushing without `--branch` targets the tracked branch:
 
 ```bash
 braid push vendor/rails
 ```
 
-Use `--branch` to push to a different upstream branch, or when the mirror tracks
+Use `--branch` to push to a different upstream branch, or when the source tracks
 a tag or fixed revision:
 
 ```bash
 braid push vendor/rails --branch myproject_customizations
 ```
 
-Braid stops without pushing if the upstream branch has moved since the recorded
-mirror revision. In that case, pull the mirror first, resolve any conflicts,
+Braid stops without pushing if the destination branch differs from the recorded
+source revision. In that case, pull the source first, resolve any conflicts,
 and then push.
 
 ### Removing Mirrors
@@ -534,8 +543,16 @@ Remove a mirror from the downstream repository:
 braid remove vendor/rails
 ```
 
-Braid removes the vendored content, updates `.braids.json`, and creates a
-`Braid: Remove mirror ...` commit.
+Braid removes that local mirror while retaining other mirrors in its source.
+Removing the last mirror removes the source. Remove a source and all its local
+mirrors explicitly with:
+
+```bash
+braid remove :rails
+```
+
+The automatic commit identifies either the removed mirror and source or the
+removed source.
 
 Use `--no-commit` to stage the removal without committing:
 
@@ -555,16 +572,17 @@ stages the mirror content removal and `.braids.json` update.
 
 Braid creates Git remotes as needed and removes them when the command finishes.
 
-The local cache is enabled by default. Without overrides, Braid stores
-repository-local per-mirror bare caches under `.git/braid/cache`. These caches
+The local cache is enabled by default. Without overrides, Braid stores one
+repository-local bare object cache per upstream URL under `.git/braid/cache`.
+These caches
 are implementation state and can be rebuilt by `braid add`, `braid status`,
 `braid pull`, `braid diff`, `braid push`, or `braid sync` while
 the upstream still serves the recorded revisions from `.braids.json`.
 
 Repository-local caches are shallow for common branch, tag, and full-SHA
 revision workflows. Fetching from a shallow cache can make the downstream Git
-repository report as shallow because Git records the shallow mirror commits in
-`.git/shallow`; those commits are Braid mirror objects, not the downstream
+repository report as shallow because Git records shallow source objects in
+`.git/shallow`; those commits are Braid source objects, not the downstream
 branch history. If an upstream has removed a recorded revision and the
 repository-local cache was deleted, Braid fails instead of guessing a base.
 
@@ -575,7 +593,7 @@ caching.
 The old `BRAID_LOCAL_CACHE_DIR` environment variable and `--cache-dir` flag have
 been replaced by `BRAID_GLOBAL_CACHE_DIR` and `--global-cache-dir`.
 
-Mirror paths stored in `.braids.json` always use repo-root-relative `/`
+Local mirror paths stored in `.braids.json` always use repo-root-relative `/`
 separators, and ordinary Braid output uses those same repo-root-relative paths.
 CLI mirror path arguments may use `/` or `\`; Braid resolves them relative to
 the directory where the command was invoked, then normalizes them before config
@@ -590,10 +608,29 @@ diff arguments after `braid diff ... --` are passed through as raw `git diff`
 arguments from the process directory; Braid only anchors its own internal mirror
 pathspecs.
 
-The `--path` option is an upstream Git path and should use Git's `/` separator.
-When adding from a local Windows repository path such as `C:\src\upstream.git`,
-Braid keeps that original upstream value for Git and derives the default mirror
-path from the repository basename.
+Upstream paths in `local_path=upstream_path` use Git's `/` separator. When
+adding from a local Windows repository path such as `C:\src\upstream.git`,
+Braid preserves the fetch target and derives the default source/mirror name from
+the repository basename.
+
+Config version 2 records named sources and their mirrors:
+
+```json
+{
+  "config_version": 2,
+  "sources": {
+    "replicant": {
+      "url": "https://github.com/replicant4j/replicant.git",
+      "branch": "master",
+      "revision": "18480c9dc34f948218a0c15370712d27b2626fa0",
+      "mirrors": {
+        "licenses/replicant-LICENSE.txt": "LICENSE.txt",
+        "vendor/libs/replicant": ""
+      }
+    }
+  }
+}
+```
 
 Braid validates configured mirror paths for cross-platform safety. It does not
 preflight every file inside the selected upstream tree; if an upstream filename
@@ -608,13 +645,13 @@ includes it.
 
 | Command | Purpose |
 | --- | --- |
-| `add [--no-commit]` | Add a branch, tag, or revision mirror and create or stage the initial Braid change. |
+| `add [--no-commit]` | Add a source with mirrors, or add mirrors to an existing `:source`. |
 | `status` | Show whether mirrors have remote, local, or removal changes. |
 | `diff` | Show local mirror changes, with Git diff arguments after `--`. |
-| `pull [--no-commit]` | Pull one mirror, or every branch/tag mirror when no path is given. |
-| `push` | Push committed local mirror changes upstream. |
-| `sync [local_path...] [--pull-only] [--autostash] [--keep]` | Push changed branch mirrors, then pull selected mirrors. |
-| `remove [--no-commit]` | Remove mirrored content and config. |
+| `pull [--no-commit]` | Pull one source atomically, or every eligible source. |
+| `push` | Push a source's committed mirror changes upstream as one commit. |
+| `sync [selector...] [--pull-only] [--autostash] [--keep]` | Push then pull selected sources. |
+| `remove [--no-commit]` | Remove a mirror by path or a source by `:name`. |
 | `version` | Print the Braid version. |
 | `completion bash` | Print the Bash completion script. |
 

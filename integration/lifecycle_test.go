@@ -11,7 +11,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	env := newProcessEnv(t, root)
 	braid := braidBinary(t)
 
-	upstream := filepath.Join(root, "upstream repo")
+	upstream := filepath.Join(root, "upstream-repo")
 	initRepo(t, env, upstream)
 	writeFile(t, upstream, "lib dir/component.txt", "base\n")
 	writeFile(t, upstream, "lib dir/kept.txt", "kept\n")
@@ -28,23 +28,24 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertResult(t, version, 0, "braid "+expectedBraidVersion()+"\n", "")
 
 	localPath := "vendor/lib with spaces"
-	remote := remoteName("main", localPath)
+	sourceName := "upstream-repo"
+	remote := remoteName("main", sourceName)
 	cacheRemoteURL := repositoryCachePath(t, downstream, localPath, configMirror{URL: upstream, Branch: "main", Path: "lib dir"})
 
-	add := runBraid(t, env, downstream, braid, "add", upstream, localPath, "--path", "lib dir")
+	add := runBraid(t, env, downstream, braid, "add", upstream, localPath+"=lib dir")
 	assertExit(t, add, 0)
 	assertEmpty(t, "add stdout", add.stdout)
 	assertProgress(t, add.stderr,
-		"Braid: detecting default branch for mirror "+localPath,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: fetched mirror "+localPath,
+		"Braid: detecting default branch for source :"+sourceName,
+		"Braid: updated cache for source :"+sourceName,
+		"Braid: fetched source :"+sourceName,
 	)
 	assertFile(t, downstream, "vendor/lib with spaces/component.txt", "base\n")
 	assertFile(t, downstream, "vendor/lib with spaces/kept.txt", "kept\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		localPath: {URL: upstream, Branch: "main", Path: "lib dir", Revision: baseRevision},
 	})
-	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Add mirror '"+localPath+"' at '"+shortRevision(baseRevision)+"'")
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Add source '"+sourceName+"' at '"+shortRevision(baseRevision)+"'")
 	assertNoRemote(t, env, downstream, remote)
 	assertPathExists(t, filepath.Join(cacheRemoteURL, "HEAD"))
 	assertClean(t, env, downstream)
@@ -52,8 +53,8 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	status := runBraid(t, env, downstream, braid, "status", localPath)
 	assertExit(t, status, 0)
 	assertProgress(t, status.stderr,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: fetched mirror "+localPath,
+		"Braid: updated cache for source :"+sourceName,
+		"Braid: fetched source :"+sourceName,
 	)
 	assertContains(t, status.stdout, localPath+" ("+baseRevision+") [BRANCH=main]")
 	assertNoRemote(t, env, downstream, remote)
@@ -71,10 +72,10 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	push := runBraid(t, pushEnv, downstream, braid, "push", localPath)
 	assertExit(t, push, 0)
 	assertProgress(t, push.stderr,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: fetched mirror "+localPath,
-		"Braid: pushing mirror "+localPath,
-		"Braid: pushed mirror "+localPath,
+		"Braid: updated cache for source :"+sourceName,
+		"Braid: fetched source :"+sourceName,
+		"Braid: pushing source :"+sourceName,
+		"Braid: pushed source :"+sourceName,
 	)
 	assertContains(t, push.stdout, "Executable push")
 	assertFile(t, upstream, "lib dir/component.txt", "local\n")
@@ -90,16 +91,16 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertExit(t, update, 0)
 	assertEmpty(t, "update stdout", update.stdout)
 	assertProgress(t, update.stderr,
-		"Braid: updated cache for mirror "+localPath,
-		"Braid: fetched mirror "+localPath,
-		"Braid: checked mirror "+localPath,
-		"Braid: updated mirror "+localPath+" to "+shortRevision(pushedRevision),
+		"Braid: updated cache for source :"+sourceName,
+		"Braid: fetched source :"+sourceName,
+		"Braid: checked source :"+sourceName,
+		"Braid: updated source :"+sourceName+" to "+shortRevision(pushedRevision),
 	)
 	assertFile(t, downstream, "vendor/lib with spaces/component.txt", "local\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		localPath: {URL: upstream, Branch: "main", Path: "lib dir", Revision: pushedRevision},
 	})
-	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update mirror '"+localPath+"' to '"+shortRevision(pushedRevision)+"'")
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update source '"+sourceName+"' to '"+shortRevision(pushedRevision)+"'")
 	assertNoRemote(t, env, downstream, remote)
 	assertClean(t, env, downstream)
 
@@ -107,7 +108,7 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertResult(t, remove, 0, "", "")
 	assertPathMissing(t, downstream, localPath)
 	assertConfigRaw(t, downstream, map[string]configMirror{})
-	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Remove mirror '"+localPath+"'")
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Remove source '"+sourceName+"'")
 	assertNoRemote(t, env, downstream, remote)
 	assertClean(t, env, downstream)
 }
@@ -163,7 +164,7 @@ func TestPartialCloneSubdirectoryLifecycle(t *testing.T) {
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "initial")
 
-	result := runBraid(t, env, downstream, braid, "add", upstream, "vendor/wanted", "--path", "wanted", "--partial-clone")
+	result := runBraid(t, env, downstream, braid, "add", upstream, "vendor/wanted=wanted", "--partial-clone")
 	assertExit(t, result, 0)
 	assertFile(t, downstream, "vendor/wanted/file.txt", "one\n")
 	assertConfigRaw(t, downstream, map[string]configMirror{
@@ -218,7 +219,7 @@ func TestPartialCloneRejectsUpstreamWithoutFilterSupport(t *testing.T) {
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "initial")
 
-	result := runBraid(t, env, downstream, braid, "add", upstream, "vendor/wanted", "--path", "wanted", "--partial-clone")
+	result := runBraid(t, env, downstream, braid, "add", upstream, "vendor/wanted=wanted", "--partial-clone")
 	assertExit(t, result, 1)
 	assertContains(t, result.stderr, "does not support partial clone filtering")
 	assertClean(t, env, downstream)

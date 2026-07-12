@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"braid/internal/cli"
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 type RemoveHandler struct {
@@ -45,22 +46,33 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	localPath, err := normalizeLocalPath(repo, options.LocalPath)
+	selection, err := resolveSourceSelection(repo, cfg, options.LocalPath, false)
 	if err != nil {
 		return err
 	}
-	m, err := cfg.GetRequired(localPath)
+	s := selection.Source
+	m := s.WithMirror(selection.Mirrors[0])
+	removeSource := strings.HasPrefix(options.LocalPath, ":") || len(s.Mirrors) == 1
+	var paths []string
+	if removeSource {
+		paths = s.LocalPaths()
+	} else {
+		paths = []string{m.LocalPath}
+	}
+	for _, path := range paths {
+		if mirrorOverlapsConfig(path) {
+			return fmt.Errorf("mirror path %q overlaps %s", path, config.FileName)
+		}
+	}
+	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, paths...); err != nil {
+		return err
+	}
+	if removeSource {
+		err = cfg.RemoveSource(s.Name)
+	} else {
+		_, _, err = cfg.RemoveMirror(m.LocalPath)
+	}
 	if err != nil {
-		return err
-	}
-	if mirrorOverlapsConfig(m.Path) {
-		return fmt.Errorf("mirror path %q overlaps %s", m.Path, config.FileName)
-	}
-	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, m.Path); err != nil {
-		return err
-	}
-
-	if err := cfg.Remove(m.Path); err != nil {
 		return err
 	}
 	configData, err := cfg.MarshalJSON()
@@ -72,9 +84,12 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 		return err
 	}
 
-	treeWithoutMirror, err := git.MakeTreeWithoutPath(ctx, "HEAD", m.Path)
-	if err != nil {
-		return err
+	treeWithoutMirror := "HEAD"
+	for _, path := range paths {
+		treeWithoutMirror, err = git.MakeTreeWithoutPath(ctx, treeWithoutMirror, path)
+		if err != nil {
+			return err
+		}
 	}
 	finalTree, err := git.MakeTreeWithItemIn(ctx, treeWithoutMirror, config.FileName, configItem)
 	if err != nil {
@@ -82,20 +97,31 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 	}
 	if options.NoCommit {
 		var warned bool
+		display := m.LocalPath
+		description := "removal of mirror '" + m.LocalPath + "' from source ':" + s.Name + "'"
+		if removeSource {
+			display = ":" + s.Name
+			description = ""
+		}
 		if err := stageNoCommitResult(ctx, git, stdout, noCommitStageOptions{
-			Tree:       finalTree,
-			Action:     "removal",
-			MirrorPath: m.Path,
-			Paths:      []string{m.Path, config.FileName},
-			OwnedPaths: []string{m.Path},
-			Quiet:      quiet,
-			Warned:     &warned,
+			Tree:        finalTree,
+			Action:      "removal",
+			MirrorPath:  display,
+			Description: description,
+			Paths:       append(append([]string{}, paths...), config.FileName),
+			OwnedPaths:  paths,
+			Quiet:       quiet,
+			Warned:      &warned,
 		}); err != nil {
 			return err
 		}
 		return cleanupRemote(ctx, git, options, m, nil, "staged changes")
 	}
-	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, removeCommitSubject(m))
+	subject := fmt.Sprintf("Braid: Remove mirror '%s' from source '%s'", m.LocalPath, s.Name)
+	if removeSource {
+		subject = fmt.Sprintf("Braid: Remove source '%s'", s.Name)
+	}
+	committed, err := git.CommitTreeWithTemporaryIndex(ctx, finalTree, subject)
 	if err != nil {
 		return err
 	}
@@ -103,17 +129,13 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 		return errors.New("remove produced no commit")
 	}
 
-	if err := git.RestorePathspecsFromHead(ctx, m.Path, config.FileName); err != nil {
+	if err := git.RestorePathspecsFromHead(ctx, append(paths, config.FileName)...); err != nil {
 		return cleanupRemote(ctx, git, options, m, err, "")
 	}
 	return cleanupRemote(ctx, git, options, m, nil, "committed")
 }
 
-func removeCommitSubject(m mirror.Mirror) string {
-	return fmt.Sprintf("Braid: Remove mirror '%s'", m.Path)
-}
-
-func cleanupRemote(ctx context.Context, git RemoveGit, options cli.RemoveOptions, m mirror.Mirror, cause error, completed string) error {
+func cleanupRemote(ctx context.Context, git RemoveGit, options cli.RemoveOptions, m source.SourceMirror, cause error, completed string) error {
 	if options.Keep {
 		return cause
 	}

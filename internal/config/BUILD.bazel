@@ -5,7 +5,10 @@ go_library(
     srcs = ["config.go"],
     importpath = "braid/internal/config",
     visibility = ["//visibility:public"],
-    deps = ["//internal/mirror"],
+    deps = [
+        "//internal/pathcheck",
+        "//internal/source",
+    ],
 )
 
 go_test(
@@ -13,5 +16,5 @@ go_test(
     srcs = ["config_test.go"],
     embed = [":config"],
     timeout = "short",
-    deps = ["//internal/mirror"],
+    deps = ["//internal/source"],
 )

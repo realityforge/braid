@@ -6,7 +6,32 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"braid/internal/config"
+	"braid/internal/source"
 )
+
+func resolveSourceSelection(repo RepoContext, cfg config.Config, raw string, pathScoped bool) (source.SourceSelection, error) {
+	if strings.HasPrefix(raw, ":") {
+		s, err := cfg.SourceByNameRequired(strings.TrimPrefix(raw, ":"))
+		if err != nil {
+			return source.SourceSelection{}, err
+		}
+		return source.SourceSelection{Source: s, Mirrors: s.SortedMirrors()}, nil
+	}
+	localPath, err := normalizeLocalPath(repo, raw)
+	if err != nil {
+		return source.SourceSelection{}, err
+	}
+	s, m, err := cfg.MirrorByLocalPathRequired(localPath)
+	if err != nil {
+		return source.SourceSelection{}, err
+	}
+	if pathScoped {
+		return source.SourceSelection{Source: s, Mirrors: []source.Mirror{m}}, nil
+	}
+	return source.SourceSelection{Source: s, Mirrors: s.SortedMirrors()}, nil
+}
 
 func normalizeLocalPath(repo RepoContext, value string) (string, error) {
 	value = strings.ReplaceAll(value, `\`, "/")

@@ -34,6 +34,7 @@ type AddGit interface {
 	LsRemote(context.Context, ...string) (string, error)
 	Fetch(context.Context, ...string) error
 	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
+	TreeContainsGitlink(context.Context, string, string) (bool, error)
 	LsFiles(context.Context, string) (string, error)
 	StatusPorcelainPathspecs(context.Context, ...string) (string, error)
 	BlockingOperation(context.Context) (string, bool, error)
@@ -50,6 +51,7 @@ type DiffGit interface {
 	RevParse(context.Context, string) (string, error)
 	Fetch(context.Context, ...string) error
 	LsTreeItem(context.Context, string, string) (gitexec.TreeItem, error)
+	TreeContainsGitlink(context.Context, string, string) (bool, error)
 	MakeTreeWithItem(context.Context, string, gitexec.TreeItem) (string, error)
 	Diff(context.Context, ...string) (string, error)
 }

@@ -33,12 +33,12 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	sync := runBraid(t, syncEnv, downstream, braid, "sync", "vendor/basic")
 	assertExit(t, sync, 0)
 	assertProgress(t, sync.stderr,
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
-		"Braid: pushing mirror vendor/basic",
-		"Braid: pushed mirror vendor/basic",
-		"Braid: checked mirror vendor/basic",
-		"Braid: updated mirror vendor/basic",
+		"Braid: updated cache for source :upstream",
+		"Braid: fetched source :upstream",
+		"Braid: pushing source :upstream",
+		"Braid: pushed source :upstream",
+		"Braid: checked source :upstream",
+		"Braid: updated source :upstream",
 	)
 	assertContains(t, sync.stdout, "Executable sync")
 
@@ -48,8 +48,8 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	assertConfigRaw(t, downstream, map[string]configMirror{
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: pushedRevision},
 	})
-	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update mirror 'vendor/basic' to '"+shortRevision(pushedRevision)+"'")
-	assertNoRemote(t, env, downstream, remoteName("main", "vendor/basic"))
+	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update source 'upstream' to '"+shortRevision(pushedRevision)+"'")
+	assertNoRemote(t, env, downstream, remoteName("main", "upstream"))
 	assertClean(t, env, downstream)
 }
 
@@ -79,10 +79,10 @@ func TestExecutablePushProvenanceTemplateTouchesGitDefaultTemplate(t *testing.T)
 	push := runBraid(t, pushEnv, downstream, braid, "push", "vendor/basic")
 	assertExit(t, push, 0)
 	assertProgress(t, push.stderr,
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
-		"Braid: pushing mirror vendor/basic",
-		"Braid: pushed mirror vendor/basic",
+		"Braid: updated cache for source :upstream",
+		"Braid: fetched source :upstream",
+		"Braid: pushing source :upstream",
+		"Braid: pushed source :upstream",
 	)
 
 	template := readFile(t, root, filepath.Base(capture))
@@ -121,7 +121,7 @@ func TestExecutableSyncPullOnlyUpdatesWithoutEditor(t *testing.T) {
 		"vendor/basic": {URL: upstream, Branch: "main", Revision: remoteRevision},
 	})
 	assertLatestCommit(t, env, upstream, defaultName+" <"+defaultEmail+">", "remote update")
-	assertNoRemote(t, env, downstream, remoteName("main", "vendor/basic"))
+	assertNoRemote(t, env, downstream, remoteName("main", "upstream"))
 	assertClean(t, env, downstream)
 }
 
