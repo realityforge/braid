@@ -21,16 +21,16 @@ func TestProgressAddReportsRemoteOperationsAndQuietSuppresses(t *testing.T) {
 
 	assertEmptyOutput(t, "add stdout", stdout)
 	assertInOrder(t, stderr,
-		"Braid: detecting default branch for mirror vendor/basic",
-		"Braid: detected default branch for mirror vendor/basic",
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
+		"Braid: detecting default branch for source :001",
+		"Braid: detected default branch for source :001",
+		"Braid: updating cache for source :001",
+		"Braid: updated cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: fetched source :001",
 	)
 	assertNotContains(t, stderr, upstream)
 
-	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"--quiet", "add", upstream, "vendor/quiet"})
+	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"--quiet", "add", ":001", "vendor/quiet"})
 	assertEmptyOutput(t, "quiet add stdout", stdout)
 	assertNoProgressOutput(t, stderr)
 }
@@ -44,28 +44,28 @@ func TestProgressPullReportsNoopUpdateAndQuietSuppresses(t *testing.T) {
 	runCommandOK(t, repo, []string{"--quiet", "add", upstream, "vendor/basic"})
 
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"pull", "vendor/basic"})
-	assertEmptyOutput(t, "noop pull stdout", stdout)
+	assertContains(t, stdout, "Braid: source :001 is already up to date")
 	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
-		"Braid: checking mirror vendor/basic",
-		"Braid: mirror vendor/basic already up to date",
+		"Braid: updating cache for source :001",
+		"Braid: updated cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: fetched source :001",
+		"Braid: checking source :001",
+		"Braid: checked source :001",
 	)
-	assertNotContains(t, stderr, "Braid: updating mirror vendor/basic")
+	assertNotContains(t, stderr, "Braid: updating source :001")
 
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote")
 	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"pull", "vendor/basic"})
 	assertEmptyOutput(t, "pull stdout", stdout)
 	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: checking mirror vendor/basic",
-		"Braid: checked mirror vendor/basic",
-		"Braid: updating mirror vendor/basic",
-		"Braid: updated mirror vendor/basic to "+revision[:7],
+		"Braid: updating cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: checking source :001",
+		"Braid: checked source :001",
+		"Braid: updating source :001",
+		"Braid: updated source :001 to "+revision[:7],
 	)
 	assertFile(t, repo, "vendor/basic/README.md", "remote\n")
 
@@ -92,17 +92,17 @@ func TestProgressStatusKeepsDataOnStdoutAndQuietSuppresses(t *testing.T) {
 
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"status", "vendor/basic"})
 	assertContains(t, stdout, "vendor/basic (")
-	assertContains(t, stdout, "(Remote Modified)")
+	assertContains(t, stdout, "Modified Remotely")
 	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
+		"Braid: updating cache for source :001",
+		"Braid: updated cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: fetched source :001",
 	)
 
 	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"--quiet", "status", "vendor/basic"})
 	assertContains(t, stdout, "vendor/basic (")
-	assertContains(t, stdout, "(Remote Modified)")
+	assertContains(t, stdout, "Modified Remotely")
 	assertNoProgressOutput(t, stderr)
 }
 
@@ -120,10 +120,10 @@ func TestProgressDiffHydrationKeepsDataOnStdoutAndQuietSuppresses(t *testing.T) 
 	assertContains(t, stdout, "diff --git a/README.md b/README.md")
 	assertContains(t, stdout, "changed")
 	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
+		"Braid: updating cache for source :001",
+		"Braid: updated cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: fetched source :001",
 	)
 
 	quietClone := cloneWithoutBaseRevision(t, repo, revision)
@@ -149,17 +149,17 @@ func TestProgressPushReportsRemoteOperationsAndQuietPreservesResults(t *testing.
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"push", "vendor/basic"})
 	assertContains(t, stdout, "Push progress")
 	assertInOrder(t, stderr,
-		"Braid: updating cache for mirror vendor/basic",
-		"Braid: updated cache for mirror vendor/basic",
-		"Braid: fetching mirror vendor/basic",
-		"Braid: fetched mirror vendor/basic",
-		"Braid: pushing mirror vendor/basic",
-		"Braid: pushed mirror vendor/basic",
+		"Braid: updating cache for source :001",
+		"Braid: updated cache for source :001",
+		"Braid: fetching source :001",
+		"Braid: fetched source :001",
+		"Braid: pushing source :001",
+		"Braid: pushed source :001",
 	)
 	assertFile(t, upstream, "README.md", "local\n")
 
 	stdout, stderr = runCommandOKWithOutput(t, repo, []string{"--quiet", "push", "vendor/basic"})
-	assertContains(t, stdout, "Braid: Mirror is not up to date. Stopping.")
+	assertContains(t, stdout, "Braid: Source is not up to date. Stopping.")
 	assertNoProgressOutput(t, stderr)
 }
 

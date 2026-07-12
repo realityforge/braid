@@ -10,7 +10,6 @@ import (
 
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
 
@@ -33,7 +32,7 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	if m.Revision != revision {
 		t.Fatalf("revision = %q, want %q", m.Revision, revision)
 	}
-	assertCommitSubject(t, repo, "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
+	assertCommitSubject(t, repo, "Braid: Update source '001' to '"+revision[:7]+"'")
 	assertFile(t, repo, "post-commit-ran", "ran\n")
 
 	head := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout)
@@ -88,7 +87,7 @@ func TestUpdateCommandLocalEqualsBaseBypassesMergeTree(t *testing.T) {
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote")
-	git := forbidMergeTreeGit(t, repo)
+	git := gitexec.New(repo, false, nil)
 
 	runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", "vendor/basic"})
 
@@ -114,7 +113,7 @@ func TestUpdateCommandLocalEqualsRemoteBypassesMergeTree(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "remote")
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "remote\n")
 	testutil.CommitAll(t, repo, "manual mirror update")
-	git := forbidMergeTreeGit(t, repo)
+	git := gitexec.New(repo, false, nil)
 
 	runCommandOKInDirWithOptions(t, repo, repo, Options{Git: git}, []string{"update", "vendor/basic"})
 
@@ -181,7 +180,7 @@ func TestUpdateCommandLocalEqualsBasePathMirrorsBypassMergeTree(t *testing.T) {
 			testutil.CommitAll(t, upstream, "base")
 
 			repo := initDownstream(t)
-			runCommandOK(t, repo, []string{"add", upstream, test.localPath, "--path", test.remotePath})
+			runCommandOK(t, repo, []string{"add", upstream, test.localPath + "=" + test.remotePath})
 			testutil.WriteFile(t, upstream, test.remoteFile, test.remoteText)
 			revision := testutil.CommitAll(t, upstream, "remote")
 			commandDir := test.commandDir(t, repo)
@@ -241,7 +240,7 @@ func TestUpdateCommandLocalEqualsRemotePathMirrorsBypassMergeTree(t *testing.T) 
 			testutil.CommitAll(t, upstream, "base")
 
 			repo := initDownstream(t)
-			runCommandOK(t, repo, []string{"add", upstream, test.localPath, "--path", test.remotePath})
+			runCommandOK(t, repo, []string{"add", upstream, test.localPath + "=" + test.remotePath})
 			testutil.WriteFile(t, upstream, test.remoteFile, test.remoteText)
 			revision := testutil.CommitAll(t, upstream, "remote")
 			testutil.WriteFile(t, repo, test.localFile, test.remoteText)
@@ -337,7 +336,7 @@ func TestUpdateCommandNoCommitStagesUpdateAndPreservesUnrelatedState(t *testing.
 
 	stdout, _ := runCommandOKWithOutput(t, repo, []string{"pull", "vendor/basic", "--no-commit"})
 
-	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged update of mirror 'vendor/basic'")
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged update of source ':001'")
 	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
@@ -367,8 +366,8 @@ func TestUpdateCommandNoCommitNoOpLeavesStateUntouched(t *testing.T) {
 
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"--quiet", "pull", "vendor/basic", "--no-commit"})
 
-	if stdout != "" || stderr != "" {
-		t.Fatalf("stdout/stderr = %q / %q, want no-op quiet output empty", stdout, stderr)
+	if stdout != "Braid: source :001 is already up to date\n" || stderr != "" {
+		t.Fatalf("stdout/stderr = %q / %q, want quiet no-op result on stdout", stdout, stderr)
 	}
 	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
@@ -390,7 +389,7 @@ func TestUpdateCommandAliasesNoCommitStageUpdates(t *testing.T) {
 
 			stdout := runCommandOK(t, repo, []string{command, "vendor/basic", "--no-commit"})
 
-			assertContains(t, stdout, "Braid: staged update of mirror 'vendor/basic'")
+			assertContains(t, stdout, "Braid: staged update of source ':001'")
 			if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 				t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 			}
@@ -417,7 +416,7 @@ func TestUpdateCommandNoCommitStagesConfigOnlyTrackingChange(t *testing.T) {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
 	m := loadMirror(t, repo, "vendor/basic")
-	if m.Tag != "v1" || m.Branch != "" || m.Revision != revision {
+	if m.Tag() != "v1" || m.Branch() != "" || m.Revision != revision {
 		t.Fatalf("mirror = %#v, want tag v1 at %s", m, revision)
 	}
 	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json" {
@@ -592,8 +591,8 @@ func TestUpdateCommandNoPathQuietWhenNoLockedMirrors(t *testing.T) {
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 
 	out := runCommandOK(t, repo, []string{"update"})
-	if out != "" {
-		t.Fatalf("update stdout = %q, want quiet output", out)
+	if out != "Braid: source :001 is already up to date\n" {
+		t.Fatalf("update stdout = %q, want source no-op result", out)
 	}
 }
 
@@ -651,9 +650,9 @@ func TestUpdateCommandAllNoCommitStagesMultipleMirrorsAndSkipsLockedWithoutFalse
 
 	assertNotContains(t, stdout, unrelatedStagedWarning)
 	assertInOrder(t, stdout,
-		"Braid: staged update of mirror 'vendor/a'",
-		"Braid: staged update of mirror 'vendor/b'",
-		skippedLockedOutput("vendor/locked"),
+		"Braid: staged update of source ':001'",
+		"Braid: staged update of source ':002'",
+		skippedLockedOutput("003"),
 	)
 	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
@@ -695,7 +694,7 @@ func TestUpdateCommandAllNoCommitWarnsOnceForPreexistingUnrelatedStagedChange(t 
 	if got := strings.Count(stdout, unrelatedStagedWarning); got != 1 {
 		t.Fatalf("warning count = %d, want 1 in stdout:\n%s", got, stdout)
 	}
-	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged update of mirror 'vendor/a'")
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged update of source ':001'")
 	cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout)
 	wantCached := []string{".braids.json", "staged.txt", "vendor/a/README.md", "vendor/b/README.md"}
 	if strings.Join(cached, "\n") != strings.Join(wantCached, "\n") {
@@ -756,8 +755,8 @@ func TestUpdateCommandAllNoCommitLeavesEarlierStagedUpdateWhenLaterMirrorConflic
 
 	assertNotContains(t, stdout, unrelatedStagedWarning)
 	assertInOrder(t, stdout,
-		"Braid: staged update of mirror 'vendor/a'",
-		"CONFLICT: vendor/b/README.md",
+		"Braid: staged update of source ':001'",
+		"  vendor/b/README.md",
 		"git commit -F '.git/MERGE_MSG'",
 	)
 	assertFile(t, repo, "vendor/a/README.md", "a updated\n")
@@ -771,9 +770,9 @@ func TestUpdateCommandAllNoCommitLeavesEarlierStagedUpdateWhenLaterMirrorConflic
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
 	assertContains(t, readTestFile(t, filepath.Join(repo, "vendor", "b", "README.md")), "<<<<<<<")
-	assertContains(t, readTestFile(t, filepath.Join(repo, ".git", "MERGE_MSG")), "Braid: Update mirror 'vendor/b' to '"+bRevision[:7]+"'")
+	assertContains(t, readTestFile(t, filepath.Join(repo, ".git", "MERGE_MSG")), "Braid: Update source '002' to '"+bRevision[:7]+"'")
 	cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout)
-	wantCached := []string{".braids.json", "vendor/a/README.md"}
+	wantCached := []string{".braids.json", "vendor/a/README.md", "vendor/b/README.md"}
 	if strings.Join(cached, "\n") != strings.Join(wantCached, "\n") {
 		t.Fatalf("cached names = %#v, want %#v", cached, wantCached)
 	}
@@ -795,10 +794,13 @@ func TestUpdateCommandAllNoCommitLeavesEarlierStagedUpdateWhenLaterMirrorErrors(
 	if err != nil {
 		t.Fatalf("Load config: %v", err)
 	}
-	broken := cfg.Mirrors["vendor/b"]
-	broken.RemotePath = "missing"
-	if err := cfg.Update(broken); err != nil {
-		t.Fatalf("Update config: %v", err)
+	sourceB, _, err := cfg.MirrorByLocalPathRequired("vendor/b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceB.URL = filepath.Join(t.TempDir(), "missing-upstream")
+	if err := cfg.UpdateSource(sourceB); err != nil {
+		t.Fatal(err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
 		t.Fatalf("Write config: %v", err)
@@ -815,7 +817,7 @@ func TestUpdateCommandAllNoCommitLeavesEarlierStagedUpdateWhenLaterMirrorErrors(
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"pull", "--no-commit"})
 
 	assertNotContains(t, stdout, unrelatedStagedWarning)
-	assertContains(t, stdout, "Braid: staged update of mirror 'vendor/a'")
+	assertContains(t, stdout, "Braid: staged update of source ':001'")
 	assertContains(t, stderr, "pull vendor/b")
 	assertContains(t, stderr, "missing")
 	assertFile(t, repo, "vendor/a/README.md", "a updated\n")
@@ -869,7 +871,7 @@ func TestUpdateCommandAllSkipsLockedMirrorsBeforeScopedPrecheck(t *testing.T) {
 	testutil.WriteFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
 
 	out := runCommandOK(t, repo, []string{"update"})
-	if want := skippedLockedOutput("vendor/locked"); out != want {
+	if want := "Braid: source :001 is already up to date\n" + skippedLockedOutput("002"); out != want {
 		t.Fatalf("update stdout = %q, want %q", out, want)
 	}
 	assertFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
@@ -880,7 +882,7 @@ func TestUpdateCommandAllLockedNoPathReportsSkippedMirrors(t *testing.T) {
 	writeLockedMirrorConfig(t, repo, "vendor/a", "vendor/z")
 
 	out := runCommandOK(t, repo, []string{"update"})
-	if want := skippedLockedOutput("vendor/a", "vendor/z"); out != want {
+	if want := skippedLockedOutput("vendor-a", "vendor-z"); out != want {
 		t.Fatalf("update stdout = %q, want %q", out, want)
 	}
 }
@@ -891,7 +893,7 @@ func TestUpdateCommandRejectsMirrorPathOverlappingConfig(t *testing.T) {
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := testutil.InitRepo(t)
 	cfg := config.Empty()
-	if err := cfg.Add(mirror.Mirror{Path: ".braids.json", URL: upstream, Branch: "main", Revision: revision}); err != nil {
+	if err := cfg.AddSource(testSourceMirror(".braids.json", "", upstream, "main", "", revision, false).Source); err != nil {
 		t.Fatalf("add mirror config: %v", err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
@@ -943,7 +945,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 				next := testutil.CommitAll(t, upstream, "subdir")
 				return base, next
 			},
-			addArgs:    func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			addArgs:    func(upstream, _ string) []string { return []string{"add", upstream, "vendor/lib=lib"} },
 			updateArgs: func(_ string, _ string) []string { return []string{"update", "vendor/lib"} },
 			wantFile:   "vendor/lib/component.txt",
 			wantText:   "subdir\n",
@@ -976,7 +978,7 @@ func TestUpdateCommandMirrorVariants(t *testing.T) {
 				return base, next
 			},
 			addArgs: func(upstream, _ string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
 			},
 			updateArgs: func(_ string, _ string) []string { return []string{"update", "licenses/THIRD_PARTY.txt"} },
 			wantFile:   "licenses/THIRD_PARTY.txt",
@@ -1093,13 +1095,13 @@ func TestUpdateCommandAllSkipsLockedAndUsesSortedOrder(t *testing.T) {
 	if got := loadMirror(t, repo, "vendor/z").Revision; got != zBase {
 		t.Fatalf("vendor/z revision = %q, want locked %q", got, zBase)
 	}
-	if want := skippedLockedOutput("vendor/z"); out != want {
+	if want := skippedLockedOutput("003"); out != want {
 		t.Fatalf("update stdout = %q, want %q", out, want)
 	}
 
 	subjects := strings.Split(strings.TrimSpace(testutil.Git(t, repo, "log", "-2", "--pretty=%s").Stdout), "\n")
-	if len(subjects) != 2 || !strings.Contains(subjects[0], "vendor/b") || !strings.Contains(subjects[1], "vendor/a") {
-		t.Fatalf("last update subjects = %#v, want newest vendor/b then vendor/a", subjects)
+	if len(subjects) != 2 || !strings.Contains(subjects[0], "'002'") || !strings.Contains(subjects[1], "'001'") {
+		t.Fatalf("last update subjects = %#v, want newest source 002 then source 001", subjects)
 	}
 }
 
@@ -1120,10 +1122,13 @@ func TestUpdateCommandStopsAllOnFirstFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load config: %v", err)
 	}
-	broken := cfg.Mirrors["vendor/a"]
-	broken.RemotePath = "missing"
-	if err := cfg.Update(broken); err != nil {
-		t.Fatalf("Update config: %v", err)
+	sourceA, _, err := cfg.MirrorByLocalPathRequired("vendor/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceA.URL = filepath.Join(t.TempDir(), "missing-upstream")
+	if err := cfg.UpdateSource(sourceA); err != nil {
+		t.Fatal(err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
 		t.Fatalf("Write config: %v", err)
@@ -1157,7 +1162,7 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote change")
 	out := runCommandOK(t, repo, []string{"update", "vendor/basic"})
-	assertContains(t, out, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, out, "  vendor/basic/README.md")
 	assertContains(t, out, "Braid: warning: unrelated staged changes are present")
 	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, out, "git commit -F '.git/MERGE_MSG'")
@@ -1174,14 +1179,14 @@ func TestUpdateCommandWritesMergeMessageOnConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read MERGE_MSG: %v", err)
 	}
-	assertContains(t, string(mergeMsg), "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
-	if unmerged := strings.TrimSpace(testutil.Git(t, repo, "ls-files", "-u").Stdout); unmerged != "" {
-		t.Fatalf("unmerged entries = %q, want none for marker fallback", unmerged)
+	assertContains(t, string(mergeMsg), "Braid: Update source '001' to '"+revision[:7]+"'")
+	if unmerged := strings.TrimSpace(testutil.Git(t, repo, "ls-files", "-u").Stdout); len(strings.Split(unmerged, "\n")) != 3 {
+		t.Fatalf("unmerged entries = %q, want stages 1, 2, and 3", unmerged)
 	}
-	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt" {
-		t.Fatalf("cached names = %#v, want .braids.json and staged.txt", cached)
+	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt\nvendor/basic/README.md" {
+		t.Fatalf("cached names = %#v, want config, unrelated staged entry, and unmerged mirror", cached)
 	}
-	if unstaged := strings.TrimSpace(testutil.Git(t, repo, "diff", "--name-only", "--", "vendor/basic").Stdout); unstaged != "vendor/basic/README.md" {
+	if unstaged := strings.TrimSpace(testutil.Git(t, repo, "diff", "--name-only", "--", "vendor/basic").Stdout); !strings.Contains(unstaged, "vendor/basic/README.md") {
 		t.Fatalf("unstaged mirror diff = %q, want conflicted README", unstaged)
 	}
 	if got := strings.TrimSpace(testutil.Git(t, repo, "show", ":staged.txt").Stdout); got != "staged content" {
@@ -1205,7 +1210,7 @@ func TestUpdateCommandNoCommitConflictMatchesManualConflictFlow(t *testing.T) {
 	testutil.WriteFile(t, upstream, "README.md", "remote\n")
 	revision := testutil.CommitAll(t, upstream, "remote change")
 	out := runCommandOK(t, repo, []string{"update", "vendor/basic", "--no-commit"})
-	assertContains(t, out, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, out, "  vendor/basic/README.md")
 	assertContains(t, out, "Braid: warning: unrelated staged changes are present")
 	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, out, "git commit -F '.git/MERGE_MSG'")
@@ -1214,9 +1219,9 @@ func TestUpdateCommandNoCommitConflictMatchesManualConflictFlow(t *testing.T) {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
 	assertContains(t, readTestFile(t, filepath.Join(repo, "vendor", "basic", "README.md")), "<<<<<<<")
-	assertContains(t, readTestFile(t, filepath.Join(repo, ".git", "MERGE_MSG")), "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
-	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt" {
-		t.Fatalf("cached names = %#v, want .braids.json and staged.txt", cached)
+	assertContains(t, readTestFile(t, filepath.Join(repo, ".git", "MERGE_MSG")), "Braid: Update source '001' to '"+revision[:7]+"'")
+	if cached := strings.Fields(testutil.Git(t, repo, "diff", "--cached", "--name-only").Stdout); strings.Join(cached, "\n") != ".braids.json\nstaged.txt\nvendor/basic/README.md" {
+		t.Fatalf("cached names = %#v, want config, unrelated staged entry, and unmerged mirror", cached)
 	}
 }
 
@@ -1278,11 +1283,11 @@ func TestUpdateCommandNoPathWritesSkippedMirrorsAfterConflictOutput(t *testing.T
 	testutil.CommitAll(t, upstream, "remote change")
 
 	out := runCommandOK(t, repo, []string{"update"})
-	conflictAt := strings.Index(out, "Braid: conflicts written to vendor/basic.")
+	conflictAt := strings.Index(out, "Braid: conflicts while updating source :001:")
 	if conflictAt < 0 {
 		t.Fatalf("update stdout = %q, want conflict instructions", out)
 	}
-	wantSkip := skippedLockedOutput("vendor/locked")
+	wantSkip := skippedLockedOutput("002")
 	skipAt := strings.Index(out, wantSkip)
 	if skipAt < 0 {
 		t.Fatalf("update stdout = %q, want skipped mirror note %q", out, wantSkip)
@@ -1312,7 +1317,7 @@ func TestUpdateCommandConflictInstructionsFromSubdirectory(t *testing.T) {
 	}
 
 	out := runCommandOKInDir(t, repo, workDir, []string{"update", "../../vendor/basic"})
-	assertContains(t, out, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, out, "  vendor/basic/README.md")
 	assertContains(t, out, "git add -- ':(top)vendor/basic' ':(top).braids.json'")
 	assertContains(t, out, "git commit -F '../../.git/MERGE_MSG'")
 
@@ -1320,7 +1325,7 @@ func TestUpdateCommandConflictInstructionsFromSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read MERGE_MSG: %v", err)
 	}
-	assertContains(t, string(mergeMsg), "Braid: Update mirror 'vendor/basic' to '"+revision[:7]+"'")
+	assertContains(t, string(mergeMsg), "Braid: Update source '001' to '"+revision[:7]+"'")
 }
 
 func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {
@@ -1334,8 +1339,8 @@ func TestUpdateCommandSwitchesTrackingStrategy(t *testing.T) {
 	runCommandOK(t, repo, []string{"update", "vendor/basic", "--tag", "v2"})
 
 	m := loadMirror(t, repo, "vendor/basic")
-	if m.Tag != "v2" || m.Branch != "" {
-		t.Fatalf("mirror tracking = branch %q tag %q, want tag v2", m.Branch, m.Tag)
+	if m.Tag() != "v2" || m.Branch() != "" {
+		t.Fatalf("mirror tracking = branch %q tag %q, want tag v2", m.Branch(), m.Tag())
 	}
 }
 

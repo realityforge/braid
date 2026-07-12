@@ -21,7 +21,8 @@ func TestRemoveCommandDeletesContentConfigAndRemote(t *testing.T) {
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
-	remote := loadMirror(t, repo, "vendor/basic").Remote()
+	loaded := loadMirror(t, repo, "vendor/basic")
+	remote := loaded.Remote()
 	testutil.Git(t, repo, "remote", "add", remote, upstream)
 	writeFailingPreCommitHook(t, repo)
 
@@ -29,7 +30,7 @@ func TestRemoveCommandDeletesContentConfigAndRemote(t *testing.T) {
 	assertPathMissing(t, repo, "vendor/basic")
 	assertMirrorMissing(t, repo, "vendor/basic")
 	assertNoRemote(t, repo, remote)
-	assertCommitSubject(t, repo, "Braid: Remove mirror 'vendor/basic'")
+	assertCommitSubject(t, repo, "Braid: Remove source '"+loaded.Name+"'")
 	assertClean(t, repo)
 }
 
@@ -86,7 +87,7 @@ func TestRemoveCommandNoCommitStagesDeletionAndPreservesUnrelatedState(t *testin
 
 	stdout, _ := runCommandOKWithOutput(t, repo, []string{"remove", "vendor/basic", "--no-commit"})
 
-	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged removal of mirror 'vendor/basic'")
+	assertInOrder(t, stdout, unrelatedStagedWarning, "Braid: staged removal of source ':001'")
 	if got := strings.TrimSpace(testutil.Git(t, repo, "rev-parse", "HEAD").Stdout); got != head {
 		t.Fatalf("HEAD = %s, want unchanged %s", got, head)
 	}
@@ -142,7 +143,7 @@ func TestRemoveCommandNoCommitKeepKeepsRemoteOnly(t *testing.T) {
 	}
 }
 
-func TestRemoveCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
+func TestRemoveCommandNoCommitQuietPreservesResult(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -151,8 +152,8 @@ func TestRemoveCommandNoCommitQuietSuppressesSuccess(t *testing.T) {
 
 	stdout, stderr := runCommandOKWithOutput(t, repo, []string{"--quiet", "remove", "vendor/basic", "--no-commit"})
 
-	if stdout != "" || stderr != "" {
-		t.Fatalf("stdout/stderr = %q / %q, want quiet no-commit output empty", stdout, stderr)
+	if stdout != "Braid: staged removal of source ':001'\n" || stderr != "" {
+		t.Fatalf("stdout/stderr = %q / %q, want quiet staged result", stdout, stderr)
 	}
 }
 
@@ -169,7 +170,7 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "component\n")
 			},
-			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/lib=lib"} },
 			localPath: "vendor/lib",
 		},
 		{
@@ -188,7 +189,7 @@ func TestRemoveCommandPathVariants(t *testing.T) {
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "license\n")
 			},
 			addArgs: func(upstream string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
 			},
 			localPath: "licenses/THIRD_PARTY.txt",
 		},
@@ -317,7 +318,7 @@ func TestRemoveCommandReportsPostCommitRemoteInspectFailure(t *testing.T) {
 	git := &fakeRemoveGit{remoteURLErr: errors.New("inspect failed")}
 
 	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"}, false, new(strings.Builder))
-	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to inspect Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "inspect failed") {
+	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to inspect Braid remote "main_braid_upstream"`) || !strings.Contains(err.Error(), "inspect failed") {
 		t.Fatalf("remove error = %v, want post-commit remote inspect failure", err)
 	}
 	if !git.committed {
@@ -331,7 +332,7 @@ func TestRemoveCommandReportsPostCommitRemoteCleanupFailure(t *testing.T) {
 	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
 
 	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic"}, false, new(strings.Builder))
-	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+	if err == nil || !strings.Contains(err.Error(), `remove committed but failed to remove Braid remote "main_braid_upstream"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("remove error = %v, want post-commit remote cleanup failure", err)
 	}
 	if !git.committed {
@@ -345,7 +346,7 @@ func TestRemoveCommandNoCommitReportsPostStageRemoteCleanupFailure(t *testing.T)
 	git := &fakeRemoveGit{remoteExists: true, remoteRemoveErr: errors.New("remove remote failed")}
 
 	err := RemoveHandler{Options: Options{WorkDir: repo, ConfigRoot: repo}}.remove(context.Background(), testRepoContext(repo, git), git, cli.RemoveOptions{LocalPath: "vendor/basic", NoCommit: true}, false, new(strings.Builder))
-	if err == nil || !strings.Contains(err.Error(), `remove staged changes but failed to remove Braid remote "main_braid_vendor_basic"`) || !strings.Contains(err.Error(), "remove remote failed") {
+	if err == nil || !strings.Contains(err.Error(), `remove staged changes but failed to remove Braid remote "main_braid_upstream"`) || !strings.Contains(err.Error(), "remove remote failed") {
 		t.Fatalf("remove error = %v, want post-stage remote cleanup failure", err)
 	}
 	if git.committed {
@@ -371,11 +372,12 @@ func writeRemoveMirrorConfig(t *testing.T, repo string) {
 	t.Helper()
 	data := []byte(`{
   "config_version": 2,
-  "mirrors": {
-    "vendor/basic": {
+  "sources": {
+    "upstream": {
       "url": "https://example.invalid/upstream.git",
       "branch": "main",
-      "revision": "abcdef1234567890"
+      "revision": "abcdef1234567890",
+      "mirrors": {"vendor/basic": ""}
     }
   }
 }
@@ -399,7 +401,7 @@ func assertMirrorMissing(t *testing.T, repo, localPath string) {
 	if err != nil {
 		t.Fatalf("Load config: %v", err)
 	}
-	if _, ok := cfg.Get(localPath); ok {
+	if _, _, ok := cfg.MirrorByLocalPath(localPath); ok {
 		t.Fatalf("mirror %q still exists in config", localPath)
 	}
 }

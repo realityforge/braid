@@ -13,8 +13,8 @@ Comparison baseline:
 - Initial Go-port migration notes:
   <https://github.com/realityforge/braid/blob/d024c502c5eb988f47ac54944f0c5be16bd3b045/docs/migration.md>.
 
-The Go tool keeps the core modern Braid model: mirrors are recorded in
-`.braids.json`, mirror content is copied into the downstream repository, and the
+The Go tool records named upstream sources in `.braids.json`, with one or more
+local mirrors materialized from each source. Mirror content is copied into the downstream repository, and the
 main workflows are `add`, `status`, `diff`, `pull`, `push`, and
 `remove`. `pull` is the documented spelling for updating mirror content;
 `update` and `up` are accepted aliases. The differences below are the parts most
@@ -94,14 +94,15 @@ Migration impact:
 Ruby Braid has no `sync` command. Current Go Braid adds:
 
 ```bash
-braid sync [local_path...] [--pull-only] [--autostash] [--keep]
+braid sync [selector...] [--pull-only] [--autostash] [--keep]
 ```
 
 The default `sync` workflow pushes committed local changes for branch-tracking
-mirrors and then pulls the downstream mirror to the new upstream revision.
-`--pull-only` skips the push phase and only pulls. With no paths, `sync` selects
-all branch and tag mirrors in lexicographic path order and skips revision-locked
-mirrors, matching no-path `pull` selection.
+sources and then pulls every mirror in each source to the new upstream revision.
+`--pull-only` skips the push phase and only pulls. With no selectors, `sync`
+selects all branch and tag sources in lexicographic source-name order and skips
+revision-locked sources, matching no-selector `pull` selection. A selector may
+be `:source` or one of its mirror paths; aliases are deduplicated.
 
 `--autostash` is path-scoped to selected mirrors. It saves selected mirror-path
 tracked changes, untracked files, ignored files, and selected-path index state,
@@ -115,7 +116,7 @@ Migration impact:
   downstream recorded revision" workflow.
 - Use `sync --pull-only` as a stricter, scoped pull workflow when you do not
   want any push attempt.
-- Do not expect `sync` to push tag or revision mirrors with local changes unless
+- Do not expect `sync` to push tag-tracking or revision-locked sources with local changes unless
   you use `braid push <path> --branch <branch>` explicitly.
 
 ### `push` is more explicit about committed changes and commit messages
@@ -127,8 +128,8 @@ tool keeps that model but tightens the user-facing behavior:
   mirror edits are ignored for push planning; commit them downstream first.
 - If there are no committed local mirror changes in `HEAD`, Go Braid prints
   `Braid: No local changes found in downstream HEAD. Stopping.`
-- For branch mirrors, omitting `--branch` pushes to the tracked branch. Tag and
-  revision mirrors still require an explicit `--branch`.
+- For branch-tracking sources, omitting `--branch` pushes to the tracked branch.
+  Tag-tracking and revision-locked sources still require an explicit `--branch`.
 - The editor starts with commented provenance guidance when Braid can compute
   downstream commits that touched the mirror since the recorded upstream state.
 - `push --message <message>` uses the supplied upstream commit message directly
@@ -157,33 +158,34 @@ Migration impact:
 | Cache flags | Environment variables only | Global `--no-cache` or `--global-cache-dir <path>` before the command, plus environment variables | Put cache flags before the command name. |
 | Bash completion | No documented generated completion command | `braid completion bash` prints a Bash completion script | Load it from shell startup or install it in the Bash completion directory to complete global options, commands, command options, and configured mirror paths. |
 | `update --head` | Accepted as an option, then errors with a deprecation message | Unknown flag for `pull` and its aliases | Remove it; use `--branch`, `--tag`, or `--revision` with an explicit mirror path. |
-| `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a path updates branch/tag mirrors in lexicographic path order, skips revision-locked mirrors, and reports skipped paths; `update` and `up` behave the same way | Locked mirrors are no longer touched by all-update. |
+| `update` without path | Updates all configured mirrors through Ruby's all-update flow | `pull` without a selector updates branch/tag sources in lexicographic source-name order, skips revision-locked sources, and reports skipped names; `update` and `up` behave the same way | Locked sources are no longer touched by all-update. |
 | Strategy flags with no-path `update` | Accepted by the Ruby parser, with inconsistent all-mirror behavior | Rejected for no-path `pull` and its aliases | Pass a local path when changing branch, tag, or revision. |
 | `diff` pass-through | Arguments after `--` are passed to `git diff` | Same | Output formatting is not exact Ruby text parity. |
 
 ## Configuration Compatibility
 
-The Go tool supports only the modern `.braids.json` shape with
-`config_version: 2` and a `mirrors` object keyed by local mirror path. Version 1
-JSON config can be migrated with `braid upgrade-config`.
+The Go tool supports the named-source `.braids.json` shape with
+`config_version: 2`, a top-level `sources` object, and a local-to-upstream
+`mirrors` object inside each source. Version 1 JSON config can be grouped and
+migrated with `braid upgrade-config`.
 
-Supported mirror attributes remain:
+Supported source attributes are:
 
 - `url`
 - `branch`
 - `tag`
-- `path`
 - `revision`
-- `partial_clone` (optional; requires `path`)
+- `partial_clone` (optional)
+- `mirrors` (required and non-empty)
 
 Important differences:
 
 - Legacy `.braids` YAML/PStore config is not read or upgraded.
 - Older `.braids.json` layouts without `config_version` are not upgraded.
 - `upgrade-config` does not migrate legacy `.braids` YAML/PStore data.
-- Unknown root fields and unknown mirror fields fail validation.
-- Missing `config_version`, missing `mirrors`, missing `url`, missing
-  `revision`, or a mirror with both `branch` and `tag` fails validation.
+- Unknown root and source fields fail validation; mirror values must be strings.
+- Missing `config_version`, missing `sources`, missing `mirrors`, missing `url`, missing
+  `revision`, or a source with both `branch` and `tag` fails validation.
 - The current Go code no longer has a special legacy `.braids` diagnostic. A
   project that still has only `.braids` will look like it has no Go-readable
   `.braids.json`.
@@ -201,15 +203,15 @@ Migration impact:
 ## Path Handling
 
 The Go tool validates paths earlier and more strictly for cross-platform safety.
-Configured local mirror paths and upstream `path` values must use `/`
+Configured local mirror paths and upstream mirror values must use `/`
 separators and must not contain parent traversal, empty elements, absolute
 paths, Windows drive paths, colon characters, or path elements ending in a space
 or dot. Local mirror paths also reject `.git` and Windows reserved basenames.
 
 CLI local path arguments may use `/` or `\`; Braid normalizes them before
 lookup or storage. Absolute local path arguments are accepted only when they are
-inside the downstream worktree. The upstream `--path` value is a Git path and
-should use `/`.
+inside the downstream worktree. The upstream side of
+`local_path=upstream_path` is a Git path and should use `/`.
 
 Migration impact:
 
@@ -224,9 +226,9 @@ Both tools enable a local mirror cache by default, but the cache layout changed.
 
 Ruby Braid defaults to `~/.braid/cache` and derives cache child paths by
 sanitizing the upstream URL. Current Go Braid defaults to repository-local
-per-mirror bare caches under `.git/braid/cache` and derives cache child paths
-from a SHA-256-derived key covering the upstream URL, local path, upstream path,
-and tracking mode.
+per-URL bare object caches under `.git/braid/cache` and derives cache child
+paths from a SHA-256-derived key covering the normalized upstream URL. Sources
+with the same URL share objects while retaining source-scoped refs.
 
 Current controls:
 
@@ -243,9 +245,9 @@ Migration impact:
 - Repository-local caches are disposable. If one is deleted, Braid can rebuild it
   only while upstream still serves the recorded revisions from `.braids.json`.
   Shallow repository-local caches can also make Git report the downstream
-  repository as shallow because Braid mirror commits are recorded in
+  repository as shallow because Braid source objects are recorded in
   `.git/shallow`.
-- Tag mirrors work when the Go cache is disabled. Ruby Braid could not retrieve
+- Tag-tracking sources work when the Go cache is disabled. Ruby Braid could not retrieve
   tag revisions with the cache disabled.
 
 ## Pull and Conflict Handling
@@ -253,7 +255,7 @@ Migration impact:
 Non-conflicting pulls still create Braid commits such as:
 
 ```text
-Braid: Update mirror 'vendor/example' to 'abcdef0'
+Braid: Update source 'example' to 'abcdef0'
 ```
 
 Conflict handling differs in details. Ruby Braid documented that users should
@@ -303,7 +305,7 @@ Known output differences include:
   Ruby's `Braid: Error: ...` style.
 - `status` prints mirror lines without Ruby's top-level "Listing all mirrors"
   banner.
-- `diff` still labels all-mirror output with `Braid: Diffing <path>`, but exact
+- `diff` still labels all-mirror output with `Braid: Diffing mirror <path>`, but exact
   separators and paging behavior are not a compatibility target.
 - Verbose Git tracing uses Go's deterministic argv representation and is
   incompatible with `--quiet`.

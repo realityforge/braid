@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 const (
@@ -47,7 +47,7 @@ type pushMessageDiffContext struct {
 }
 
 type pushMessagePromptData struct {
-	Mirror        mirror.Mirror
+	Mirror        source.SourceMirror
 	Branch        string
 	BaseRevision  string
 	NewTree       string
@@ -78,7 +78,7 @@ func configuredPushMessageGeneration() pushMessageGeneration {
 	return pushMessageGeneration{Enabled: true, CommandTemplate: value}
 }
 
-func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGit, tempGit gitexec.Git, m mirror.Mirror, branch, baseRevision, newTree, contextDir string, generation pushMessageGeneration, verbose bool, trace io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error) (string, error) {
+func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGit, tempGit gitexec.Git, m source.SourceMirror, branch, baseRevision, newTree, contextDir string, generation pushMessageGeneration, verbose bool, trace io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error) (string, error) {
 	if err := validatePushMessageGeneratorPlatform(runtime.GOOS); err != nil {
 		return "", err
 	}
@@ -121,7 +121,7 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 	if progress == nil {
 		progress = io.Discard
 	}
-	if _, err := fmt.Fprintf(progress, "Braid: generating push commit message for %s using external tool\n", m.Path); err != nil {
+	if _, err := fmt.Fprintf(progress, "Braid: generating push commit message for %s using external tool\n", m.LocalPath); err != nil {
 		return "", err
 	}
 	generated, failure, err := runPushMessageGenerator(ctx, generation.CommandTemplate, pushMessageCommandValues{
@@ -164,8 +164,8 @@ func pushMessageSeedCommentChar(ctx context.Context, git PushGit) (string, error
 	return value, nil
 }
 
-func pushMessageDiff(ctx context.Context, git gitexec.Git, m mirror.Mirror) (string, error) {
-	return git.Diff(ctx, pushMessageDiffArgs(m.RemotePath)...)
+func pushMessageDiff(ctx context.Context, git gitexec.Git, m source.SourceMirror) (string, error) {
+	return git.Diff(ctx, pushMessageDiffArgs("")...)
 }
 
 func pushMessageDiffArgs(remotePath string) []string {
@@ -193,17 +193,20 @@ func writePushMessageDiffContext(contextDir, diff string) (pushMessageDiffContex
 func formatPushMessagePrompt(data pushMessagePromptData) string {
 	var b strings.Builder
 	b.WriteString("Generate a Git commit message for an upstream commit created by braid push.\n")
-	b.WriteString("The commit will be written to the mirrored/upstream repository, not to the downstream/hosting repository that contains the local mirror.\n")
+	b.WriteString("The commit will be written to the mirrored/upstream repository, not to the downstream/hosting repository that contains the local source.\n")
 	b.WriteString("Describe the staged mirror changes from the mirrored repository's perspective: focus on what changed in the upstream project files at the upstream path below.\n")
 	b.WriteString("Use downstream commit provenance only as background for intent; do not frame the message around vendoring, updating a mirror, syncing from the hosting repository, local mirror paths, or .braids.json unless those are part of the upstream content change itself.\n")
 	b.WriteString("Respond only with the proposed commit message. Do not include commentary, Markdown fences, explanations, or any other content. The user will review the message in Git's editor before Braid commits.\n\n")
-	b.WriteString("Mirror metadata:\n")
-	fmt.Fprintf(&b, "- Local mirror path: %s\n", data.Mirror.Path)
+	b.WriteString("Source metadata:\n")
+	fmt.Fprintf(&b, "- Source name: %s\n", data.Mirror.Name)
 	fmt.Fprintf(&b, "- Upstream URL: %s\n", data.Mirror.URL)
-	if data.Mirror.RemotePath == "" {
-		b.WriteString("- Upstream path: (repository root)\n")
-	} else {
-		fmt.Fprintf(&b, "- Upstream path: %s\n", data.Mirror.RemotePath)
+	b.WriteString("- Mirrors:\n")
+	for _, mirror := range data.Mirror.SortedMirrors() {
+		upstream := mirror.UpstreamPath
+		if upstream == "" {
+			upstream = "(repository root)"
+		}
+		fmt.Fprintf(&b, "  - %s -> %s\n", mirror.LocalPath, upstream)
 	}
 	fmt.Fprintf(&b, "- Recorded base revision: %s\n", data.BaseRevision)
 	fmt.Fprintf(&b, "- Synthetic upstream tree: %s\n", data.NewTree)
@@ -319,7 +322,7 @@ func expandPushMessageCommand(commandTemplate string, values pushMessageCommandV
 	return replacer.Replace(commandTemplate)
 }
 
-func formatPushMessageSuccessSeed(commentChar, generatedMessage string, m mirror.Mirror, provenance pushProvenance, provenanceOK bool) string {
+func formatPushMessageSuccessSeed(commentChar, generatedMessage string, m source.SourceMirror, provenance pushProvenance, provenanceOK bool) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(generatedMessage))
 	b.WriteString("\n")
@@ -330,7 +333,7 @@ func formatPushMessageSuccessSeed(commentChar, generatedMessage string, m mirror
 	return b.String()
 }
 
-func formatPushMessageFailureSeed(commentChar string, m mirror.Mirror, provenance pushProvenance, provenanceOK bool, failure pushMessageGeneratorFailure) string {
+func formatPushMessageFailureSeed(commentChar string, m source.SourceMirror, provenance pushProvenance, provenanceOK bool, failure pushMessageGeneratorFailure) string {
 	lines := []string{
 		"Braid AI push commit-message generation failed.",
 		"Reason: " + failure.Summary,

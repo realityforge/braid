@@ -33,8 +33,8 @@ func TestStatusCommandStates(t *testing.T) {
 		testutil.WriteFile(t, upstream, "README.md", "remote changed\n")
 		testutil.CommitAll(t, upstream, "remote changed")
 		out := runCommandOK(t, repo, []string{"status", "vendor/basic"})
-		assertContains(t, out, "(Remote Modified)")
-		assertNotContains(t, out, "(Locally Modified)")
+		assertContains(t, out, "Modified Remotely")
+		assertNotContains(t, out, "Modified Locally")
 	})
 
 	t.Run("locally modified", func(t *testing.T) {
@@ -47,8 +47,8 @@ func TestStatusCommandStates(t *testing.T) {
 		testutil.WriteFile(t, repo, "vendor/basic/README.md", "local changed\n")
 		testutil.CommitAll(t, repo, "local change")
 		out := runCommandOK(t, repo, []string{"status", "vendor/basic"})
-		assertContains(t, out, "(Locally Modified)")
-		assertNotContains(t, out, "(Remote Modified)")
+		assertContains(t, out, "Modified Locally")
+		assertNotContains(t, out, "Modified Remotely")
 	})
 
 	t.Run("removed locally", func(t *testing.T) {
@@ -61,8 +61,8 @@ func TestStatusCommandStates(t *testing.T) {
 		testutil.Git(t, repo, "rm", "-r", "vendor/basic")
 		testutil.Git(t, repo, "commit", "-m", "remove mirror content")
 		out := runCommandOK(t, repo, []string{"status", "vendor/basic"})
-		assertContains(t, out, "(Removed Locally)")
-		assertNotContains(t, out, "(Locally Modified)")
+		assertContains(t, out, "Removed Locally")
+		assertNotContains(t, out, "Modified Locally")
 	})
 }
 
@@ -123,7 +123,7 @@ func TestStatusCommandMirrorModes(t *testing.T) {
 		testutil.WriteFile(t, upstream, "lay outs/layout.txt", "layout\n")
 		testutil.CommitAll(t, upstream, "spaces")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/path with spaces", "--path", "lay outs"})
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/path with spaces=lay outs"})
 
 		out := runCommandOK(t, repo, []string{"status", "vendor/path with spaces"})
 		if !strings.HasPrefix(out, "vendor/path with spaces (") {

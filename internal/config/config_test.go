@@ -1,198 +1,119 @@
 package config
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
-func TestParseModernConfig(t *testing.T) {
-	cfg, err := Parse([]byte(`{
+func TestParseAndMarshalCanonicalV2(t *testing.T) {
+	input := []byte(`{"config_version":2,"sources":{"replicant":{"url":"https://example.test/replicant.git/","branch":"main","revision":"abc","mirrors":{"vendor/replicant":"","licenses/LICENSE":"LICENSE"}}}}`)
+	cfg, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := cfg.SourceByName("replicant")
+	if !ok || s.URL != "https://example.test/replicant.git" || s.Branch() != "main" {
+		t.Fatalf("source=%#v", s)
+	}
+	data, err := cfg.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
   "config_version": 2,
-  "mirrors": {
-    "vendor/repo": {
-      "url": "https://example.test/repo.git",
+  "sources": {
+    "replicant": {
+      "url": "https://example.test/replicant.git",
       "branch": "main",
-      "path": "lib",
-      "revision": "abc123"
-    },
-    "vendor/tagged": {
-      "url": "https://example.test/tagged.git",
-      "tag": "v1",
-      "revision": "def456"
+      "revision": "abc",
+      "mirrors": {
+        "licenses/LICENSE": "LICENSE",
+        "vendor/replicant": ""
+      }
     }
   }
-}`))
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	paths := cfg.Paths()
-	if got, want := strings.Join(paths, ","), "vendor/repo,vendor/tagged"; got != want {
-		t.Fatalf("Paths = %q, want %q", got, want)
-	}
-	m, ok := cfg.Get("vendor/repo/")
-	if !ok {
-		t.Fatal("Get did not find vendor/repo/")
-	}
-	if m.URL != "https://example.test/repo.git" || m.Branch != "main" || m.RemotePath != "lib" || m.Revision != "abc123" {
-		t.Fatalf("mirror = %#v", m)
+}
+`
+	if string(data) != want {
+		t.Fatalf("got\n%s\nwant\n%s", data, want)
 	}
 }
 
-func TestParseRejectsUnsupportedConfigs(t *testing.T) {
-	tests := []struct {
-		name string
-		json string
-		want string
-	}{
-		{name: "future version", json: `{"config_version":999,"mirrors":{}}`, want: "newer than supported"},
-		{name: "missing version", json: `{"mirrors":{}}`, want: "missing config_version"},
-		{name: "missing mirrors", json: `{"config_version":2}`, want: "missing mirrors"},
-		{name: "unknown root field", json: `{"config_version":2,"mirrors":{},"extra":true}`, want: "unknown field"},
-		{name: "unknown mirror field", json: `{"config_version":2,"mirrors":{"x":{"url":"u","revision":"r","extra":true}}}`, want: "unknown field"},
-		{name: "missing url", json: `{"config_version":2,"mirrors":{"x":{"revision":"r"}}}`, want: "missing url"},
-		{name: "missing revision", json: `{"config_version":2,"mirrors":{"x":{"url":"u"}}}`, want: "missing revision"},
-		{name: "branch tag conflict", json: `{"config_version":2,"mirrors":{"x":{"url":"u","branch":"main","tag":"v1","revision":"r"}}}`, want: "cannot specify both branch and tag"},
+func TestParseRejectsInvalidV2(t *testing.T) {
+	tests := []struct{ name, json, want string }{
+		{"obsolete", `{"config_version":2,"mirrors":{}}`, "obsolete unreleased"},
+		{"missing sources", `{"config_version":2}`, "missing sources"},
+		{"missing mirrors", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r"}}}`, "missing mirrors"},
+		{"null mirror path", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x":null}}}}`, "cannot be null"},
+		{"non-string mirror path", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x":42}}}}`, "must be a string"},
+		{"empty url", `{"config_version":2,"sources":{"x":{"url":"","revision":"r","mirrors":{"x":""}}}}`, "missing url"},
+		{"empty revision", `{"config_version":2,"sources":{"x":{"url":"u","revision":"","mirrors":{"x":""}}}}`, "missing revision"},
+		{"invalid name", `{"config_version":2,"sources":{"bad name":{"url":"u","revision":"r","mirrors":{"x":""}}}}`, "invalid source name"},
+		{"trailing local separator", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x/":""}}}}`, "empty path element"},
+		{"trailing upstream separator", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x":"upstream/"}}}}`, "empty path element"},
+		{"tracking conflict", `{"config_version":2,"sources":{"x":{"url":"u","branch":"a","tag":"b","revision":"r","mirrors":{"x":""}}}}`, "both branch and tag"},
+		{"overlap", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"a":"","a/b":"x"}}}}`, "overlap"},
+		{"case-fold overlap", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"Vendor/Lib":"","vendor/lib/LICENSE":"LICENSE"}}}}`, "case-fold"},
+		{"trailing JSON", `{"config_version":2,"sources":{}} {}`, "unexpected data"},
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := Parse([]byte(test.json))
-			if err == nil {
-				t.Fatal("Parse returned nil error")
-			}
-			if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %q, want containing %q", err.Error(), test.want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.json))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err=%v want %q", err, tt.want)
 			}
 		})
 	}
 }
 
-func TestConfigAddUpdateRemove(t *testing.T) {
+func TestConfigExplicitLookupsAndGlobalOverlap(t *testing.T) {
 	cfg := Empty()
-	m := mirror.Mirror{Path: "vendor/repo", URL: "https://example.test/repo.git", Branch: "main", Revision: "abc123"}
-
-	if err := cfg.Add(m); err != nil {
-		t.Fatalf("Add returned error: %v", err)
+	s := source.Source{Name: "one", URL: "u", Tracking: source.RevisionTracking{}, Revision: "r", Mirrors: []source.Mirror{{LocalPath: "vendor/one", UpstreamPath: ""}}}
+	if err := cfg.AddSource(s); err != nil {
+		t.Fatal(err)
 	}
-	if err := cfg.Add(m); err == nil {
-		t.Fatal("Add duplicate returned nil error")
+	got, m, ok := cfg.MirrorByLocalPath("vendor/one")
+	if !ok || got.Name != "one" || m.LocalPath != "vendor/one" {
+		t.Fatalf("lookup=%#v %#v %v", got, m, ok)
 	}
-
-	m.Branch = "other"
-	m.Revision = "def456"
-	if err := cfg.Update(m); err != nil {
-		t.Fatalf("Update returned error: %v", err)
-	}
-	got, err := cfg.GetRequired("vendor/repo")
-	if err != nil {
-		t.Fatalf("GetRequired returned error: %v", err)
-	}
-	if got.Branch != "other" || got.Revision != "def456" {
-		t.Fatalf("updated mirror = %#v", got)
-	}
-
-	if err := cfg.Remove("vendor/repo"); err != nil {
-		t.Fatalf("Remove returned error: %v", err)
-	}
-	if _, ok := cfg.Get("vendor/repo"); ok {
-		t.Fatal("Get found removed mirror")
-	}
-	if err := cfg.Remove("vendor/repo"); err == nil {
-		t.Fatal("Remove missing mirror returned nil error")
+	s2 := source.Source{Name: "two", URL: "v", Tracking: source.RevisionTracking{}, Revision: "r", Mirrors: []source.Mirror{{LocalPath: "vendor/one/sub", UpstreamPath: ""}}}
+	if err := cfg.AddSource(s2); err == nil {
+		t.Fatal("expected overlap")
 	}
 }
 
-func TestMarshalJSONStableFormat(t *testing.T) {
-	cfg := Empty()
-	if err := cfg.Add(mirror.Mirror{
-		Path:     "vendor/z",
-		URL:      "https://example.test/z.git",
-		Tag:      "v1",
-		Revision: "def456",
-	}); err != nil {
-		t.Fatalf("Add z returned error: %v", err)
-	}
-	if err := cfg.Add(mirror.Mirror{
-		Path:       "vendor/a",
-		URL:        "https://example.test/a.git",
-		Branch:     "main",
-		RemotePath: "lib",
-		Revision:   "abc123",
-	}); err != nil {
-		t.Fatalf("Add a returned error: %v", err)
-	}
-
-	data, err := cfg.MarshalJSON()
-	if err != nil {
-		t.Fatalf("MarshalJSON returned error: %v", err)
-	}
-	want := `{
-  "config_version": 2,
-  "mirrors": {
-    "vendor/a": {
-      "url": "https://example.test/a.git",
-      "branch": "main",
-      "path": "lib",
-      "revision": "abc123"
-    },
-    "vendor/z": {
-      "url": "https://example.test/z.git",
-      "tag": "v1",
-      "revision": "def456"
-    }
-  }
-}
-`
-	if got := string(data); got != want {
-		t.Fatalf("MarshalJSON =\n%s\nwant\n%s", got, want)
-	}
-}
-
-func TestWriteAndLoadFile(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, FileName)
-	cfg := Empty()
-	if err := cfg.Add(mirror.Mirror{Path: "vendor/repo", URL: "https://example.test/repo.git", Branch: "main", Revision: "abc123"}); err != nil {
-		t.Fatalf("Add returned error: %v", err)
-	}
-	if err := cfg.WriteFile(path); err != nil {
-		t.Fatalf("WriteFile returned error: %v", err)
-	}
-
-	loaded, err := LoadFile(path)
-	if err != nil {
-		t.Fatalf("LoadFile returned error: %v", err)
-	}
-	got, ok := loaded.Get("vendor/repo")
-	if !ok {
-		t.Fatal("loaded config missing mirror")
-	}
-	if got.URL != "https://example.test/repo.git" || got.Branch != "main" || got.Revision != "abc123" {
-		t.Fatalf("loaded mirror = %#v", got)
-	}
-}
-
-func TestUpgradeV1(t *testing.T) {
-	cfg, err := UpgradeV1([]byte(`{"config_version":1,"mirrors":{"vendor/repo":{"url":"u","path":"lib","revision":"r"}}}`))
+func TestUpgradeV1GroupsAndNamesDeterministically(t *testing.T) {
+	cfg, err := UpgradeV1([]byte(`{"config_version":1,"mirrors":{"vendor/repo":{"url":"https://x/repo.git/","branch":"main","revision":"r","path":""},"licenses/repo":{"url":"https://x/repo.git","branch":"main","revision":"r","path":"LICENSE"},"other/repo":{"url":"ssh://x/repo.git","branch":"main","revision":"r","path":""}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := cfg.MarshalJSON()
-	if err != nil {
-		t.Fatal(err)
+	names := cfg.SourceNames()
+	if strings.Join(names, ",") != "repo,repo-2" {
+		t.Fatalf("names=%v", names)
 	}
-	if !strings.Contains(string(data), `"config_version": 2`) {
-		t.Fatalf("upgraded config = %s", data)
+	if len(cfg.Sources["repo"].Mirrors) != 2 {
+		t.Fatalf("source=%#v", cfg.Sources["repo"])
 	}
 }
 
-func TestPartialCloneRequiresPath(t *testing.T) {
-	_, err := Parse([]byte(`{"config_version":2,"mirrors":{"vendor/repo":{"url":"u","revision":"r","partial_clone":true}}}`))
-	if err == nil || !strings.Contains(err.Error(), "partial clone requires path") {
-		t.Fatalf("error = %v", err)
+func TestUpgradeSanitizesInvalidName(t *testing.T) {
+	cfg, err := UpgradeV1([]byte(`{"config_version":1,"mirrors":{"x":{"url":"https://host/bad name.git","revision":"r"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.SourceByName("bad-name"); !ok {
+		t.Fatalf("names=%v", cfg.SourceNames())
+	}
+}
+
+func TestUpgradeV1AllocatesGloballyUniqueSuffixes(t *testing.T) {
+	cfg, err := UpgradeV1([]byte(`{"config_version":1,"mirrors":{"a":{"url":"https://x/repo.git","branch":"main","revision":"1"},"b":{"url":"https://y/repo.git","branch":"main","revision":"2"},"c":{"url":"https://z/repo-2.git","branch":"main","revision":"3"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.SourceNames(), ","); got != "repo,repo-2,repo-2-2" {
+		t.Fatalf("names = %s", got)
 	}
 }

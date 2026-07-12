@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 type Error struct {
@@ -27,8 +27,11 @@ func ValidateLocal(localPath string, existing []string) error {
 	}
 	clean := cleanSlash(localPath)
 	for _, existingPath := range existing {
-		if strings.EqualFold(clean, cleanSlash(existingPath)) {
-			return &Error{Path: localPath, Reason: "case-fold collision with existing mirror path " + existingPath}
+		existingClean := cleanSlash(existingPath)
+		folded := strings.ToLower(clean)
+		existingFolded := strings.ToLower(existingClean)
+		if folded == existingFolded || strings.HasPrefix(folded, existingFolded+"/") || strings.HasPrefix(existingFolded, folded+"/") {
+			return &Error{Path: localPath, Reason: "case-fold collision or overlap with existing mirror path " + existingPath}
 		}
 	}
 	return nil
@@ -38,11 +41,11 @@ func ValidateUpstream(upstreamPath string) error {
 	return validatePortable(upstreamPath, false)
 }
 
-func CheckRemoteCollision(candidate mirror.Mirror, existing []mirror.Mirror) error {
+func CheckRemoteCollision(candidate source.Source, existing []source.Source) error {
 	candidateRemote := candidate.Remote()
-	for _, existingMirror := range existing {
-		if candidateRemote == existingMirror.Remote() {
-			return fmt.Errorf("remote name collision: %q for mirror paths %q and %q", candidateRemote, candidate.Path, existingMirror.Path)
+	for _, existingSource := range existing {
+		if candidateRemote == existingSource.Remote() {
+			return fmt.Errorf("remote name collision: %q for sources %q and %q", candidateRemote, candidate.Name, existingSource.Name)
 		}
 	}
 	return nil

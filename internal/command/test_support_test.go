@@ -12,7 +12,7 @@ import (
 
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 	"braid/internal/testutil"
 )
 
@@ -112,6 +112,19 @@ func runCommandErrorInDir(t *testing.T, repo, dir string, args []string) string 
 	return stderr.String()
 }
 
+func runCommandErrorInDirWithOptions(t *testing.T, repo, dir string, options Options, args []string) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(dir)
+	options.WorkDir = dir
+	var stdout, stderr bytes.Buffer
+	code := NewAppWithOptions(options).Run(args, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("braid %v succeeded unexpectedly, stdout = %q", args, stdout.String())
+	}
+	return stderr.String()
+}
+
 func runCommandErrorWithOutput(t *testing.T, repo string, args []string) (string, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
@@ -134,17 +147,17 @@ func testRepoContext(repo string, git Git) RepoContext {
 	}
 }
 
-func loadMirror(t *testing.T, repo, localPath string) mirror.Mirror {
+func loadMirror(t *testing.T, repo, localPath string) source.SourceMirror {
 	t.Helper()
 	cfg, err := config.Load(repo)
 	if err != nil {
 		t.Fatalf("Load config: %v", err)
 	}
-	m, err := cfg.GetRequired(localPath)
+	s, mirror, err := cfg.MirrorByLocalPathRequired(localPath)
 	if err != nil {
 		t.Fatalf("GetRequired(%q): %v", localPath, err)
 	}
-	return m
+	return s.WithMirror(mirror)
 }
 
 func assertFile(t *testing.T, repo, relativePath, want string) {
@@ -361,15 +374,30 @@ func commitAllWithMessage(t *testing.T, repo, subject string, bodies ...string) 
 	return testutil.CurrentRevision(t, repo)
 }
 
-func writeSingleMirrorConfig(t *testing.T, repo string, m mirror.Mirror) {
+func writeSingleMirrorConfig(t *testing.T, repo string, m source.SourceMirror) {
 	t.Helper()
 	cfg := config.Empty()
-	if err := cfg.Add(m); err != nil {
+	if err := cfg.AddSource(m.Source); err != nil {
 		t.Fatalf("add mirror config: %v", err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
 		t.Fatalf("write mirror config: %v", err)
 	}
+}
+
+func testSourceMirror(localPath, upstreamPath, url, branch, tag, revision string, partial bool) source.SourceMirror {
+	tracking := source.Tracking(source.RevisionTracking{})
+	if branch != "" {
+		tracking = source.BranchTracking{Branch: branch}
+	} else if tag != "" {
+		tracking = source.TagTracking{Tag: tag}
+	}
+	name := strings.ReplaceAll(localPath, "/", "-")
+	if !source.ValidName(name) {
+		name = "test-source"
+	}
+	s := source.Source{Name: name, URL: url, Tracking: tracking, Revision: revision, PartialClone: partial, Mirrors: []source.Mirror{{LocalPath: localPath, UpstreamPath: upstreamPath}}}
+	return s.WithMirror(s.Mirrors[0])
 }
 
 func readTestFile(t *testing.T, path string) string {
@@ -381,12 +409,12 @@ func readTestFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-func skippedLockedOutput(paths ...string) string {
+func skippedLockedOutput(names ...string) string {
 	var out strings.Builder
-	out.WriteString("Braid: skipped revision-locked mirrors:\n")
-	for _, path := range paths {
+	out.WriteString("Braid: skipped revision-locked sources:\n")
+	for _, name := range names {
 		out.WriteString("  ")
-		out.WriteString(path)
+		out.WriteString(":" + name)
 		out.WriteString("\n")
 	}
 	return out.String()
@@ -396,11 +424,8 @@ func writeLockedMirrorConfig(t *testing.T, repo string, paths ...string) {
 	t.Helper()
 	cfg := config.Empty()
 	for _, path := range paths {
-		if err := cfg.Add(mirror.Mirror{
-			Path:     path,
-			URL:      filepath.Join(t.TempDir(), "missing-upstream"),
-			Revision: strings.Repeat("1", 40),
-		}); err != nil {
+		s := source.Source{Name: strings.ReplaceAll(path, "/", "-"), URL: filepath.Join(t.TempDir(), "missing-upstream"), Tracking: source.RevisionTracking{}, Revision: strings.Repeat("1", 40), Mirrors: []source.Mirror{{LocalPath: path}}}
+		if err := cfg.AddSource(s); err != nil {
 			t.Fatalf("add locked mirror config: %v", err)
 		}
 	}
@@ -421,10 +446,8 @@ func forbidMergeTreeGit(t *testing.T, repo string) *mergeTreeForbiddenGit {
 	return &mergeTreeForbiddenGit{Git: gitexec.New(repo, false, nil), t: t}
 }
 
-func (g *mergeTreeForbiddenGit) MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error) {
-	g.t.Helper()
-	g.t.Fatal("MergeTreeWrite was called for update fast path")
-	return gitexec.MergeTreeResult{}, nil
+func (g *mergeTreeForbiddenGit) MergeTreeWrite(ctx context.Context, base, local, remote string) (gitexec.MergeTreeResult, error) {
+	return g.Git.MergeTreeWrite(ctx, base, local, remote)
 }
 
 type processAwareMergeTreeForbiddenGit struct {

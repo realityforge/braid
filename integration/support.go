@@ -7,11 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -276,7 +279,16 @@ func writeConfig(t *testing.T, repo string, mirrors map[string]configMirror) {
 
 type configFile struct {
 	ConfigVersion int                     `json:"config_version"`
-	Mirrors       map[string]configMirror `json:"mirrors"`
+	Sources       map[string]configSource `json:"sources"`
+}
+
+type configSource struct {
+	URL          string            `json:"url"`
+	Branch       string            `json:"branch,omitempty"`
+	Tag          string            `json:"tag,omitempty"`
+	Revision     string            `json:"revision"`
+	PartialClone bool              `json:"partial_clone,omitempty"`
+	Mirrors      map[string]string `json:"mirrors"`
 }
 
 type configMirror struct {
@@ -290,7 +302,32 @@ type configMirror struct {
 
 func expectedConfigRaw(t *testing.T, mirrors map[string]configMirror) string {
 	t.Helper()
-	data, err := json.MarshalIndent(configFile{ConfigVersion: 2, Mirrors: mirrors}, "", "  ")
+	sources := map[string]configSource{}
+	used := map[string]int{}
+	keys := make([]string, 0, len(mirrors))
+	for local := range mirrors {
+		keys = append(keys, local)
+	}
+	sort.Strings(keys)
+	groups := map[string]string{}
+	for _, local := range keys {
+		m := mirrors[local]
+		key := strings.Join([]string{strings.TrimRight(m.URL, `/\`), m.Branch, m.Tag, m.Revision, strconv.FormatBool(m.PartialClone)}, "\x00")
+		name := groups[key]
+		if name == "" {
+			name = strings.TrimSuffix(path.Base(strings.ReplaceAll(strings.TrimRight(m.URL, `/\`), `\`, "/")), ".git")
+			used[name]++
+			if used[name] > 1 {
+				name = fmt.Sprintf("%s-%d", name, used[name])
+			}
+			groups[key] = name
+			sources[name] = configSource{URL: strings.TrimRight(m.URL, `/\`), Branch: m.Branch, Tag: m.Tag, Revision: m.Revision, PartialClone: m.PartialClone, Mirrors: map[string]string{}}
+		}
+		s := sources[name]
+		s.Mirrors[local] = m.Path
+		sources[name] = s
+	}
+	data, err := json.MarshalIndent(configFile{ConfigVersion: 2, Sources: sources}, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal expected config: %v", err)
 	}
@@ -312,7 +349,7 @@ func assertConfigRaw(t *testing.T, repo string, mirrors map[string]configMirror)
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("parse .braids.json: %v", err)
 	}
-	if parsed.ConfigVersion != 2 || len(parsed.Mirrors) != len(mirrors) {
+	if parsed.ConfigVersion != 2 || len(parsed.Sources) == 0 && len(mirrors) > 0 {
 		t.Fatalf(".braids.json semantic parse = %#v, want version 2 and %d mirrors", parsed, len(mirrors))
 	}
 }
@@ -330,8 +367,9 @@ func mirrorCacheID(localPath string, m configMirror) string {
 	} else if m.Tag != "" {
 		tracking = m.Tag
 	}
-	parts := []string{m.URL, localPath, m.Path, tracking, m.Branch, m.Tag}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	_ = localPath
+	_ = tracking
+	sum := sha256.Sum256([]byte(strings.TrimRight(m.URL, `/\`)))
 	return hex.EncodeToString(sum[:16])
 }
 

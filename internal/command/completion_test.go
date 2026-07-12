@@ -76,6 +76,13 @@ func TestCompleteCommandOptions(t *testing.T) {
 
 	candidates = completeCandidates(t, dir, "add", "")
 	assertCandidate(t, candidates, "--no-commit")
+	candidates = completeCandidates(t, dir, "add", ":replicant", "--")
+	assertCandidate(t, candidates, "--no-commit")
+	assertNoCandidate(t, candidates, "--name")
+	assertNoCandidate(t, candidates, "--branch")
+	assertNoCandidate(t, candidates, "--tag")
+	assertNoCandidate(t, candidates, "--revision")
+	assertNoCandidate(t, candidates, "--partial-clone")
 
 	candidates = completeCandidates(t, dir, "push", "")
 	assertCandidate(t, candidates, "--message")
@@ -109,6 +116,7 @@ func TestCompleteMirrorPathsRelativeToCurrentDirectory(t *testing.T) {
 	}
 
 	candidates := completeCandidates(t, subdir, "status", "")
+	assertCandidate(t, candidates, ":root")
 	assertCandidate(t, candidates, "vendor/local")
 	assertCandidate(t, candidates, "../../vendor/root")
 	assertCandidate(t, candidates, "../../path with spaces/lib")
@@ -227,21 +235,24 @@ func writeCompletionConfig(t *testing.T, repo string) {
 	t.Helper()
 	data := []byte(`{
   "config_version": 2,
-  "mirrors": {
-    "apps/web/vendor/local": {
+  "sources": {
+    "local": {
       "url": "https://example.test/local.git",
       "branch": "main",
-      "revision": "1111111"
+      "revision": "1111111",
+      "mirrors": {"apps/web/vendor/local": ""}
     },
-    "path with spaces/lib": {
+    "spaces": {
       "url": "https://example.test/spaces.git",
       "branch": "main",
-      "revision": "2222222"
+      "revision": "2222222",
+      "mirrors": {"path with spaces/lib": ""}
     },
-    "vendor/root": {
+    "root": {
       "url": "https://example.test/root.git",
       "branch": "main",
-      "revision": "3333333"
+      "revision": "3333333",
+      "mirrors": {"vendor/root": ""}
     }
   }
 }

@@ -17,13 +17,14 @@ type noCommitGit interface {
 }
 
 type noCommitStageOptions struct {
-	Tree       string
-	Action     string
-	MirrorPath string
-	Paths      []string
-	OwnedPaths []string
-	Quiet      bool
-	Warned     *bool
+	Tree        string
+	Action      string
+	MirrorPath  string
+	Description string
+	Paths       []string
+	OwnedPaths  []string
+	Quiet       bool
+	Warned      *bool
 }
 
 func stageNoCommitResult(ctx context.Context, git noCommitGit, stdout io.Writer, options noCommitStageOptions) error {
@@ -44,10 +45,15 @@ func stageNoCommitResult(ctx context.Context, git noCommitGit, stdout io.Writer,
 	if err := git.RestorePathspecsFromTree(ctx, options.Tree, true, true, options.Paths...); err != nil {
 		return err
 	}
-	if options.Quiet {
-		return nil
+	if options.Description != "" {
+		_, err := fmt.Fprintf(stdout, "Braid: staged %s\n", options.Description)
+		return err
 	}
-	_, err := fmt.Fprintf(stdout, "Braid: staged %s of mirror '%s'\n", options.Action, options.MirrorPath)
+	target := "mirror '" + options.MirrorPath + "'"
+	if strings.HasPrefix(options.MirrorPath, ":") {
+		target = "source '" + options.MirrorPath + "'"
+	}
+	_, err := fmt.Fprintf(stdout, "Braid: staged %s of %s\n", options.Action, target)
 	return err
 }
 

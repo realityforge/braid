@@ -48,7 +48,7 @@ func TestExecutableScopedAddPreservesUnrelatedState(t *testing.T) {
 	assertContains(t, status, "A  staged.txt")
 	assertContains(t, status, " M tracked.txt")
 	assertContains(t, status, "?? untracked.txt")
-	assertNoRemote(t, env, downstream, remoteName("main", "vendor/basic"))
+	assertNoRemote(t, env, downstream, remoteName("main", "upstream"))
 }
 
 func TestExecutableScopedRemovePreservesUnrelatedState(t *testing.T) {
@@ -113,7 +113,7 @@ func TestExecutableScopedAddRemovePrecheckBlockers(t *testing.T) {
 			},
 			dirty: func(t *testing.T, downstream string) {
 				t.Helper()
-				writeFile(t, downstream, ".braids.json", "{\"config_version\":2,\"mirrors\":{}}\n")
+				writeFile(t, downstream, ".braids.json", "{\"config_version\":2,\"sources\":{}}\n")
 			},
 			args:    []string{"add", "$upstream", "vendor/basic"},
 			wantErr: "local changes are present in .braids.json",
@@ -287,6 +287,6 @@ func TestExecutableUpdateAllScopedPrecheckStopsBeforeUpdates(t *testing.T) {
 		"vendor/a": {URL: upstreamA, Branch: "main", Revision: aBase},
 		"vendor/b": {URL: upstreamB, Branch: "main", Revision: bBase},
 	})
-	assertNoRemote(t, env, downstream, remoteName("main", "vendor/a"))
-	assertNoRemote(t, env, downstream, remoteName("main", "vendor/b"))
+	assertNoRemote(t, env, downstream, remoteName("main", "upstream-a"))
+	assertNoRemote(t, env, downstream, remoteName("main", "upstream-b"))
 }

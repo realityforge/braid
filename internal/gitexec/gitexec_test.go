@@ -975,15 +975,15 @@ func TestMergeTreeWriteConflictWithEmptyStructuredPathSectionUsesMessagePaths(t 
 
 func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t *testing.T) {
 	repo := initRealRepo(t)
-	writeRealFile(t, repo, "mirror.txt", "base\n")
+	writeRealFile(t, repo, "source.txt", "base\n")
 	writeRealFile(t, repo, "unrelated.txt", "base\n")
 	realGit(t, repo, "add", ".")
 	realGit(t, repo, "commit", "-m", "base")
 
-	writeRealFile(t, repo, "mirror.txt", "updated\n")
-	blob := realGitOutput(t, repo, "hash-object", "-w", "mirror.txt")
+	writeRealFile(t, repo, "source.txt", "updated\n")
+	blob := realGitOutput(t, repo, "hash-object", "-w", "source.txt")
 	git := New(repo, false, nil)
-	tree, err := git.MakeTreeWithItemIn(context.Background(), "HEAD", "mirror.txt", TreeItem{Mode: "100644", Type: "blob", Hash: blob})
+	tree, err := git.MakeTreeWithItemIn(context.Background(), "HEAD", "source.txt", TreeItem{Mode: "100644", Type: "blob", Hash: blob})
 	if err != nil {
 		t.Fatalf("MakeTreeWithItemIn returned error: %v", err)
 	}
@@ -1002,8 +1002,8 @@ func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t
 	if !committed {
 		t.Fatal("CommitTreeWithTemporaryIndex committed = false, want true")
 	}
-	if got := realGitOutput(t, repo, "show", "HEAD:mirror.txt"); got != "updated" {
-		t.Fatalf("HEAD:mirror.txt = %q, want updated", got)
+	if got := realGitOutput(t, repo, "show", "HEAD:source.txt"); got != "updated" {
+		t.Fatalf("HEAD:source.txt = %q, want updated", got)
 	}
 	if got := realGitOutput(t, repo, "show", "HEAD:unrelated.txt"); got != "base" {
 		t.Fatalf("HEAD:unrelated.txt = %q, want base", got)
@@ -1011,7 +1011,7 @@ func TestCommitTreeWithTemporaryIndexExcludesRealIndexAndPreservesHookBehavior(t
 	if _, err := os.Stat(filepath.Join(repo, "post-commit-ran")); err != nil {
 		t.Fatalf("post-commit hook did not run: %v", err)
 	}
-	if err := git.RestorePathspecsFromHead(context.Background(), "mirror.txt"); err != nil {
+	if err := git.RestorePathspecsFromHead(context.Background(), "source.txt"); err != nil {
 		t.Fatalf("RestorePathspecsFromHead returned error: %v", err)
 	}
 	if staged := realGitOutput(t, repo, "diff", "--cached", "--name-only"); staged != "unrelated.txt" {

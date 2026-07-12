@@ -9,7 +9,7 @@ import (
 	"braid/internal/cli"
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
+	"braid/internal/source"
 )
 
 type DiffHandler struct {
@@ -39,22 +39,29 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	}
 
 	if inv.Diff.LocalPath != "" {
-		localPath, err := normalizeLocalPath(repo, inv.Diff.LocalPath)
+		selection, err := resolveSourceSelection(repo, cfg, inv.Diff.LocalPath, true)
 		if err != nil {
 			return err
 		}
-		m, err := cfg.GetRequired(localPath)
-		if err != nil {
-			return err
+		for _, mirror := range selection.Mirrors {
+			if len(selection.Mirrors) > 1 {
+				if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing mirror %s\n=======================================================\n", mirror.LocalPath); err != nil {
+					return err
+				}
+			}
+			if err := h.diffOne(ctx, git, processGit, cache, selection.Source.WithMirror(mirror), inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
+				return err
+			}
 		}
-		return h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, progress, stdout, stderr)
+		return nil
 	}
 
-	for _, localPath := range cfg.Paths() {
-		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing %s\n=======================================================\n", localPath); err != nil {
+	for _, m := range cfg.MirrorsSorted() {
+		localPath := m.LocalPath
+		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing mirror %s\n=======================================================\n", localPath); err != nil {
 			return err
 		}
-		if err := h.diffOne(ctx, git, processGit, cache, cfg.Mirrors[localPath], inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
+		if err := h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
 			return err
 		}
 	}
@@ -81,7 +88,7 @@ func (h DiffHandler) processDiffGit(repo RepoContext, inv cli.Invocation, trace 
 	return gitexec.New(repo.ProcessWorkDir, inv.Global.Verbose, trace)
 }
 
-func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m mirror.Mirror, options cli.DiffOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) (err error) {
+func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache CacheConfig, m source.SourceMirror, options cli.DiffOptions, verbose bool, progress progressReporter, stdout, trace io.Writer) (err error) {
 	if err := configureMirrorRemote(ctx, git, m, true, cache); err != nil {
 		return err
 	}
@@ -109,7 +116,7 @@ func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache
 	return err
 }
 
-func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheConfig, m mirror.Mirror, verbose bool, progress progressReporter, trace io.Writer) error {
+func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheConfig, m source.SourceMirror, verbose bool, progress progressReporter, trace io.Writer) error {
 	if _, err := git.RevParse(ctx, m.Revision+"^{commit}"); err == nil {
 		return nil
 	}
@@ -121,34 +128,34 @@ func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheCon
 	return fetchMirror(ctx, git, cache, m, progress)
 }
 
-func buildDiffArgs(ctx context.Context, git DiffGit, m mirror.Mirror, userArgs []string) ([]string, error) {
+func buildDiffArgs(ctx context.Context, git DiffGit, m source.SourceMirror, userArgs []string) ([]string, error) {
 	item, err := baseDiffItem(ctx, git, m)
 	if err != nil {
 		return nil, err
 	}
-	baseTree, err := git.MakeTreeWithItem(ctx, m.Path, item)
+	baseTree, err := git.MakeTreeWithItem(ctx, m.LocalPath, item)
 	if err != nil {
 		return nil, err
 	}
 
 	if item.Type == "blob" {
 		args := []string{
-			"--relative=" + m.Path,
-			"--src-prefix=a/" + path.Base(m.RemotePath),
-			"--dst-prefix=b/" + path.Base(m.Path),
+			"--relative=" + m.LocalPath,
+			"--src-prefix=a/" + path.Base(m.UpstreamPath),
+			"--dst-prefix=b/" + path.Base(m.LocalPath),
 			baseTree,
 		}
 		args = append(args, userArgs...)
-		return append(args, ":(top)"+m.Path), nil
+		return append(args, ":(top)"+m.LocalPath), nil
 	}
 
-	args := []string{"--relative=" + m.Path + "/", baseTree}
+	args := []string{"--relative=" + m.LocalPath + "/", baseTree}
 	return append(args, userArgs...), nil
 }
 
-func baseDiffItem(ctx context.Context, git DiffGit, m mirror.Mirror) (gitexec.TreeItem, error) {
-	if m.RemotePath == "" {
+func baseDiffItem(ctx context.Context, git DiffGit, m source.SourceMirror) (gitexec.TreeItem, error) {
+	if m.UpstreamPath == "" {
 		return gitexec.TreeItem{Type: "tree", Hash: m.Revision}, nil
 	}
-	return git.LsTreeItem(ctx, m.Revision, m.RemotePath)
+	return git.LsTreeItem(ctx, m.Revision, m.UpstreamPath)
 }

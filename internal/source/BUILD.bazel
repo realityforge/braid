@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "source",
+    srcs = ["source.go"],
+    importpath = "braid/internal/source",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "source_test",
+    srcs = ["source_test.go"],
+    embed = [":source"],
+    timeout = "short",
+)

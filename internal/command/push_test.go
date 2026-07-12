@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"braid/internal/config"
-	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
 
@@ -89,7 +88,8 @@ func TestPushCommandEditorReceivesStdin(t *testing.T) {
 func TestPushCommandPushesExplicitBranch(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
-	testutil.CommitAll(t, upstream, "base")
+	base := testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "branch", "feature", base)
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
@@ -100,6 +100,46 @@ func TestPushCommandPushesExplicitBranch(t *testing.T) {
 	runCommandOK(t, repo, []string{"push", "vendor/basic", "--branch", "feature"})
 	testutil.Git(t, upstream, "checkout", "feature")
 	assertFile(t, upstream, "README.md", "feature\n")
+}
+
+func TestPushCommandRejectsDivergedExplicitBranch(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	base := testutil.CommitAll(t, upstream, "base")
+	testutil.Git(t, upstream, "checkout", "-b", "feature", base)
+	testutil.WriteFile(t, upstream, "feature.txt", "diverged\n")
+	feature := testutil.CommitAll(t, upstream, "diverge feature")
+	testutil.Git(t, upstream, "checkout", "main")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	out := runCommandOK(t, repo, []string{"push", "vendor/basic", "--branch", "feature", "--message", "must not push"})
+	assertContains(t, out, "Braid: Source is not up to date. Stopping.")
+	if got := strings.TrimSpace(testutil.Git(t, upstream, "rev-parse", "feature").Stdout); got != feature {
+		t.Fatalf("feature moved to %s, want %s", got, feature)
+	}
+}
+
+func TestPushCommandRecreatesDeletedTrackedBranch(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/README.md", "recreated\n")
+	testutil.CommitAll(t, repo, "local mirror change")
+	testutil.Git(t, upstream, "checkout", "-b", "holding")
+	testutil.Git(t, upstream, "branch", "-D", "main")
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "braid", "cache")); err != nil {
+		t.Fatal(err)
+	}
+
+	runCommandOK(t, repo, []string{"push", "vendor/basic", "--message", "recreate main"})
+	if got := strings.TrimSpace(testutil.Git(t, upstream, "show", "main:README.md").Stdout); got != "recreated" {
+		t.Fatalf("recreated main README = %q", got)
+	}
 }
 
 func TestPushCommandPathVariants(t *testing.T) {
@@ -117,7 +157,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 				t.Helper()
 				testutil.WriteFile(t, upstream, "lib/component.txt", "base\n")
 			},
-			addArgs:    func(upstream string) []string { return []string{"add", upstream, "vendor/lib", "--path", "lib"} },
+			addArgs:    func(upstream string) []string { return []string{"add", upstream, "vendor/lib=lib"} },
 			localPath:  "vendor/lib",
 			localFile:  "vendor/lib/component.txt",
 			remoteFile: "lib/component.txt",
@@ -129,7 +169,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 				testutil.WriteFile(t, upstream, "lay outs/layout.txt", "base\n")
 			},
 			addArgs: func(upstream string) []string {
-				return []string{"add", upstream, "vendor/path with spaces", "--path", "lay outs"}
+				return []string{"add", upstream, "vendor/path with spaces=lay outs"}
 			},
 			localPath:  "vendor/path with spaces",
 			localFile:  "vendor/path with spaces/layout.txt",
@@ -142,7 +182,7 @@ func TestPushCommandPathVariants(t *testing.T) {
 				testutil.WriteFile(t, upstream, "LICENSE.txt", "base\n")
 			},
 			addArgs: func(upstream string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
 			},
 			localPath:  "licenses/THIRD_PARTY.txt",
 			localFile:  "licenses/THIRD_PARTY.txt",
@@ -356,9 +396,9 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 		"Describe the staged mirror changes from the mirrored repository's perspective",
 		"Use downstream commit provenance only as background for intent",
 		"Respond only with the proposed commit message.",
-		"Local mirror path: vendor/basic",
+		"Source name: 001",
 		"Upstream URL: " + upstream,
-		"Upstream path: (repository root)",
+		"vendor/basic -> (repository root)",
 		"Target branch: main",
 		"Commit " + localCommit,
 		"local generated change",
@@ -883,7 +923,7 @@ func TestPushCommandProvenanceMirrorIdentityChangeResetsWindow(t *testing.T) {
 	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/basic"})
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "old local\n")
 	oldCommit := commitAllWithMessage(t, repo, "old identity local")
-	writeSingleMirrorConfig(t, repo, mirror.Mirror{Path: "vendor/basic", URL: upstreamB, Branch: "main", Revision: bRevision})
+	writeSingleMirrorConfig(t, repo, testSourceMirror("vendor/basic", "", upstreamB, "main", "", bRevision, false))
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "b base\n")
 	commitAllWithMessage(t, repo, "switch mirror identity")
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "new local\n")
@@ -916,7 +956,7 @@ func TestPushCommandProvenanceExcludesMergedSideBranchBeforeCurrentIdentity(t *t
 	testutil.WriteFile(t, repo, "vendor/basic/old-side.txt", "old side\n")
 	oldSideCommit := commitAllWithMessage(t, repo, "old side identity")
 	testutil.Git(t, repo, "checkout", "main")
-	writeSingleMirrorConfig(t, repo, mirror.Mirror{Path: "vendor/basic", URL: upstreamB, Branch: "main", Revision: bRevision})
+	writeSingleMirrorConfig(t, repo, testSourceMirror("vendor/basic", "", upstreamB, "main", "", bRevision, false))
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "b base\n")
 	commitAllWithMessage(t, repo, "switch to new identity")
 	testutil.Git(t, repo, "merge", "--no-ff", "--no-commit", "old-side")
@@ -941,7 +981,7 @@ func TestPushCommandProvenanceRootWithoutCleanAnchorShowsNote(t *testing.T) {
 	testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 
 	repo := testutil.InitRepo(t)
-	writeSingleMirrorConfig(t, repo, mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: revision})
+	writeSingleMirrorConfig(t, repo, testSourceMirror("vendor/basic", "", upstream, "main", "", revision, false))
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "dirty from root\n")
 	rootCommit := commitAllWithMessage(t, repo, "root dirty mirror")
 	capture, editor := writeCapturingEditor(t, "Push root dirty")

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -91,6 +92,7 @@ type Commit struct {
 type MergeTreeResult struct {
 	Tree          string
 	ConflictPaths []string
+	ConflictIndex string
 	Details       string
 }
 
@@ -104,6 +106,8 @@ type StashListEntry struct {
 	OID      string
 	Subject  string
 }
+
+type RemoteConfigSnapshot map[string][]string
 
 type StashLookupError struct {
 	Entry   StashEntry
@@ -218,6 +222,50 @@ func (g Git) ConfigSet(ctx context.Context, args ...string) error {
 	gitArgs := append([]string{"config"}, args...)
 	_, err := g.RunOK(ctx, gitArgs...)
 	return err
+}
+
+func (g Git) SnapshotRemoteConfig(ctx context.Context, remote string) (RemoteConfigSnapshot, error) {
+	result, err := g.Run(ctx, "config", "--local", "--get-regexp", "^remote\\."+regexp.QuoteMeta(remote)+"\\.")
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode == 1 {
+		return RemoteConfigSnapshot{}, nil
+	}
+	if result.ExitCode != 0 {
+		return nil, &ExitError{Result: result}
+	}
+	snapshot := RemoteConfigSnapshot{}
+	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+		key, value, ok := strings.Cut(line, " ")
+		if ok {
+			snapshot[key] = append(snapshot[key], value)
+		}
+	}
+	return snapshot, nil
+}
+
+func (g Git) RestoreRemoteConfig(ctx context.Context, remote string, snapshot RemoteConfigSnapshot) error {
+	result, err := g.Run(ctx, "config", "--local", "--remove-section", "remote."+remote)
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 && !strings.Contains(result.Stderr, "no such section") {
+		return &ExitError{Result: result}
+	}
+	keys := make([]string, 0, len(snapshot))
+	for key := range snapshot {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		for _, value := range snapshot[key] {
+			if _, err := g.RunOK(ctx, "config", "--local", "--add", key, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (g Git) CoreCommentChar(ctx context.Context) (string, bool, error) {
@@ -472,6 +520,24 @@ func (g Git) LsTreeItem(ctx context.Context, treeish, path string) (TreeItem, er
 	return item, nil
 }
 
+func (g Git) TreeContainsGitlink(ctx context.Context, treeish, path string) (bool, error) {
+	args := []string{"ls-tree", "-r", treeish}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	out, err := g.Output(ctx, args...)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && (fields[0] == "160000" || fields[1] == "commit") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (g Git) TreeItem(ctx context.Context, treeish string) (TreeItem, error) {
 	hash, err := g.RevParse(ctx, treeish+"^{tree}")
 	if err != nil {
@@ -561,6 +627,20 @@ func (g Git) HashBytes(ctx context.Context, data []byte) (TreeItem, error) {
 	return TreeItem{Mode: "100644", Type: "blob", Hash: strings.TrimSpace(result.Stdout)}, nil
 }
 
+func (g Git) EmptyTree(ctx context.Context) (string, error) {
+	var stdout, stderr bytes.Buffer
+	result, err := g.Runner.RunInteractive(ctx, bytes.NewReader(nil), &stdout, &stderr, "hash-object", "-w", "-t", "tree", "--stdin")
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		return "", &ExitError{Result: result}
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
 func (g Git) CommitMessage(ctx context.Context, message string) (bool, error) {
 	result, err := g.Run(ctx, "commit", "--no-verify", "-m", message)
 	if err != nil {
@@ -610,6 +690,31 @@ func (g Git) UpdateRef(ctx context.Context, args ...string) error {
 	gitArgs := append([]string{"update-ref"}, args...)
 	_, err := g.RunOK(ctx, gitArgs...)
 	return err
+}
+
+func (g Git) UpdateRefsTransaction(ctx context.Context, refs map[string]string) error {
+	names := make([]string, 0, len(refs))
+	for name := range refs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var input strings.Builder
+	input.WriteString("start\n")
+	for _, name := range names {
+		fmt.Fprintf(&input, "update %s %s\n", name, refs[name])
+	}
+	input.WriteString("prepare\ncommit\n")
+	var stdout, stderr bytes.Buffer
+	result, err := g.Runner.RunInteractive(ctx, strings.NewReader(input.String()), &stdout, &stderr, "update-ref", "--stdin")
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 {
+		return &ExitError{Result: result}
+	}
+	return nil
 }
 
 func (g Git) ReadTreeUpdateMerge(ctx context.Context, treeish string) error {
@@ -774,6 +879,51 @@ func (g Git) MergeTreeWrite(ctx context.Context, baseTreeish, localTreeish, remo
 	return parsed, nil
 }
 
+func (g Git) ApplyConflictIndex(ctx context.Context, mergedTreeish, conflictIndex string, conflictPaths []string, paths ...string) error {
+	file, err := os.CreateTemp("", "braid-conflict-index-")
+	if err != nil {
+		return err
+	}
+	indexPath := file.Name()
+	if err := file.Close(); err != nil {
+		return err
+	}
+	_ = os.Remove(indexPath)
+	defer func() { _ = os.Remove(indexPath) }()
+	tempMerged := g.withIndex(indexPath)
+	if _, err := tempMerged.RunOK(ctx, "read-tree", mergedTreeish); err != nil {
+		return err
+	}
+	for _, conflictPath := range conflictPaths {
+		if _, err := tempMerged.RunOK(ctx, "update-index", "--force-remove", "--", conflictPath); err != nil {
+			return err
+		}
+	}
+	args := []string{"ls-files", "-s", "-z", "--"}
+	args = append(args, paths...)
+	entries, err := tempMerged.Output(ctx, args...)
+	if err != nil {
+		return err
+	}
+	entries += conflictIndex
+	for _, path := range paths {
+		if _, err := g.RunOK(ctx, "rm", "-r", "--cached", "--ignore-unmatch", "--", path); err != nil {
+			return err
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	result, runErr := g.Runner.RunInteractive(ctx, strings.NewReader(entries), &stdout, &stderr, "update-index", "-z", "--index-info")
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	if runErr != nil {
+		return runErr
+	}
+	if result.ExitCode != 0 {
+		return &ExitError{Result: result}
+	}
+	return nil
+}
+
 func IsMergeTreeConflict(err error) bool {
 	var exitErr *ExitError
 	return errors.As(err, &exitErr) && exitErr.Result.ExitCode == 1
@@ -784,7 +934,7 @@ func mergeTreeWriteArgs(baseTreeish, localTreeish, remoteTreeish string, message
 	if messages {
 		messageArg = "--messages"
 	}
-	return []string{"merge-tree", "--write-tree", "--name-only", "-z", messageArg, "--merge-base=" + baseTreeish, localTreeish, remoteTreeish}
+	return []string{"merge-tree", "--write-tree", "-z", messageArg, "--merge-base=" + baseTreeish, localTreeish, remoteTreeish}
 }
 
 func (g Git) mergeTreeConflictPathFallback(ctx context.Context, parsed MergeTreeResult, baseTreeish, localTreeish, remoteTreeish string) MergeTreeResult {
@@ -971,10 +1121,15 @@ func parseMergeTreeOutputZ(output string) MergeTreeResult {
 
 	i := 1
 	for ; i < len(records); i++ {
-		path := records[i]
-		if path == "" {
+		record := records[i]
+		if record == "" {
 			i++
 			break
+		}
+		path := record
+		if _, parsedPath, ok := strings.Cut(record, "\t"); ok {
+			path = parsedPath
+			result.ConflictIndex += record + "\x00"
 		}
 		if !seenPaths[path] {
 			seenPaths[path] = true

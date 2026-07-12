@@ -17,16 +17,15 @@ func TestParseCommands(t *testing.T) {
 	}{
 		{
 			name: "add branch mirror",
-			args: []string{"--verbose", "--global-cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo", "--branch", "main", "--path", "lib", "--no-commit"},
+			args: []string{"--verbose", "--global-cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo=lib", "--branch", "main", "--no-commit"},
 			want: Invocation{
 				Global:  GlobalOptions{GlobalCacheDir: ".cache", GlobalCacheDirSet: true, Verbose: true},
 				Command: CommandAdd,
 				Add: AddOptions{
-					URL:        "https://example.test/repo.git",
-					LocalPath:  "vendor/repo",
-					Branch:     "main",
-					RemotePath: "lib",
-					NoCommit:   true,
+					URL:      "https://example.test/repo.git",
+					Mirrors:  []MirrorMapping{{LocalPath: "vendor/repo", UpstreamPath: "lib"}},
+					Branch:   "main",
+					NoCommit: true,
 				},
 			},
 		},
@@ -186,7 +185,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "quiet verbose conflict", args: []string{"--quiet", "--verbose", "version"}, want: "--quiet and --verbose cannot be used together"},
 		{name: "verbose quiet conflict", args: []string{"--verbose", "--quiet", "version"}, want: "--quiet and --verbose cannot be used together"},
 		{name: "empty global cache dir", args: []string{"--global-cache-dir=", "version"}, want: "--global-cache-dir requires a non-empty value"},
-		{name: "add extra args", args: []string{"add", "url", "path", "extra"}, want: "add received extra argument(s)"},
+		{name: "existing source needs mirror", args: []string{"add", ":source"}, want: "add to an existing source requires at least one mirror"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
 		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
@@ -247,7 +246,10 @@ func TestParseNormalizesLocalPathArguments(t *testing.T) {
 func gotLocalPath(inv Invocation) string {
 	switch inv.Command {
 	case CommandAdd:
-		return inv.Add.LocalPath
+		if len(inv.Add.Mirrors) > 0 {
+			return inv.Add.Mirrors[0].LocalPath
+		}
+		return ""
 	case CommandPull:
 		return inv.Update.LocalPath
 	case CommandRemove:
@@ -305,13 +307,13 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if !strings.Contains(Usage(), "usage: braid [--verbose|-v | --quiet] [--no-cache | --global-cache-dir <path>] <command> [options]") {
 		t.Fatalf("top-level usage missing global output flag syntax:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "  pull      Pull one mirror or every eligible mirror") {
+	if !strings.Contains(Usage(), "  pull      Pull one source or every eligible source") {
 		t.Fatalf("top-level usage missing pull command:\n%s", Usage())
 	}
 	if strings.Contains(Usage(), "  update") || strings.Contains(Usage(), "\n  up ") {
 		t.Fatalf("top-level usage exposes update aliases:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull mirrors") {
+	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull sources") {
 		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
 	}
 	if !strings.Contains(Usage(), "  completion") {
@@ -320,19 +322,19 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "__complete") {
 		t.Fatalf("top-level usage exposes hidden completion callback:\n%s", Usage())
 	}
-	if got, want := CommandUsage(CommandAdd), "usage: braid add <url> [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--path|-p <remote_path>] [--no-commit] [--partial-clone]\n"; got != want {
+	if got, want := CommandUsage(CommandAdd), "usage: braid add <url|:source> [local_path[=upstream_path]...] [--name <name>] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--no-commit] [--partial-clone]\n"; got != want {
 		t.Fatalf("CommandUsage(add) = %q, want %q", got, want)
 	}
-	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"; got != want {
+	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path|:source] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(pull) = %q, want %q", got, want)
 	}
-	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path> [--keep] [--no-commit]\n"; got != want {
+	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path|:source> [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(remove) = %q, want %q", got, want)
 	}
-	if got, want := CommandUsage(CommandPush), "usage: braid push <local_path> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"; got != want {
+	if got, want := CommandUsage(CommandPush), "usage: braid push <local_path|:source> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(push) = %q, want %q", got, want)
 	}
-	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path...] [--pull-only] [--autostash] [--keep]\n"; got != want {
+	if got, want := CommandUsage(CommandSync), "usage: braid sync [local_path|:source ...] [--pull-only] [--autostash] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(sync) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandCompletion), "usage: braid completion bash\n"; got != want {
@@ -398,7 +400,7 @@ func TestRunDispatchesParsedCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("run exit = %d, stderr = %q", code, stderr.String())
 	}
-	if got.Command != CommandAdd || got.Add.URL != "url" || got.Add.LocalPath != "vendor/repo" || got.Add.Branch != "main" {
+	if got.Command != CommandAdd || got.Add.URL != "url" || len(got.Add.Mirrors) != 1 || got.Add.Mirrors[0].LocalPath != "vendor/repo" || got.Add.Branch != "main" {
 		t.Fatalf("dispatched invocation = %#v", got)
 	}
 }

@@ -11,7 +11,6 @@ import (
 
 	"braid/internal/config"
 	"braid/internal/gitexec"
-	"braid/internal/mirror"
 	"braid/internal/testutil"
 )
 
@@ -44,8 +43,8 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	if got := loadMirror(t, repo, "vendor/basic").Revision; got != pushedRevision {
 		t.Fatalf("synced revision = %q, want %q", got, pushedRevision)
 	}
-	assertCommitSubject(t, repo, "Braid: Update mirror 'vendor/basic' to '"+pushedRevision[:7]+"'")
-	assertNoGitRemote(t, repo, "main_braid_vendor_basic")
+	assertCommitSubject(t, repo, "Braid: Update source '001' to '"+pushedRevision[:7]+"'")
+	assertNoGitRemote(t, repo, "main_braid_001")
 }
 
 func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
@@ -107,7 +106,7 @@ func TestSyncCommandGeneratedMessagesArePerPushedMirror(t *testing.T) {
 	testutil.CommitAll(t, repo, "local a generated")
 	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
 	testutil.CommitAll(t, repo, "local b generated")
-	generator := writeGenerator(t, "#!/bin/sh\nprompt=$1\nmessage=$2\nif grep -q 'Local mirror path: vendor/a' \"$prompt\"; then\n  printf 'Generated for vendor/a\\n' > \"$message\"\nelif grep -q 'Local mirror path: vendor/b' \"$prompt\"; then\n  printf 'Generated for vendor/b\\n' > \"$message\"\nelse\n  exit 18\nfi\n")
+	generator := writeGenerator(t, "#!/bin/sh\nprompt=$1\nmessage=$2\nif grep -q 'Source name: 001' \"$prompt\"; then\n  printf 'Generated for vendor/a\\n' > \"$message\"\nelif grep -q 'Source name: 002' \"$prompt\"; then\n  printf 'Generated for vendor/b\\n' > \"$message\"\nelse\n  exit 18\nfi\n")
 	t.Setenv(pushMessageCommandEnv, shellQuote(generator)+" {PROMPT_FILE} {MESSAGE_FILE}")
 	captureDir, editor := writeSequenceCapturingEditor(t, "Sync reviewed")
 	t.Setenv("GIT_EDITOR", editor)
@@ -196,8 +195,8 @@ func TestSyncCommandPullOnlyAllowsExplicitRevisionLockedMirror(t *testing.T) {
 	t.Setenv("GIT_EDITOR", writeFailingEditor(t))
 
 	out := runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/revision"})
-	if out != "" {
-		t.Fatalf("sync stdout = %q, want quiet output", out)
+	if out != "Braid: source :001 is already up to date\n" {
+		t.Fatalf("sync stdout = %q, want source no-op result", out)
 	}
 
 	if got := testutil.CurrentRevision(t, repo); got != head {
@@ -233,7 +232,7 @@ func TestSyncCommandNoPathSelectsBranchAndTagMirrorsAndSkipsLocked(t *testing.T)
 	testutil.Git(t, upstreamB, "tag", "-f", "v1")
 
 	out := runCommandOK(t, repo, []string{"sync", "--pull-only"})
-	if want := skippedLockedOutput("vendor/locked"); out != want {
+	if want := skippedLockedOutput("003"); out != want {
 		t.Fatalf("sync stdout = %q, want %q", out, want)
 	}
 
@@ -249,8 +248,8 @@ func TestSyncCommandNoPathSelectsBranchAndTagMirrorsAndSkipsLocked(t *testing.T)
 	assertFile(t, repo, "vendor/locked/README.md", "dirty locked\n")
 
 	subjects := strings.Split(strings.TrimSpace(testutil.Git(t, repo, "log", "-2", "--pretty=%s").Stdout), "\n")
-	if len(subjects) != 2 || !strings.Contains(subjects[0], "vendor/b") || !strings.Contains(subjects[1], "vendor/a") {
-		t.Fatalf("last sync update subjects = %#v, want newest vendor/b then vendor/a", subjects)
+	if len(subjects) != 2 || !strings.Contains(subjects[0], "'002'") || !strings.Contains(subjects[1], "'001'") {
+		t.Fatalf("last sync update subjects = %#v, want newest source 002 then source 001", subjects)
 	}
 }
 
@@ -268,8 +267,8 @@ func TestSyncCommandNoPathQuietWhenNoLockedMirrors(t *testing.T) {
 			runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 
 			out := runCommandOK(t, repo, args)
-			if out != "" {
-				t.Fatalf("sync stdout = %q, want quiet output", out)
+			if out != "Braid: source :001 is already up to date\n" {
+				t.Fatalf("sync stdout = %q, want source no-op result", out)
 			}
 		})
 	}
@@ -285,14 +284,14 @@ func TestSyncCommandAllLockedNoPathReportsSkippedMirrors(t *testing.T) {
 			writeLockedMirrorConfig(t, repo, "vendor/a", "vendor/z")
 
 			out := runCommandOK(t, repo, args)
-			if want := skippedLockedOutput("vendor/a", "vendor/z"); out != want {
+			if want := skippedLockedOutput("vendor-a", "vendor-z"); out != want {
 				t.Fatalf("sync stdout = %q, want %q", out, want)
 			}
 		})
 	}
 }
 
-func TestSyncCommandExplicitTargetsPreserveOrderAndRejectDuplicates(t *testing.T) {
+func TestSyncCommandExplicitTargetsDeduplicateAndSortSources(t *testing.T) {
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
 	testutil.CommitAll(t, upstreamA, "a base")
@@ -304,8 +303,7 @@ func TestSyncCommandExplicitTargetsPreserveOrderAndRejectDuplicates(t *testing.T
 	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
 	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
 
-	duplicateErr := runCommandError(t, repo, []string{"sync", "vendor/a", "./vendor/a"})
-	assertContains(t, duplicateErr, "duplicate sync path: vendor/a")
+	runCommandOK(t, repo, []string{"sync", "vendor/a", "./vendor/a"})
 	missingErr := runCommandError(t, repo, []string{"sync", "vendor/missing"})
 	assertContains(t, missingErr, "mirror does not exist: vendor/missing")
 
@@ -316,8 +314,8 @@ func TestSyncCommandExplicitTargetsPreserveOrderAndRejectDuplicates(t *testing.T
 	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/b", "vendor/a"})
 
 	subjects := strings.Split(strings.TrimSpace(testutil.Git(t, repo, "log", "-2", "--pretty=%s").Stdout), "\n")
-	if len(subjects) != 2 || !strings.Contains(subjects[0], "vendor/a") || !strings.Contains(subjects[1], "vendor/b") {
-		t.Fatalf("last sync update subjects = %#v, want explicit order vendor/b then vendor/a", subjects)
+	if len(subjects) != 2 || !strings.Contains(subjects[0], "'002'") || !strings.Contains(subjects[1], "'001'") {
+		t.Fatalf("last sync update subjects = %#v, want source-name order 001 then 002", subjects)
 	}
 }
 
@@ -328,7 +326,7 @@ func TestSyncCommandTargetValidationAndScopedPrecheckErrors(t *testing.T) {
 		revision := testutil.CommitAll(t, upstream, "base")
 		repo := testutil.InitRepo(t)
 		cfg := config.Empty()
-		if err := cfg.Add(mirror.Mirror{Path: ".braids.json", URL: upstream, Branch: "main", Revision: revision}); err != nil {
+		if err := cfg.AddSource(testSourceMirror(".braids.json", "", upstream, "main", "", revision, false).Source); err != nil {
 			t.Fatalf("add mirror config: %v", err)
 		}
 		if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
@@ -485,11 +483,12 @@ func TestSyncCommandAutostashIgnoredOnlyState(t *testing.T) {
 	testutil.WriteFile(t, upstream, "remote.txt", "remote\n")
 	testutil.CommitAll(t, upstream, "remote")
 
-	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/basic"})
+	stderr := runCommandError(t, repo, []string{"sync", "--pull-only", "vendor/basic"})
+	assertContains(t, stderr, "local changes are present in vendor/basic")
 
 	assertFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
 	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
-		t.Fatalf("stash list = %q, want no autostash without flag", stashList)
+		t.Fatalf("stash list = %q, want no autostash on blocked sync", stashList)
 	}
 
 	testutil.WriteFile(t, upstream, "another.txt", "another\n")
@@ -509,7 +508,7 @@ func TestSyncCommandAutostashRestoresAfterOperationalFailure(t *testing.T) {
 	repo := initDownstream(t)
 	cfg := config.Empty()
 	bogusRevision := strings.Repeat("0", 40)
-	if err := cfg.Add(mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: bogusRevision}); err != nil {
+	if err := cfg.AddSource(testSourceMirror("vendor/basic", "", upstream, "main", "", bogusRevision, false).Source); err != nil {
 		t.Fatalf("add mirror config: %v", err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
@@ -522,7 +521,7 @@ func TestSyncCommandAutostashRestoresAfterOperationalFailure(t *testing.T) {
 
 	stderr := runCommandError(t, repo, []string{"sync", "--autostash", "vendor/basic"})
 
-	assertContains(t, stderr, "recorded revision "+bogusRevision+" for mirror vendor/basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
+	assertContains(t, stderr, "recorded revision "+bogusRevision+" for source :vendor-basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
 	assertFile(t, repo, "vendor/basic/README.md", "dirty\n")
 	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
 		t.Fatalf("stash list = %q, want autostash restored and dropped", stashList)
@@ -545,7 +544,7 @@ func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
 
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
 
-	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
+	assertContains(t, stdout, "  vendor/basic/README.md")
 	assertContains(t, stderr, "Braid preserved autostash")
 	assertContains(t, stderr, "Resolve the Braid pull conflict first")
 	assertContains(t, stderr, "git stash apply")
@@ -562,7 +561,7 @@ func TestSyncCommandAutostashUpdateConflictLeavesStash(t *testing.T) {
 	assertContains(t, string(data), "remote committed")
 }
 
-func TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash(t *testing.T) {
+func TestSyncCommandAutostashUpdateConflictWriteFailureRollsBackAndRestores(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -581,21 +580,22 @@ func TestSyncCommandAutostashUpdateConflictWriteFailureLeavesStash(t *testing.T)
 
 	stdout, stderr := runCommandErrorWithOutput(t, repo, []string{"sync", "--pull-only", "--autostash", "vendor/basic"})
 
-	assertContains(t, stdout, "CONFLICT: vendor/basic/README.md")
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want rollback before conflict output", stdout)
+	}
 	assertContains(t, stderr, "pull vendor/basic:")
 	assertContains(t, stderr, "MERGE_MSG")
-	assertContains(t, stderr, "Braid preserved autostash")
-	assertContains(t, stderr, "Resolve the Braid pull conflict first")
-	assertNoFile(t, repo, "vendor/basic/note.txt")
+	assertNotContains(t, stderr, "Braid preserved autostash")
+	assertFile(t, repo, "vendor/basic/note.txt", "saved work\n")
 	stashList := testutil.Git(t, repo, "stash", "list").Stdout
-	assertContains(t, stashList, "braid sync autostash")
+	assertNotContains(t, stashList, "braid sync autostash")
 	data, err := os.ReadFile(filepath.Join(repo, "vendor", "basic", "README.md"))
 	if err != nil {
 		t.Fatalf("read conflicted README: %v", err)
 	}
-	assertContains(t, string(data), "<<<<<<<")
-	assertContains(t, string(data), "local committed")
-	assertContains(t, string(data), "remote committed")
+	if string(data) != "local committed\n" {
+		t.Fatalf("README after rollback = %q", data)
+	}
 }
 
 func TestSyncCommandAutostashRestoreReportsCleanupFailureAfterApply(t *testing.T) {
@@ -679,7 +679,7 @@ func TestSyncCommandScopedPrecheckRunsBeforeSideEffects(t *testing.T) {
 	if got := testutil.CurrentRevision(t, upstreamA); got != aBase {
 		t.Fatalf("upstream a revision = %q, want unchanged %q", got, aBase)
 	}
-	assertNoGitRemote(t, repo, "main_braid_vendor_a")
+	assertNoGitRemote(t, repo, "main_braid_001")
 }
 
 func TestSyncCommandNoPathScopedPrecheckRunsBeforeSideEffects(t *testing.T) {
@@ -708,7 +708,7 @@ func TestSyncCommandNoPathScopedPrecheckRunsBeforeSideEffects(t *testing.T) {
 	if got := loadMirror(t, repo, "vendor/b").Revision; got != bBase {
 		t.Fatalf("vendor/b revision = %q, want unchanged %q", got, bBase)
 	}
-	assertNoGitRemote(t, repo, "main_braid_vendor_a")
+	assertNoGitRemote(t, repo, "main_braid_001")
 }
 
 func TestSyncCommandNoPathSuppressesSkippedMirrorOutputOnError(t *testing.T) {
@@ -946,7 +946,7 @@ func TestSyncCommandRejectsDeletedSelectedMirrorPath(t *testing.T) {
 		{
 			name: "single file",
 			addArgs: func(upstream string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
 			},
 			localPath: "licenses/THIRD_PARTY.txt",
 			remove:    "licenses/THIRD_PARTY.txt",
@@ -982,7 +982,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.CommitAll(t, upstream, "base")
 		testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib", "--path", "lib"})
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib=lib"})
 		testutil.WriteFile(t, repo, "vendor/lib/component.txt", "local\n")
 		testutil.CommitAll(t, repo, "local subdir")
 		t.Setenv("GIT_EDITOR", writeEditor(t, "Sync subdir"))
@@ -999,7 +999,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.WriteFile(t, upstream, "outside.txt", "outside\n")
 		testutil.CommitAll(t, upstream, "base")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib", "--path", "lib"})
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib=lib"})
 		testutil.WriteFile(t, upstream, "outside.txt", "remote outside\n")
 		next := testutil.CommitAll(t, upstream, "remote outside")
 		t.Setenv("GIT_EDITOR", writeFailingEditor(t))
@@ -1019,7 +1019,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.CommitAll(t, upstream, "base")
 		testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"})
+		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
 		testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "local license\n")
 		testutil.CommitAll(t, repo, "local license")
 		t.Setenv("GIT_EDITOR", writeEditor(t, "Sync license"))
@@ -1036,7 +1036,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.WriteFile(t, upstream, "README.md", "readme\n")
 		testutil.CommitAll(t, upstream, "base")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt", "--path", "LICENSE.txt"})
+		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
 		testutil.WriteFile(t, upstream, "README.md", "remote readme\n")
 		next := testutil.CommitAll(t, upstream, "remote readme")
 		t.Setenv("GIT_EDITOR", writeFailingEditor(t))
@@ -1079,7 +1079,7 @@ func TestSyncCommandReportsUnavailableRecordedRevisionAfterHydration(t *testing.
 	repo := initDownstream(t)
 	cfg := config.Empty()
 	bogusRevision := strings.Repeat("0", 40)
-	if err := cfg.Add(mirror.Mirror{Path: "vendor/basic", URL: upstream, Branch: "main", Revision: bogusRevision}); err != nil {
+	if err := cfg.AddSource(testSourceMirror("vendor/basic", "", upstream, "main", "", bogusRevision, false).Source); err != nil {
 		t.Fatalf("add mirror config: %v", err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {
@@ -1091,7 +1091,7 @@ func TestSyncCommandReportsUnavailableRecordedRevisionAfterHydration(t *testing.
 
 	stderr := runCommandError(t, repo, []string{"sync", "vendor/basic"})
 
-	assertContains(t, stderr, "recorded revision "+bogusRevision+" for mirror vendor/basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
+	assertContains(t, stderr, "recorded revision "+bogusRevision+" for source :vendor-basic is unavailable from upstream "+upstream+"; the repository-local cache may have been deleted or the upstream history may have been rewritten")
 }
 
 func TestSyncCommandKeepRetainsTemporaryRemote(t *testing.T) {
@@ -1103,7 +1103,7 @@ func TestSyncCommandKeepRetainsTemporaryRemote(t *testing.T) {
 
 	runCommandOK(t, repo, []string{"sync", "--pull-only", "--keep", "vendor/basic"})
 
-	assertGitRemote(t, repo, "main_braid_vendor_basic")
+	assertGitRemote(t, repo, "main_braid_001")
 }
 
 func TestSyncCommandKeepRetainsDistinctTagTrackingRefs(t *testing.T) {
@@ -1123,8 +1123,8 @@ func TestSyncCommandKeepRetainsDistinctTagTrackingRefs(t *testing.T) {
 	runCommandOK(t, repo, []string{"sync", "--pull-only", "--keep", "vendor/a", "vendor/b"})
 
 	git := gitexec.New(repo, false, nil)
-	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_vendor_a/tags/v1", revisionA)
-	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_vendor_b/tags/v1", revisionB)
+	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_001/tags/v1", revisionA)
+	assertRefCommit(t, ctx, git, "refs/remotes/v1_braid_002/tags/v1", revisionB)
 	assertRefMissing(t, ctx, git, "refs/tags/v1")
 }
 

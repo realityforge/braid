@@ -27,7 +27,7 @@ func TestExecutableSubdirectoryLifecycle(t *testing.T) {
 	}
 
 	localPath := "apps/web/vendor/basic"
-	remote := remoteName("main", localPath)
+	remote := remoteName("main", "upstream")
 	add := runBraid(t, env, workDir, braid, "--quiet", "add", upstream, "vendor/basic")
 	assertResult(t, add, 0, "", "")
 	assertFile(t, downstream, "apps/web/vendor/basic/README.md", "base\n")
@@ -107,8 +107,8 @@ func TestExecutableNoPathCommandsFromSubdirectoryRemainRepositoryWide(t *testing
 	diff := runBraid(t, env, workDir, braid, "--quiet", "diff")
 	assertExit(t, diff, 0)
 	assertEmpty(t, "no-path diff stderr", diff.stderr)
-	assertContains(t, diff.stdout, "Braid: Diffing vendor/a")
-	assertContains(t, diff.stdout, "Braid: Diffing third_party/b")
+	assertContains(t, diff.stdout, "Braid: Diffing mirror vendor/a")
+	assertContains(t, diff.stdout, "Braid: Diffing mirror third_party/b")
 	assertContains(t, diff.stdout, "a local")
 	assertContains(t, diff.stdout, "b local")
 }
