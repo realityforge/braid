@@ -1,4 +1,4 @@
-# User-Facing Changes From Ruby Braid
+# Compatibility and Migration from Ruby Braid
 
 This document compares the current Go/Bazel Braid tool with the original Ruby
 Braid tool from <https://github.com/cristibalan/braid>. It is for users deciding
@@ -8,17 +8,21 @@ Comparison baseline:
 
 - Original Ruby Braid: `cristibalan/braid` `v1.1.10`
   (`16729390a2a8e6b45919545b056a1a7ac83c14d6`).
-- Current Go Braid: `realityforge/braid` `v0.9.4`
-  (`43a029999aa3b4af8e66f34d9a6d4c6c9ade06b1`).
+- Current Go Braid: the development version after `v0.9.8`
+  (`52e331f5bd9285035c3edb364de2a67d52dbaddc`).
 - Initial Go-port migration notes:
   <https://github.com/realityforge/braid/blob/d024c502c5eb988f47ac54944f0c5be16bd3b045/docs/migration.md>.
 
-The Go tool records named upstream sources in `.braids.json`, with one or more
-local mirrors materialized from each source. Mirror content is copied into the downstream repository, and the
-main workflows are `add`, `status`, `diff`, `pull`, `push`, and
-`remove`. `pull` is the documented spelling for updating mirror content;
-`update` and `up` are accepted aliases. The differences below are the parts most
-likely to matter in day to day use or automation.
+The Go tool records named upstream sources in `.braids.json`. Each source can
+provide one or more local mirrors in the downstream repository. Its main
+workflows are `add`, `status`, `diff`, `pull`, `push`, `sync`, and `remove`.
+`pull` is the preferred spelling for updating mirror content; `update` and `up`
+remain accepted aliases.
+
+In short, existing Ruby Braid repositories need a one-time config migration,
+scripts need a few command-line changes, and exact console output is not
+compatible. The sections below explain the changes that affect everyday use and
+automation.
 
 ## High-Impact Changes
 
@@ -69,18 +73,19 @@ and used `git reset --hard` to recover from some errors. Current Go Braid scopes
 its preflight checks and automatic commits to the Braid-owned paths for the
 command.
 
-For `add`, `pull`, and `remove`, unrelated staged, unstaged, and untracked
-work outside `.braids.json` and the selected mirror paths is preserved and is not
-included in Braid's automatic commit. These commands also accept `--no-commit`
-to stage `.braids.json` and selected mirror paths without creating the automatic
-commit. The selected mirror paths and `.braids.json` still have to be clean
-unless the command explicitly supports a different flow.
+For `add`, `pull`, and `remove`, unrelated staged, unstaged, and untracked work
+outside `.braids.json` and the selected mirror paths is preserved and is not
+included in Braid's automatic commit. These commands accept `--no-commit` to
+stage `.braids.json` and selected mirror paths without creating the automatic
+commit. `upgrade-config --no-commit` similarly stages only `.braids.json`. The
+paths owned by each command still have to be clean unless the command explicitly
+supports a different flow.
 
 Migration impact:
 
 - You can run Braid with unrelated work in progress more safely.
-- Use `--no-commit` on `add`, `pull`, or `remove` when the mirror change belongs
-  in the same downstream commit as other related changes.
+- Use `--no-commit` on `add`, `pull`, `remove`, or `upgrade-config` when the
+  change belongs in the same downstream commit as other related changes.
 - If unrelated files are already staged during `--no-commit`, they remain staged
   and can be included in the next manual commit unless you unstage them.
 - Dirty selected mirror paths still stop `add`, `pull`, `remove`, and `sync`
@@ -151,7 +156,7 @@ Migration impact:
 
 | Area | Ruby Braid | Current Go Braid | Migration impact |
 | --- | --- | --- | --- |
-| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the documented mirror-update command; `update` and `up` are aliases; `setup` is removed; the other core commands remain, plus `sync`; `upgrade-config` migrates versioned JSON config | Remove `setup` from scripts, prefer `pull` in new docs and scripts, and use Go Braid's `upgrade-config` only for `.braids.json` version 1 to 2 migration. |
+| Commands | `add`, `update`, `remove`, `diff`, `push`, `setup`, `version`, `status`, `upgrade-config` | `pull` is the preferred mirror-update command; `update` and `up` are aliases. `setup` is removed. `sync` and `completion` are new. | Remove `setup` from scripts, prefer `pull`, and use Go Braid's `upgrade-config` only for `.braids.json` version 1 to 2 migration. |
 | Help form | `braid help`, `braid add help`, `braid add --help`; the old README also advertised `braid help add`, but the `v1.1.10` gem does not provide command-specific help through that form | `braid help`, `braid add help`, `braid add --help` | Prefer `braid <command> help` or `braid <command> --help`. |
 | Verbose flag | Per-command `--verbose`/`-v` | Global `--verbose`/`-v` before the command | Use `braid -v pull ...`, not `braid pull -v ...`. |
 | Quiet flag | No global quiet flag | Global `--quiet` before the command; incompatible with `--verbose` | Use `braid --quiet <command> ...` in automation that wants data, warnings, errors, and recovery output without progress or informational chatter. |
@@ -317,8 +322,9 @@ Known output differences include:
 2. Confirm every developer and CI runner has Git 2.45.0 or newer.
 3. Install the Go release binary for the target platform and verify
    `SHA256SUMS`.
-4. Remove or update automation that uses `upgrade-config`, `update --head`,
-   `braid help <command>`, or per-command `--verbose`.
+4. Remove or update automation that uses Ruby's `setup` or legacy
+   `upgrade-config` flows, `update --head`, `braid help <command>`, or
+   per-command `--verbose`.
 5. Run `braid status` and `braid diff` on a clean checkout and compare the
    result with expected mirror state.
 6. Review `.braids.json` for unknown fields, unsafe paths, and remote-name
