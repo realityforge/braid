@@ -148,6 +148,41 @@ func TestExecutableDiffSyncPushOnly(t *testing.T) {
 	assertResult(t, skipped, 0, "", "")
 }
 
+func TestExecutableDiffEndpoints(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, "committed.txt", "base committed\n")
+	writeFile(t, upstream, "staged.txt", "base staged\n")
+	writeFile(t, upstream, "unstaged.txt", "base unstaged\n")
+	commitAll(t, env, upstream, "upstream")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "downstream")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic"), 0, "", "")
+
+	writeFile(t, downstream, "vendor/basic/committed.txt", "changed committed\n")
+	gitOK(t, env, downstream, "add", "vendor/basic/committed.txt")
+	gitOK(t, env, downstream, "commit", "-m", "committed mirror change")
+	writeFile(t, downstream, "vendor/basic/staged.txt", "changed staged\n")
+	gitOK(t, env, downstream, "add", "vendor/basic/staged.txt")
+	writeFile(t, downstream, "vendor/basic/unstaged.txt", "changed unstaged\n")
+
+	worktree := runBraid(t, env, downstream, braid, "diff", "vendor/basic", "--", "--name-only")
+	assertResult(t, worktree, 0, "committed.txt\nstaged.txt\nunstaged.txt\n", "")
+
+	index := runBraid(t, env, downstream, braid, "diff", "vendor/basic", "--index", "--", "--name-only")
+	assertResult(t, index, 0, "committed.txt\nstaged.txt\n", "")
+
+	head := runBraid(t, env, downstream, braid, "diff", "vendor/basic", "--head", "--", "--name-only")
+	assertResult(t, head, 0, "committed.txt\n", "")
+}
+
 func TestUpgradeConfigCommitAndNoCommit(t *testing.T) {
 	for _, noCommit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "commit", true: "no-commit"}[noCommit], func(t *testing.T) {

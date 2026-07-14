@@ -303,6 +303,8 @@ braid diff
 braid diff --sync-push-only
 braid diff vendor/rails
 braid diff :rails
+braid diff vendor/rails --head
+braid diff vendor/rails --index
 braid diff vendor/rails -- --stat
 braid diff vendor/rails -- --cached
 ```
@@ -315,8 +317,19 @@ every mirror belonging to the source.
 explicitly selected. The option filters sources only; each selected mirror
 retains the normal `braid diff` comparison behavior.
 
+By default, Braid compares the recorded upstream base with the working tree, so
+the diff includes tracked changes whether they are committed, staged, or
+unstaged. As with ordinary `git diff`, untracked files are omitted. Use
+`--index` to compare the recorded upstream base with the index, or `--head` to
+compare it with downstream `HEAD`. The `--head` endpoint is the committed mirror
+content read by `braid push` and sync's push phase, but the diff is not a push
+preview and does not check push eligibility or preconditions.
+
 Arguments after `--` are passed to `git diff`. This is useful for generating
-patches, limiting output, or checking staged changes only.
+patches or limiting output. The existing raw forms `-- --cached` and `-- HEAD`
+are equivalent to `--index` and `--head`, respectively. When using a first-class
+endpoint option, passthrough arguments must not select another Git revision or
+endpoint mode.
 
 ### Pulling Mirrors
 

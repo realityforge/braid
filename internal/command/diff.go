@@ -25,6 +25,11 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 
 	git := h.diffGit(repo, inv, stderr)
 	processGit := h.processDiffGit(repo, inv, stderr)
+	if inv.Diff.Head {
+		if _, err := git.RevParse(ctx, "HEAD^{commit}"); err != nil {
+			return fmt.Errorf("diff --head requires a downstream HEAD commit")
+		}
+	}
 	progress := newProgressReporter(stderr, inv.Global.Quiet)
 	cfg, err := config.Load(configRoot(h.Options, repo))
 	if err != nil {
@@ -111,7 +116,7 @@ func (h DiffHandler) diffOne(ctx context.Context, git, processGit DiffGit, cache
 	if err := fetchBaseRevisionIfMissing(ctx, git, cache, m, verbose, progress, trace); err != nil {
 		return err
 	}
-	args, err := buildDiffArgs(ctx, git, m, options.GitDiffArgs)
+	args, err := buildDiffArgs(ctx, git, m, options)
 	if err != nil {
 		return err
 	}
@@ -135,7 +140,7 @@ func fetchBaseRevisionIfMissing(ctx context.Context, git DiffGit, cache CacheCon
 	return fetchMirror(ctx, git, cache, m, progress)
 }
 
-func buildDiffArgs(ctx context.Context, git DiffGit, m source.SourceMirror, userArgs []string) ([]string, error) {
+func buildDiffArgs(ctx context.Context, git DiffGit, m source.SourceMirror, options cli.DiffOptions) ([]string, error) {
 	item, err := baseDiffItem(ctx, git, m)
 	if err != nil {
 		return nil, err
@@ -150,14 +155,26 @@ func buildDiffArgs(ctx context.Context, git DiffGit, m source.SourceMirror, user
 			"--relative=" + m.LocalPath,
 			"--src-prefix=a/" + path.Base(m.UpstreamPath),
 			"--dst-prefix=b/" + path.Base(m.LocalPath),
-			baseTree,
 		}
-		args = append(args, userArgs...)
+		args = appendDiffEndpoint(args, baseTree, options)
+		args = append(args, options.GitDiffArgs...)
 		return append(args, ":(top)"+m.LocalPath), nil
 	}
 
-	args := []string{"--relative=" + m.LocalPath + "/", baseTree}
-	return append(args, userArgs...), nil
+	args := []string{"--relative=" + m.LocalPath + "/"}
+	args = appendDiffEndpoint(args, baseTree, options)
+	return append(args, options.GitDiffArgs...), nil
+}
+
+func appendDiffEndpoint(args []string, baseTree string, options cli.DiffOptions) []string {
+	if options.Index {
+		args = append(args, "--cached")
+	}
+	args = append(args, baseTree)
+	if options.Head {
+		args = append(args, "HEAD")
+	}
+	return args
 }
 
 func baseDiffItem(ctx context.Context, git DiffGit, m source.SourceMirror) (gitexec.TreeItem, error) {

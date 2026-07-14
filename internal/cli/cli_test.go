@@ -72,12 +72,17 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "diff passthrough",
-			args: []string{"--no-cache", "--quiet", "diff", "vendor/repo", "--sync-push-only", "--", "--stat", "weird;path"},
+			args: []string{"--no-cache", "--quiet", "diff", "vendor/repo", "--sync-push-only", "--head", "--", "--stat", "weird;path"},
 			want: Invocation{
 				Global:  GlobalOptions{NoCache: true, Quiet: true},
 				Command: CommandDiff,
-				Diff:    DiffOptions{LocalPath: "vendor/repo", SyncPushOnly: true, GitDiffArgs: []string{"--stat", "weird;path"}},
+				Diff:    DiffOptions{LocalPath: "vendor/repo", SyncPushOnly: true, Head: true, GitDiffArgs: []string{"--stat", "weird;path"}},
 			},
+		},
+		{
+			name: "diff index before selector",
+			args: []string{"diff", "--index", "vendor/repo"},
+			want: Invocation{Command: CommandDiff, Diff: DiffOptions{LocalPath: "vendor/repo", Index: true}},
 		},
 		{
 			name: "diff sync push only before selector",
@@ -207,6 +212,7 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "existing source sync push", args: []string{"add", ":source", "vendor/new", "--sync-push"}, want: "add to an existing source cannot use --name, --branch, --tag, --revision, --partial-clone, or --sync-push"},
 		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
+		{name: "diff endpoint conflict", args: []string{"diff", "--head", "--index"}, want: "diff cannot combine --head and --index"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
 		{name: "sync no commit unsupported", args: []string{"sync", "--no-commit"}, want: "unknown flag for sync: --no-commit"},
 		{name: "push whitespace message", args: []string{"push", "vendor/repo", "--message", " \t"}, want: "--message requires a non-empty message value"},
@@ -349,7 +355,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path|:source> [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(remove) = %q, want %q", got, want)
 	}
-	if got, want := CommandUsage(CommandDiff), "usage: braid diff [local_path|:source] [--keep] [--sync-push-only] [-- <git_diff_arg>...]\n"; got != want {
+	if got, want := CommandUsage(CommandDiff), "usage: braid diff [local_path|:source] [--keep] [--sync-push-only] [--head] [--index] [-- <git_diff_arg>...]\n"; got != want {
 		t.Fatalf("CommandUsage(diff) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandPush), "usage: braid push <local_path|:source> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"; got != want {
