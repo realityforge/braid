@@ -23,7 +23,7 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	repo := initDownstream(t)
 	testutil.Git(t, repo, "config", "--local", "user.name", "Sync User")
 	testutil.Git(t, repo, "config", "--local", "user.email", "sync@example.invalid")
-	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic", "--sync-push"})
 	testutil.WriteFile(t, repo, "vendor/basic/README.md", "local\n")
 	testutil.CommitAll(t, repo, "local mirror change")
 	t.Setenv("GIT_EDITOR", writeEditor(t, "Sync push"))
@@ -47,6 +47,31 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	assertNoGitRemote(t, repo, "main_braid_001")
 }
 
+func TestSyncCommandPushesOnlyOptedInSources(t *testing.T) {
+	upstreamA := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
+	testutil.CommitAll(t, upstreamA, "a base")
+	testutil.Git(t, upstreamA, "config", "receive.denyCurrentBranch", "updateInstead")
+	upstreamB := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
+	testutil.CommitAll(t, upstreamB, "b base")
+	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
+	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
+	testutil.CommitAll(t, repo, "local mirror changes")
+	t.Setenv("GIT_EDITOR", writeEditor(t, "Sync opted in source"))
+
+	runCommandOK(t, repo, []string{"sync", "vendor/a", "vendor/b"})
+
+	assertFile(t, upstreamA, "README.md", "a local\n")
+	assertCommitSubject(t, upstreamA, "Sync opted in source")
+	assertFile(t, upstreamB, "README.md", "b base\n")
+}
+
 func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
@@ -58,8 +83,8 @@ func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
 	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
-	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--sync-push"})
 	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
 	aCommit := commitAllWithMessage(t, repo, "local a sync")
 	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
@@ -100,8 +125,8 @@ func TestSyncCommandGeneratedMessagesArePerPushedMirror(t *testing.T) {
 	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
-	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--sync-push"})
 	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
 	testutil.CommitAll(t, repo, "local a generated")
 	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
@@ -750,33 +775,6 @@ func TestSyncCommandExplicitPrecheckIgnoresDirtyNonSelectedMirror(t *testing.T) 
 }
 
 func TestSyncCommandPushPlanValidationPreventsEarlierPush(t *testing.T) {
-	t.Run("later non branch local change", func(t *testing.T) {
-		upstreamA := testutil.InitRepo(t)
-		testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
-		aBase := testutil.CommitAll(t, upstreamA, "a base")
-		testutil.Git(t, upstreamA, "config", "receive.denyCurrentBranch", "updateInstead")
-		upstreamB := testutil.InitRepo(t)
-		testutil.WriteFile(t, upstreamB, "README.md", "b base\n")
-		testutil.CommitAll(t, upstreamB, "b base")
-		testutil.Git(t, upstreamB, "tag", "v1")
-
-		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
-		runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--tag", "v1"})
-		testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
-		testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
-		testutil.CommitAll(t, repo, "local mirror changes")
-		t.Setenv("GIT_EDITOR", writeFailingEditor(t))
-
-		stderr := runCommandError(t, repo, []string{"sync", "vendor/a", "vendor/b"})
-
-		assertContains(t, stderr, "sync cannot push committed local changes for non-branch mirror vendor/b")
-		assertContains(t, stderr, "braid push vendor/b --branch <branch>")
-		if got := testutil.CurrentRevision(t, upstreamA); got != aBase {
-			t.Fatalf("upstream a revision = %q, want unchanged %q", got, aBase)
-		}
-	})
-
 	t.Run("later stale branch", func(t *testing.T) {
 		upstreamA := testutil.InitRepo(t)
 		testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
@@ -788,8 +786,8 @@ func TestSyncCommandPushPlanValidationPreventsEarlierPush(t *testing.T) {
 		testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
 
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
-		runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+		runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
+		runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--sync-push"})
 		testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
 		testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
 		testutil.CommitAll(t, repo, "local mirror changes")
@@ -817,7 +815,7 @@ func TestSyncCommandStopsBeforePullPhaseWhenPushFails(t *testing.T) {
 	bBase := testutil.CommitAll(t, upstreamB, "b base")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
 	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
 	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
 	testutil.CommitAll(t, repo, "local a")
@@ -851,8 +849,8 @@ func TestSyncCommandLaterEditorFailureLeavesEarlierGeneratedPushComplete(t *test
 	testutil.Git(t, upstreamB, "config", "receive.denyCurrentBranch", "updateInstead")
 
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a"})
-	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b"})
+	runCommandOK(t, repo, []string{"add", upstreamA, "vendor/a", "--sync-push"})
+	runCommandOK(t, repo, []string{"add", upstreamB, "vendor/b", "--sync-push"})
 	testutil.WriteFile(t, repo, "vendor/a/README.md", "a local\n")
 	testutil.CommitAll(t, repo, "local a partial")
 	testutil.WriteFile(t, repo, "vendor/b/README.md", "b local\n")
@@ -896,40 +894,6 @@ func TestSyncCommandUnchangedMovedBranchUpdatesNormally(t *testing.T) {
 	}
 }
 
-func TestSyncCommandRejectsSelectedNonBranchLocalChanges(t *testing.T) {
-	t.Run("no path tag mirror", func(t *testing.T) {
-		upstream := testutil.InitRepo(t)
-		testutil.WriteFile(t, upstream, "README.md", "base\n")
-		testutil.CommitAll(t, upstream, "base")
-		testutil.Git(t, upstream, "tag", "v1")
-
-		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/tagged", "--tag", "v1"})
-		testutil.WriteFile(t, repo, "vendor/tagged/README.md", "local\n")
-		testutil.CommitAll(t, repo, "local tag change")
-
-		stderr := runCommandError(t, repo, []string{"sync"})
-
-		assertContains(t, stderr, "sync cannot push committed local changes for non-branch mirror vendor/tagged")
-	})
-
-	t.Run("explicit revision mirror", func(t *testing.T) {
-		upstream := testutil.InitRepo(t)
-		testutil.WriteFile(t, upstream, "README.md", "base\n")
-		revision := testutil.CommitAll(t, upstream, "base")
-
-		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/revision", "--revision", revision})
-		testutil.WriteFile(t, repo, "vendor/revision/README.md", "local\n")
-		testutil.CommitAll(t, repo, "local revision change")
-
-		stderr := runCommandError(t, repo, []string{"sync", "vendor/revision"})
-
-		assertContains(t, stderr, "sync cannot push committed local changes for non-branch mirror vendor/revision")
-		assertContains(t, stderr, "braid sync --pull-only vendor/revision")
-	})
-}
-
 func TestSyncCommandRejectsDeletedSelectedMirrorPath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -939,14 +903,14 @@ func TestSyncCommandRejectsDeletedSelectedMirrorPath(t *testing.T) {
 	}{
 		{
 			name:      "directory",
-			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/basic"} },
+			addArgs:   func(upstream string) []string { return []string{"add", upstream, "vendor/basic", "--sync-push"} },
 			localPath: "vendor/basic",
 			remove:    "vendor/basic",
 		},
 		{
 			name: "single file",
 			addArgs: func(upstream string) []string {
-				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"}
+				return []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt", "--sync-push"}
 			},
 			localPath: "licenses/THIRD_PARTY.txt",
 			remove:    "licenses/THIRD_PARTY.txt",
@@ -982,7 +946,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.CommitAll(t, upstream, "base")
 		testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib=lib"})
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib=lib", "--sync-push"})
 		testutil.WriteFile(t, repo, "vendor/lib/component.txt", "local\n")
 		testutil.CommitAll(t, repo, "local subdir")
 		t.Setenv("GIT_EDITOR", writeEditor(t, "Sync subdir"))
@@ -1019,7 +983,7 @@ func TestSyncCommandRemotePathAwareClassification(t *testing.T) {
 		testutil.CommitAll(t, upstream, "base")
 		testutil.Git(t, upstream, "config", "receive.denyCurrentBranch", "updateInstead")
 		repo := initDownstream(t)
-		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
+		runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt", "--sync-push"})
 		testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "local license\n")
 		testutil.CommitAll(t, repo, "local license")
 		t.Setenv("GIT_EDITOR", writeEditor(t, "Sync license"))
@@ -1055,7 +1019,7 @@ func TestSyncCommandHydratesMissingRecordedRevision(t *testing.T) {
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	revision := testutil.CommitAll(t, upstream, "base")
 	repo := initDownstream(t)
-	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic", "--sync-push"})
 
 	parent := t.TempDir()
 	clone := filepath.Join(parent, "clone")
@@ -1079,7 +1043,9 @@ func TestSyncCommandReportsUnavailableRecordedRevisionAfterHydration(t *testing.
 	repo := initDownstream(t)
 	cfg := config.Empty()
 	bogusRevision := strings.Repeat("0", 40)
-	if err := cfg.AddSource(testSourceMirror("vendor/basic", "", upstream, "main", "", bogusRevision, false).Source); err != nil {
+	s := testSourceMirror("vendor/basic", "", upstream, "main", "", bogusRevision, false).Source
+	s.SyncPush = true
+	if err := cfg.AddSource(s); err != nil {
 		t.Fatalf("add mirror config: %v", err)
 	}
 	if err := cfg.WriteFile(filepath.Join(repo, config.FileName)); err != nil {

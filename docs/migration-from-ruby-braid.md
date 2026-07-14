@@ -102,9 +102,12 @@ Ruby Braid has no `sync` command. Current Go Braid adds:
 braid sync [selector...] [--pull-only] [--autostash] [--keep]
 ```
 
-The default `sync` workflow pushes committed local changes for branch-tracking
-sources and then pulls every mirror in each source to the new upstream revision.
-`--pull-only` skips the push phase and only pulls. With no selectors, `sync`
+The default `sync` workflow pushes committed local changes only for
+branch-tracking sources configured with `"sync_push": true`, then pulls every
+mirror in each selected source to the new upstream revision. Add a new opted-in
+source with `braid add <url> <path> --sync-push`. Sources with omitted or false
+`sync_push` are pull-only during sync, even when explicitly selected.
+`--pull-only` skips the push phase for every source. With no selectors, `sync`
 selects all branch and tag sources in lexicographic source-name order and skips
 revision-locked sources, matching no-selector `pull` selection. A selector may
 be `:source` or one of its mirror paths; aliases are deduplicated.
@@ -117,12 +120,14 @@ changes; the push phase still uses the mirror content recorded in downstream
 
 Migration impact:
 
-- Use `sync` for the common "push local mirror commits upstream, then pull the
-  downstream recorded revision" workflow.
+- Set `"sync_push": true` on branch sources that should participate in sync's
+  push phase; omission is pull-only and requires no config version upgrade.
+- Use `sync` for the common "push opted-in local mirror commits upstream, then
+  pull the downstream recorded revision" workflow.
 - Use `sync --pull-only` as a stricter, scoped pull workflow when you do not
   want any push attempt.
-- Do not expect `sync` to push tag-tracking or revision-locked sources with local changes unless
-  you use `braid push <path> --branch <branch>` explicitly.
+- Tag-tracking and revision-locked sources cannot enable `sync_push`; use
+  `braid push <path> --branch <branch>` explicitly.
 
 ### `push` is more explicit about committed changes and commit messages
 
@@ -334,6 +339,6 @@ Known output differences include:
    shared full-cache path.
 8. For push workflows, make sure local mirror edits are committed downstream
    before `braid push` or `braid sync`.
-9. Prefer `braid sync` for the push-then-pull workflow once the team has
-   tested it on the repository.
+9. Enable `sync_push` only for branch sources that should be pushed, then use
+   `braid sync` for the push-then-pull workflow.
 10. Optionally install Bash completion with `braid completion bash`.

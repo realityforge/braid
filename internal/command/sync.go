@@ -84,11 +84,17 @@ func (h SyncHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	var updateConflict bool
 	var pushedSources []string
 	if !inv.Sync.PullOnly {
-		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr); err != nil {
+		pushTargets := make([]syncTarget, 0, len(targets))
+		for _, target := range targets {
+			if target.Mirror.SyncPush {
+				pushTargets = append(pushTargets, target)
+			}
+		}
+		if err := h.hydrateMissingRecordedRevisions(ctx, git, cache, pushTargets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr); err != nil {
 			runErr = err
 		}
 		if runErr == nil {
-			plan, err := h.buildPushPlan(ctx, git, cache, targets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr)
+			plan, err := h.buildPushPlan(ctx, git, cache, pushTargets, inv.Sync.Keep, inv.Global.Verbose, progress, stderr)
 			if err != nil {
 				runErr = err
 			} else {
@@ -307,9 +313,6 @@ func (h SyncHandler) buildPushPlan(ctx context.Context, git PushGit, cache Cache
 		if !changed {
 			continue
 		}
-		if target.Mirror.Branch() == "" {
-			return syncPushPlan{}, syncNonBranchLocalChangeError(target.LocalPath)
-		}
 		actions = append(actions, syncPushAction{Target: target, BaseRevision: baseRevision})
 	}
 
@@ -440,10 +443,6 @@ func isMissingTreeItemError(err error) bool {
 
 func syncNotUpToDateError(localPath string) error {
 	return fmt.Errorf("sync cannot push %s because the upstream branch is not up to date; run braid pull %s, resolve conflicts if needed, commit, then rerun braid sync", localPath, localPath)
-}
-
-func syncNonBranchLocalChangeError(localPath string) error {
-	return fmt.Errorf("sync cannot push committed local changes for non-branch mirror %s; run braid push %s --branch <branch> or rerun braid sync --pull-only %s if you only intended to pull", localPath, localPath, localPath)
 }
 
 func syncMirrorPathDeletedError(localPath string) error {

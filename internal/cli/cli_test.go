@@ -17,7 +17,7 @@ func TestParseCommands(t *testing.T) {
 	}{
 		{
 			name: "add branch mirror",
-			args: []string{"--verbose", "--global-cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo=lib", "--branch", "main", "--no-commit"},
+			args: []string{"--verbose", "--global-cache-dir", ".cache", "add", "https://example.test/repo.git", "vendor/repo=lib", "--branch", "main", "--no-commit", "--sync-push"},
 			want: Invocation{
 				Global:  GlobalOptions{GlobalCacheDir: ".cache", GlobalCacheDirSet: true, Verbose: true},
 				Command: CommandAdd,
@@ -26,6 +26,7 @@ func TestParseCommands(t *testing.T) {
 					Mirrors:  []MirrorMapping{{LocalPath: "vendor/repo", UpstreamPath: "lib"}},
 					Branch:   "main",
 					NoCommit: true,
+					SyncPush: true,
 				},
 			},
 		},
@@ -188,6 +189,9 @@ func TestParseUsageErrors(t *testing.T) {
 		{name: "empty global cache dir", args: []string{"--global-cache-dir=", "version"}, want: "--global-cache-dir requires a non-empty value"},
 		{name: "existing source needs mirror", args: []string{"add", ":source"}, want: "add to an existing source requires at least one mirror"},
 		{name: "tag branch conflict", args: []string{"add", "url", "--tag", "v1", "--branch", "main"}, want: "add cannot combine --tag and --branch"},
+		{name: "sync push tag conflict", args: []string{"add", "url", "--sync-push", "--tag", "v1"}, want: "add cannot combine --sync-push and --tag"},
+		{name: "sync push revision conflict", args: []string{"add", "url", "--sync-push", "--revision", "abc"}, want: "add cannot combine --sync-push and --revision"},
+		{name: "existing source sync push", args: []string{"add", ":source", "vendor/new", "--sync-push"}, want: "add to an existing source cannot use --name, --branch, --tag, --revision, --partial-clone, or --sync-push"},
 		{name: "pull all strategy flag", args: []string{"pull", "--branch", "main"}, want: "pull without local_path cannot use --branch, --tag, or --revision"},
 		{name: "diff args require separator", args: []string{"diff", "--stat"}, want: "unknown flag for diff: --stat"},
 		{name: "sync unknown flag", args: []string{"sync", "--branch", "main"}, want: "unknown flag for sync: --branch"},
@@ -314,7 +318,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "  update") || strings.Contains(Usage(), "\n  up ") {
 		t.Fatalf("top-level usage exposes update aliases:\n%s", Usage())
 	}
-	if !strings.Contains(Usage(), "  sync      Push local mirror changes, then pull sources") {
+	if !strings.Contains(Usage(), "  sync      Push opted-in local changes, then pull sources") {
 		t.Fatalf("top-level usage missing sync command:\n%s", Usage())
 	}
 	if !strings.Contains(Usage(), "  completion") {
@@ -323,7 +327,7 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	if strings.Contains(Usage(), "__complete") {
 		t.Fatalf("top-level usage exposes hidden completion callback:\n%s", Usage())
 	}
-	if got, want := CommandUsage(CommandAdd), "usage: braid add <url|:source> [local_path[=upstream_path]...] [--name <name>] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--no-commit] [--partial-clone]\n"; got != want {
+	if got, want := CommandUsage(CommandAdd), "usage: braid add <url|:source> [local_path[=upstream_path]...] [--name <name>] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--no-commit] [--partial-clone] [--sync-push]\n"; got != want {
 		t.Fatalf("CommandUsage(add) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandPull), "usage: braid pull [local_path|:source] [--branch|-b <branch>] [--tag|-t <tag>] [--revision|-r <rev>] [--keep] [--no-commit]\n"; got != want {

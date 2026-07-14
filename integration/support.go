@@ -288,6 +288,7 @@ type configSource struct {
 	Tag          string            `json:"tag,omitempty"`
 	Revision     string            `json:"revision"`
 	PartialClone bool              `json:"partial_clone,omitempty"`
+	SyncPush     bool              `json:"sync_push,omitempty"`
 	Mirrors      map[string]string `json:"mirrors"`
 }
 
@@ -298,6 +299,7 @@ type configMirror struct {
 	Tag          string `json:"tag,omitempty"`
 	Revision     string `json:"revision"`
 	PartialClone bool   `json:"partial_clone,omitempty"`
+	SyncPush     bool   `json:"sync_push,omitempty"`
 }
 
 func expectedConfigRaw(t *testing.T, mirrors map[string]configMirror) string {
@@ -312,7 +314,7 @@ func expectedConfigRaw(t *testing.T, mirrors map[string]configMirror) string {
 	groups := map[string]string{}
 	for _, local := range keys {
 		m := mirrors[local]
-		key := strings.Join([]string{strings.TrimRight(m.URL, `/\`), m.Branch, m.Tag, m.Revision, strconv.FormatBool(m.PartialClone)}, "\x00")
+		key := strings.Join([]string{strings.TrimRight(m.URL, `/\`), m.Branch, m.Tag, m.Revision, strconv.FormatBool(m.PartialClone), strconv.FormatBool(m.SyncPush)}, "\x00")
 		name := groups[key]
 		if name == "" {
 			name = strings.TrimSuffix(path.Base(strings.ReplaceAll(strings.TrimRight(m.URL, `/\`), `\`, "/")), ".git")
@@ -321,7 +323,7 @@ func expectedConfigRaw(t *testing.T, mirrors map[string]configMirror) string {
 				name = fmt.Sprintf("%s-%d", name, used[name])
 			}
 			groups[key] = name
-			sources[name] = configSource{URL: strings.TrimRight(m.URL, `/\`), Branch: m.Branch, Tag: m.Tag, Revision: m.Revision, PartialClone: m.PartialClone, Mirrors: map[string]string{}}
+			sources[name] = configSource{URL: strings.TrimRight(m.URL, `/\`), Branch: m.Branch, Tag: m.Tag, Revision: m.Revision, PartialClone: m.PartialClone, SyncPush: m.SyncPush, Mirrors: map[string]string{}}
 		}
 		s := sources[name]
 		s.Mirrors[local] = m.Path

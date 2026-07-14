@@ -42,6 +42,7 @@ type Source struct {
 	Tracking     Tracking
 	Revision     string
 	PartialClone bool
+	SyncPush     bool
 	Mirrors      []Mirror
 }
 

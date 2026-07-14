@@ -60,6 +60,7 @@ type readSource struct {
 	Tag          string                     `json:"tag"`
 	Revision     string                     `json:"revision"`
 	PartialClone bool                       `json:"partial_clone"`
+	SyncPush     bool                       `json:"sync_push"`
 	Mirrors      map[string]json.RawMessage `json:"mirrors"`
 }
 type readMirrorV1 struct {
@@ -79,6 +80,7 @@ type writeSource struct {
 	Tag          string            `json:"tag,omitempty"`
 	Revision     string            `json:"revision"`
 	PartialClone bool              `json:"partial_clone,omitempty"`
+	SyncPush     bool              `json:"sync_push,omitempty"`
 	Mirrors      map[string]string `json:"mirrors"`
 }
 
@@ -146,7 +148,7 @@ func decodeSource(name string, rs readSource) (source.Source, error) {
 		}
 		mirrors = append(mirrors, source.Mirror{LocalPath: local, UpstreamPath: upstream})
 	}
-	return source.Source{Name: name, URL: source.CleanURL(rs.URL), Tracking: tracking, Revision: rs.Revision, PartialClone: rs.PartialClone, Mirrors: mirrors}, nil
+	return source.Source{Name: name, URL: source.CleanURL(rs.URL), Tracking: tracking, Revision: rs.Revision, PartialClone: rs.PartialClone, SyncPush: rs.SyncPush, Mirrors: mirrors}, nil
 }
 
 func (c Config) SourceNames() []string {
@@ -305,6 +307,9 @@ func validateSource(s source.Source) error {
 	if s.Tracking == nil {
 		return errors.New("missing tracking")
 	}
+	if s.SyncPush && s.Branch() == "" {
+		return errors.New("sync_push requires branch tracking")
+	}
 	if len(s.Mirrors) == 0 {
 		return errors.New("missing mirrors")
 	}
@@ -338,7 +343,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		for _, m := range s.SortedMirrors() {
 			mirrors[m.LocalPath] = m.UpstreamPath
 		}
-		ws := writeSource{URL: s.URL, Revision: s.Revision, PartialClone: s.PartialClone, Mirrors: mirrors}
+		ws := writeSource{URL: s.URL, Revision: s.Revision, PartialClone: s.PartialClone, SyncPush: s.SyncPush, Mirrors: mirrors}
 		switch t := s.Tracking.(type) {
 		case source.BranchTracking:
 			ws.Branch = t.Branch
