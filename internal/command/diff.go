@@ -33,35 +33,42 @@ func (h DiffHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err := validateConfigPaths(cfg); err != nil {
 		return err
 	}
-	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
-	if err != nil {
-		return err
-	}
 
+	var mirrors []source.SourceMirror
+	showHeaders := inv.Diff.LocalPath == ""
 	if inv.Diff.LocalPath != "" {
 		selection, err := resolveSourceSelection(repo, cfg, inv.Diff.LocalPath, true)
 		if err != nil {
 			return err
 		}
+		if inv.Diff.SyncPushOnly && !selection.Source.SyncPush {
+			return nil
+		}
 		for _, mirror := range selection.Mirrors {
-			if len(selection.Mirrors) > 1 {
-				if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing mirror %s\n=======================================================\n", mirror.LocalPath); err != nil {
-					return err
-				}
+			mirrors = append(mirrors, selection.Source.WithMirror(mirror))
+		}
+		showHeaders = len(mirrors) > 1
+	} else {
+		for _, mirror := range cfg.MirrorsSorted() {
+			if !inv.Diff.SyncPushOnly || mirror.SyncPush {
+				mirrors = append(mirrors, mirror)
 			}
-			if err := h.diffOne(ctx, git, processGit, cache, selection.Source.WithMirror(mirror), inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
+		}
+	}
+	if len(mirrors) == 0 {
+		return nil
+	}
+	cache, err := runtimeCacheForRepo(ctx, repo, inv.Global, inv.Global.Verbose, stderr)
+	if err != nil {
+		return err
+	}
+	for _, mirror := range mirrors {
+		if showHeaders {
+			if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing mirror %s\n=======================================================\n", mirror.LocalPath); err != nil {
 				return err
 			}
 		}
-		return nil
-	}
-
-	for _, m := range cfg.MirrorsSorted() {
-		localPath := m.LocalPath
-		if _, err := fmt.Fprintf(stdout, "=======================================================\nBraid: Diffing mirror %s\n=======================================================\n", localPath); err != nil {
-			return err
-		}
-		if err := h.diffOne(ctx, git, processGit, cache, m, inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
+		if err := h.diffOne(ctx, git, processGit, cache, mirror, inv.Diff, inv.Global.Verbose, progress, stdout, stderr); err != nil {
 			return err
 		}
 	}

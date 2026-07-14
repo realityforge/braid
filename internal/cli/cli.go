@@ -68,9 +68,10 @@ type RemoveOptions struct {
 }
 
 type DiffOptions struct {
-	LocalPath   string
-	Keep        bool
-	GitDiffArgs []string
+	LocalPath    string
+	Keep         bool
+	SyncPushOnly bool
+	GitDiffArgs  []string
 }
 
 type PushOptions struct {
@@ -423,6 +424,7 @@ func parseDiff(args []string, options *DiffOptions) error {
 		options.LocalPath = normalizeLocalPathArg(parsed.positionals[0])
 	}
 	options.Keep = parsed.has("--keep")
+	options.SyncPushOnly = parsed.has("--sync-push-only")
 	options.GitDiffArgs = parsed.passthrough
 	return nil
 }

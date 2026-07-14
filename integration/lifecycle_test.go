@@ -113,6 +113,41 @@ func TestExecutablePrimaryLifecycle(t *testing.T) {
 	assertClean(t, env, downstream)
 }
 
+func TestExecutableDiffSyncPushOnly(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstreamEnabled := filepath.Join(root, "upstream-enabled")
+	initRepo(t, env, upstreamEnabled)
+	writeFile(t, upstreamEnabled, "README.md", "enabled base\n")
+	commitAll(t, env, upstreamEnabled, "enabled")
+	upstreamDisabled := filepath.Join(root, "upstream-disabled")
+	initRepo(t, env, upstreamDisabled)
+	writeFile(t, upstreamDisabled, "README.md", "disabled base\n")
+	commitAll(t, env, upstreamDisabled, "disabled")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "downstream")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamEnabled, "vendor/enabled", "--sync-push"), 0, "", "")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstreamDisabled, "vendor/disabled"), 0, "", "")
+	writeFile(t, downstream, "vendor/enabled/README.md", "enabled changed\n")
+	writeFile(t, downstream, "vendor/disabled/README.md", "disabled changed\n")
+
+	filtered := runBraid(t, env, downstream, braid, "diff", "--sync-push-only")
+	assertExit(t, filtered, 0)
+	assertEmpty(t, "filtered diff stderr", filtered.stderr)
+	assertContains(t, filtered.stdout, "Braid: Diffing mirror vendor/enabled")
+	assertContains(t, filtered.stdout, "enabled changed")
+	assertNotContains(t, filtered.stdout, "vendor/disabled")
+	assertNotContains(t, filtered.stdout, "disabled changed")
+
+	skipped := runBraid(t, env, downstream, braid, "diff", "vendor/disabled", "--sync-push-only")
+	assertResult(t, skipped, 0, "", "")
+}
+
 func TestUpgradeConfigCommitAndNoCommit(t *testing.T) {
 	for _, noCommit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "commit", true: "no-commit"}[noCommit], func(t *testing.T) {

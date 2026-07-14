@@ -300,6 +300,7 @@ Show local changes as a Git diff:
 
 ```bash
 braid diff
+braid diff --sync-push-only
 braid diff vendor/rails
 braid diff :rails
 braid diff vendor/rails -- --stat
@@ -308,6 +309,11 @@ braid diff vendor/rails -- --cached
 
 A mirror-path selector diffs only that local mirror. A `:source` selector diffs
 every mirror belonging to the source.
+
+`--sync-push-only` limits the command to sources configured with
+`"sync_push": true`. Ineligible sources are skipped quietly, including when
+explicitly selected. The option filters sources only; each selected mirror
+retains the normal `braid diff` comparison behavior.
 
 Arguments after `--` are passed to `git diff`. This is useful for generating
 patches, limiting output, or checking staged changes only.
@@ -663,7 +669,7 @@ includes it.
 | --- | --- |
 | `add [--no-commit]` | Add a source with mirrors, or add mirrors to an existing `:source`. |
 | `status` | Show whether mirrors have remote, local, or removal changes. |
-| `diff` | Show local mirror changes, with Git diff arguments after `--`. |
+| `diff [--sync-push-only]` | Show local mirror changes, optionally limited to sources that participate in sync pushes, with Git diff arguments after `--`. |
 | `pull [--no-commit]` | Pull one source atomically, or every eligible source. |
 | `push` | Push a source's committed mirror changes upstream as one commit. |
 | `sync [selector...] [--pull-only] [--autostash] [--keep]` | Push then pull selected sources. |
