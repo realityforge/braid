@@ -76,7 +76,7 @@ func (h AddHandler) add(ctx context.Context, repo RepoContext, git AddGit, inv c
 		} else if addOptions.Tag != "" {
 			tracking = source.TagTracking{Tag: addOptions.Tag}
 		}
-		s = source.Source{Name: name, URL: source.CleanURL(addOptions.URL), Tracking: tracking, Revision: addOptions.Revision, PartialClone: addOptions.PartialClone}
+		s = source.Source{Name: name, URL: source.CleanURL(addOptions.URL), Tracking: tracking, Revision: addOptions.Revision, PartialClone: addOptions.PartialClone, SyncPush: addOptions.SyncPush}
 	}
 	requested := addOptions.Mirrors
 	if len(requested) == 0 {

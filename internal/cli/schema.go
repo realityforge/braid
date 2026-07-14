@@ -143,6 +143,7 @@ var commandSpecs = []CommandSpec{
 			{Long: "--revision", Short: "-r", ValueName: "revision", UsageValue: "rev", Availability: Availability{ForbiddenPrefix: ":"}},
 			{Long: "--no-commit"},
 			{Long: "--partial-clone", Availability: Availability{ForbiddenPrefix: ":"}},
+			{Long: "--sync-push", Availability: Availability{ForbiddenPrefix: ":"}},
 		},
 		Positionals: []PositionalSpec{
 			{Name: "url|:source", Usage: "<url|:source>", Required: true, Completion: CompletionFree},
@@ -151,9 +152,11 @@ var commandSpecs = []CommandSpec{
 		Conflicts: []ConflictSpec{
 			{Options: []string{"--tag", "--branch"}, Error: "add cannot combine --tag and --branch"},
 			{Options: []string{"--tag", "--revision"}, Error: "add cannot combine --tag and --revision"},
+			{Options: []string{"--sync-push", "--tag"}, Error: "add cannot combine --sync-push and --tag"},
+			{Options: []string{"--sync-push", "--revision"}, Error: "add cannot combine --sync-push and --revision"},
 		},
 		ConditionalPositionals: []ConditionalPositionalsSpec{{Index: 0, Prefix: ":", Minimum: 2, Error: "add to an existing source requires at least one mirror"}},
-		AvailabilityError:      "add to an existing source cannot use --name, --branch, --tag, --revision, or --partial-clone",
+		AvailabilityError:      "add to an existing source cannot use --name, --branch, --tag, --revision, --partial-clone, or --sync-push",
 	},
 	{
 		Command: CommandPull, Name: "pull", Aliases: []string{"update", "up"}, Summary: "Pull one source or every eligible source",
@@ -188,7 +191,7 @@ var commandSpecs = []CommandSpec{
 		Positionals: []PositionalSpec{{Name: "local_path|:source", Usage: "<local_path|:source>", Required: true, Completion: CompletionMirror}},
 	},
 	{
-		Command: CommandSync, Name: "sync", Summary: "Push local mirror changes, then pull sources",
+		Command: CommandSync, Name: "sync", Summary: "Push opted-in local changes, then pull sources",
 		Options:     []OptionSpec{{Long: "--pull-only"}, {Long: "--autostash"}, {Long: "--keep"}},
 		Positionals: []PositionalSpec{{Name: "local_path|:source", Usage: "[local_path|:source ...]", Repeatable: true, Completion: CompletionMirror}},
 	},

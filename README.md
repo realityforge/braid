@@ -162,7 +162,7 @@ Start anywhere inside an existing Git repository. Add a named upstream source
 and one local mirror:
 
 ```bash
-braid add <upstream-git-url> lib/grit
+braid add <upstream-git-url> lib/grit --sync-push
 ```
 
 Braid copies the upstream content into `lib/grit`, records the source and mirror
@@ -174,7 +174,7 @@ Use `--no-commit` when the mirror add belongs in the same commit as other
 changes:
 
 ```bash
-braid add <upstream-git-url> lib/grit --no-commit
+braid add <upstream-git-url> lib/grit --sync-push --no-commit
 git commit
 ```
 
@@ -200,17 +200,18 @@ braid push lib/grit
 braid push lib/grit --branch myproject_customizations
 ```
 
-For the common branch-mirror workflow, `sync` combines the tracked-branch push
-and follow-up pull:
+Because the source was added with `--sync-push`, `sync` combines the
+tracked-branch push and follow-up pull:
 
 ```bash
 braid sync lib/grit
 ```
 
-It pushes committed local mirror changes when the branch is still up to date,
-then pulls the selected mirror so `.braids.json` records the new upstream
-revision. Use the explicit `push` and `pull` commands when you need to push to
-a different branch or handle each step separately.
+For sources with `"sync_push": true`, it pushes committed local mirror changes
+when the branch is still up to date. It then pulls every selected source,
+including sources that are not opted into sync pushes, so `.braids.json`
+records the new upstream revision. Use the explicit `push` and `pull` commands
+when you need to push to a different branch or handle each step separately.
 
 ```bash
 braid pull lib/grit
@@ -239,6 +240,17 @@ Track a specific branch or tag:
 braid add https://github.com/rails/rails.git vendor/rails --branch 5-0-stable
 braid add https://github.com/rails/rails.git vendor/rails-7 --tag v7.0.0
 ```
+
+Opt a branch-tracking source into the push phase of `braid sync`:
+
+```bash
+braid add https://github.com/rails/rails.git vendor/rails --sync-push
+```
+
+Without `--sync-push`, `braid sync` pulls the source but does not push it.
+`--sync-push` cannot be combined with `--tag` or `--revision`, and cannot be
+used when adding mirrors to an existing `:source`. Explicit `braid push` is
+unaffected by this setting.
 
 Lock a source to an explicit revision when you do not want ordinary
 `braid pull` runs to move it:
@@ -368,7 +380,8 @@ mirror path and `.braids.json` from `HEAD`, then remove `.git/MERGE_MSG`.
 
 ### Syncing Mirrors
 
-`braid sync` runs the safe push-then-pull workflow for branch-tracking sources:
+`braid sync` pulls selected sources and first pushes committed changes for
+branch-tracking sources that have opted in with `sync_push`:
 
 ```bash
 braid sync vendor/rails
@@ -426,12 +439,12 @@ index state. If automatic restoration succeeds but the saved stash cannot be
 dropped safely, Braid leaves your restored work in place, keeps the stash
 recoverable, and tells you to inspect `git stash list` before manual cleanup.
 
-The default push phase only auto-pushes branch-tracking sources with committed
-local mirror changes. Branch sources without committed local changes are skipped
-quietly and still update normally, even if upstream has moved. Selected tag or
-revision-locked sources with committed local changes stop the sync because `sync` has
-no `--branch`; run `braid push <path> --branch <branch>` for that explicit push
-intent, or rerun with `--pull-only` if you only intended to pull.
+The push phase only considers branch-tracking sources with `"sync_push": true`.
+Sources with omitted or false `sync_push` are skipped quietly during that phase
+and still update normally, even when explicitly selected. Opted-in branch
+sources without committed local changes are also skipped quietly. Tag and
+revision-locked sources cannot enable `sync_push`; use
+`braid push <path> --branch <branch>` for explicit push intent.
 
 If a changed branch source's upstream branch moved since the recorded revision,
 `sync` fails before any mirror is pushed. Pull first, resolve conflicts if
@@ -623,6 +636,7 @@ Config version 2 records named sources and their mirrors:
       "url": "https://github.com/replicant4j/replicant.git",
       "branch": "master",
       "revision": "18480c9dc34f948218a0c15370712d27b2626fa0",
+      "sync_push": true,
       "mirrors": {
         "licenses/replicant-LICENSE.txt": "LICENSE.txt",
         "vendor/libs/replicant": ""
@@ -635,6 +649,8 @@ Config version 2 records named sources and their mirrors:
 Braid validates configured mirror paths for cross-platform safety. It does not
 preflight every file inside the selected upstream tree; if an upstream filename
 cannot be materialized on the current OS, Git reports the checkout failure.
+The optional `sync_push` field defaults to false and is only valid for
+branch-tracking sources.
 
 When you vendor only a subdirectory or single file, remember that license files
 outside the mirrored path are not copied automatically. If the upstream license

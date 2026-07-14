@@ -80,6 +80,7 @@ func TestCompleteCommandOptions(t *testing.T) {
 
 	candidates = completeCandidates(t, dir, "add", "")
 	assertCandidate(t, candidates, "--no-commit")
+	assertCandidate(t, candidates, "--sync-push")
 	candidates = completeCandidates(t, dir, "add", ":replicant", "--")
 	assertCandidate(t, candidates, "--no-commit")
 	assertNoCandidate(t, candidates, "--name")
@@ -87,6 +88,7 @@ func TestCompleteCommandOptions(t *testing.T) {
 	assertNoCandidate(t, candidates, "--tag")
 	assertNoCandidate(t, candidates, "--revision")
 	assertNoCandidate(t, candidates, "--partial-clone")
+	assertNoCandidate(t, candidates, "--sync-push")
 
 	candidates = completeCandidates(t, dir, "push", "")
 	assertCandidate(t, candidates, "--message")

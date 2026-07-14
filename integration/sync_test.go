@@ -21,10 +21,10 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	initRepo(t, env, downstream)
 	writeFile(t, downstream, "README.md", "downstream\n")
 	commitAll(t, env, downstream, "seed downstream")
-	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic")
+	add := runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/basic", "--sync-push")
 	assertResult(t, add, 0, "", "")
 	assertConfigRaw(t, downstream, map[string]configMirror{
-		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision},
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: baseRevision, SyncPush: true},
 	})
 
 	writeFile(t, downstream, "vendor/basic/README.md", "local\n")
@@ -46,7 +46,7 @@ func TestExecutableSyncPushesThenUpdates(t *testing.T) {
 	pushedRevision := gitOutput(t, env, upstream, "rev-parse", "HEAD")
 	assertLatestCommit(t, env, upstream, defaultName+" <"+defaultEmail+">", "Executable sync")
 	assertConfigRaw(t, downstream, map[string]configMirror{
-		"vendor/basic": {URL: upstream, Branch: "main", Revision: pushedRevision},
+		"vendor/basic": {URL: upstream, Branch: "main", Revision: pushedRevision, SyncPush: true},
 	})
 	assertLatestCommit(t, env, downstream, defaultName+" <"+defaultEmail+">", "Braid: Update source 'upstream' to '"+shortRevision(pushedRevision)+"'")
 	assertNoRemote(t, env, downstream, remoteName("main", "upstream"))

@@ -152,14 +152,22 @@ func commandCases(spec cli.CommandSpec, commandName string) []CompletionCase {
 		if len(conflict.Options) < 2 {
 			continue
 		}
-		first, second := conflict.Options[0], conflict.Options[1]
-		words := []string{commandName, first}
-		if option, ok := spec.Option(first); ok && option.TakesValue() {
-			words = append(words, "value")
+		for _, selected := range conflict.Options {
+			words := []string{commandName, selected}
+			if option, ok := spec.Option(selected); ok && option.TakesValue() {
+				words = append(words, "value")
+			}
+			words = append(words, "--")
+			var unwanted []string
+			for _, conflicting := range conflict.Options {
+				if conflicting == selected {
+					continue
+				}
+				option, _ := spec.Option(conflicting)
+				unwanted = append(unwanted, optionNames(option)...)
+			}
+			cases = append(cases, CompletionCase{Name: commandName + " conflict " + selected + " in " + strings.Join(conflict.Options, " "), Words: words, Unwanted: unwanted})
 		}
-		words = append(words, "--")
-		option, _ := spec.Option(second)
-		cases = append(cases, CompletionCase{Name: commandName + " conflict " + strings.Join(conflict.Options, " "), Words: words, Unwanted: optionNames(option)})
 	}
 	return cases
 }

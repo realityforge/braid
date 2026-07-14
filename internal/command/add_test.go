@@ -36,6 +36,19 @@ func TestAddCommandDefaultBranchCommitsAndRemovesRemote(t *testing.T) {
 	assertClean(t, repo)
 }
 
+func TestAddCommandEnablesSyncPush(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "upstream\n")
+	testutil.CommitAll(t, upstream, "upstream")
+	repo := initDownstream(t)
+
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic", "--sync-push"})
+
+	if m := loadMirror(t, repo, "vendor/basic"); !m.SyncPush {
+		t.Fatalf("mirror = %#v, want sync push enabled", m)
+	}
+}
+
 func TestAddCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "hello from upstream\n")

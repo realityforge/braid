@@ -8,13 +8,13 @@ import (
 )
 
 func TestParseAndMarshalCanonicalV2(t *testing.T) {
-	input := []byte(`{"config_version":2,"sources":{"replicant":{"url":"https://example.test/replicant.git/","branch":"main","revision":"abc","mirrors":{"vendor/replicant":"","licenses/LICENSE":"LICENSE"}}}}`)
+	input := []byte(`{"config_version":2,"sources":{"replicant":{"url":"https://example.test/replicant.git/","branch":"main","revision":"abc","sync_push":true,"mirrors":{"vendor/replicant":"","licenses/LICENSE":"LICENSE"}}}}`)
 	cfg, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s, ok := cfg.SourceByName("replicant")
-	if !ok || s.URL != "https://example.test/replicant.git" || s.Branch() != "main" {
+	if !ok || s.URL != "https://example.test/replicant.git" || s.Branch() != "main" || !s.SyncPush {
 		t.Fatalf("source=%#v", s)
 	}
 	data, err := cfg.MarshalJSON()
@@ -28,6 +28,7 @@ func TestParseAndMarshalCanonicalV2(t *testing.T) {
       "url": "https://example.test/replicant.git",
       "branch": "main",
       "revision": "abc",
+      "sync_push": true,
       "mirrors": {
         "licenses/LICENSE": "LICENSE",
         "vendor/replicant": ""
@@ -38,6 +39,23 @@ func TestParseAndMarshalCanonicalV2(t *testing.T) {
 `
 	if string(data) != want {
 		t.Fatalf("got\n%s\nwant\n%s", data, want)
+	}
+}
+
+func TestSyncPushDefaultsFalseAndExplicitFalseIsOmitted(t *testing.T) {
+	cfg, err := Parse([]byte(`{"config_version":2,"sources":{"x":{"url":"u","branch":"main","revision":"r","sync_push":false,"mirrors":{"x":""}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Sources["x"].SyncPush {
+		t.Fatal("sync push enabled, want disabled")
+	}
+	data, err := cfg.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sync_push") {
+		t.Fatalf("config contains omitted false sync_push:\n%s", data)
 	}
 }
 
@@ -54,6 +72,8 @@ func TestParseRejectsInvalidV2(t *testing.T) {
 		{"trailing local separator", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x/":""}}}}`, "empty path element"},
 		{"trailing upstream separator", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"x":"upstream/"}}}}`, "empty path element"},
 		{"tracking conflict", `{"config_version":2,"sources":{"x":{"url":"u","branch":"a","tag":"b","revision":"r","mirrors":{"x":""}}}}`, "both branch and tag"},
+		{"tag sync push", `{"config_version":2,"sources":{"x":{"url":"u","tag":"v1","revision":"r","sync_push":true,"mirrors":{"x":""}}}}`, "sync_push requires branch tracking"},
+		{"revision sync push", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","sync_push":true,"mirrors":{"x":""}}}}`, "sync_push requires branch tracking"},
 		{"overlap", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"a":"","a/b":"x"}}}}`, "overlap"},
 		{"case-fold overlap", `{"config_version":2,"sources":{"x":{"url":"u","revision":"r","mirrors":{"Vendor/Lib":"","vendor/lib/LICENSE":"LICENSE"}}}}`, "case-fold"},
 		{"trailing JSON", `{"config_version":2,"sources":{}} {}`, "unexpected data"},

@@ -42,6 +42,7 @@ type AddOptions struct {
 	Revision       string
 	NoCommit       bool
 	PartialClone   bool
+	SyncPush       bool
 }
 
 type MirrorMapping struct {
@@ -354,6 +355,7 @@ func parseAdd(args []string, options *AddOptions) error {
 	options.Revision = parsed.value("--revision")
 	options.NoCommit = parsed.has("--no-commit")
 	options.PartialClone = parsed.has("--partial-clone")
+	options.SyncPush = parsed.has("--sync-push")
 	if strings.HasPrefix(positionals[0], ":") {
 		options.ExistingSource = strings.TrimPrefix(positionals[0], ":")
 		if options.ExistingSource == "" {
