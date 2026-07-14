@@ -46,6 +46,11 @@ func TestExecutableBashCompletion(t *testing.T) {
 
 	noRepoMirrors := completeExecutable(t, env, root, braid, "status", "")
 	assertCompletionCandidate(t, noRepoMirrors, "help")
+
+	diffOptions := completeExecutable(t, env, root, braid, "diff", "")
+	assertCompletionCandidate(t, diffOptions, "--sync-push-only")
+	diffOptionsAfterSelector := completeExecutable(t, env, root, braid, "diff", "mirror", "")
+	assertCompletionCandidate(t, diffOptionsAfterSelector, "--sync-push-only")
 }
 
 func TestExecutableBashCompletionCoversEveryCommandAndOptionPosition(t *testing.T) {

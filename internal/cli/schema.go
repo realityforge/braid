@@ -181,7 +181,7 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Command: CommandDiff, Name: "diff", Summary: "Show local mirror changes",
-		Options:     []OptionSpec{{Long: "--keep"}},
+		Options:     []OptionSpec{{Long: "--keep"}, {Long: "--sync-push-only"}},
 		Positionals: []PositionalSpec{{Name: "local_path|:source", Usage: "[local_path|:source]", Completion: CompletionMirror}},
 		Passthrough: &PassthroughSpec{Usage: "[-- <git_diff_arg>...]"},
 	},

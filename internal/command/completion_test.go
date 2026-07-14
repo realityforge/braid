@@ -98,6 +98,11 @@ func TestCompleteCommandOptions(t *testing.T) {
 	candidates = completeCandidates(t, dir, "remove", "")
 	assertCandidate(t, candidates, "--no-commit")
 
+	candidates = completeCandidates(t, dir, "diff", "")
+	assertCandidate(t, candidates, "--sync-push-only")
+	candidates = completeCandidates(t, dir, "diff", "mirror", "")
+	assertCandidate(t, candidates, "--sync-push-only")
+
 	candidates = completeCandidates(t, dir, "pull", "--no-commit", "--")
 	assertNoCandidate(t, candidates, "--no-commit")
 

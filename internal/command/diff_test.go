@@ -84,6 +84,48 @@ func TestDiffCommandAllMirrors(t *testing.T) {
 	assertContains(t, out, "two changed")
 }
 
+func TestDiffCommandSyncPushOnlyFiltersSources(t *testing.T) {
+	upstreamEnabled := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamEnabled, "README.md", "enabled base\n")
+	testutil.CommitAll(t, upstreamEnabled, "enabled")
+
+	upstreamDisabled := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstreamDisabled, "README.md", "disabled base\n")
+	testutil.CommitAll(t, upstreamDisabled, "disabled")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstreamEnabled, "--name", "enabled", "vendor/enabled-a", "vendor/enabled-b", "--sync-push"})
+	runCommandOK(t, repo, []string{"add", upstreamDisabled, "--name", "disabled", "vendor/disabled"})
+	testutil.WriteFile(t, repo, "vendor/enabled-a/README.md", "enabled a changed\n")
+	testutil.WriteFile(t, repo, "vendor/enabled-b/README.md", "enabled b changed\n")
+	testutil.WriteFile(t, repo, "vendor/disabled/README.md", "disabled changed\n")
+
+	out := runCommandOK(t, repo, []string{"diff", "--sync-push-only"})
+	assertContains(t, out, "Braid: Diffing mirror vendor/enabled-a")
+	assertContains(t, out, "Braid: Diffing mirror vendor/enabled-b")
+	assertContains(t, out, "enabled a changed")
+	assertContains(t, out, "enabled b changed")
+	assertNotContains(t, out, "vendor/disabled")
+	assertNotContains(t, out, "disabled changed")
+
+	sourceOut := runCommandOK(t, repo, []string{"diff", ":enabled", "--sync-push-only"})
+	assertContains(t, sourceOut, "Braid: Diffing mirror vendor/enabled-a")
+	assertContains(t, sourceOut, "Braid: Diffing mirror vendor/enabled-b")
+
+	disabledOut, disabledErr := runCommandOKWithOutput(t, repo, []string{"diff", "vendor/disabled", "--sync-push-only"})
+	if disabledOut != "" || disabledErr != "" {
+		t.Fatalf("disabled source output = (%q, %q), want empty", disabledOut, disabledErr)
+	}
+
+	disabledOnlyRepo := initDownstream(t)
+	runCommandOK(t, disabledOnlyRepo, []string{"add", upstreamDisabled, "vendor/disabled"})
+	testutil.WriteFile(t, disabledOnlyRepo, "vendor/disabled/README.md", "disabled changed\n")
+	disabledOut, disabledErr = runCommandOKWithOutput(t, disabledOnlyRepo, []string{"diff", "--sync-push-only"})
+	if disabledOut != "" || disabledErr != "" {
+		t.Fatalf("no eligible sources output = (%q, %q), want empty", disabledOut, disabledErr)
+	}
+}
+
 func TestDiffCommandMirrorVariants(t *testing.T) {
 	tests := []struct {
 		name      string

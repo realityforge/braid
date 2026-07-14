@@ -72,12 +72,17 @@ func TestParseCommands(t *testing.T) {
 		},
 		{
 			name: "diff passthrough",
-			args: []string{"--no-cache", "--quiet", "diff", "vendor/repo", "--", "--stat", "weird;path"},
+			args: []string{"--no-cache", "--quiet", "diff", "vendor/repo", "--sync-push-only", "--", "--stat", "weird;path"},
 			want: Invocation{
 				Global:  GlobalOptions{NoCache: true, Quiet: true},
 				Command: CommandDiff,
-				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--stat", "weird;path"}},
+				Diff:    DiffOptions{LocalPath: "vendor/repo", SyncPushOnly: true, GitDiffArgs: []string{"--stat", "weird;path"}},
 			},
+		},
+		{
+			name: "diff sync push only before selector",
+			args: []string{"diff", "--sync-push-only", "vendor/repo"},
+			want: Invocation{Command: CommandDiff, Diff: DiffOptions{LocalPath: "vendor/repo", SyncPushOnly: true}},
 		},
 		{
 			name: "diff verbose passthrough",
@@ -85,6 +90,14 @@ func TestParseCommands(t *testing.T) {
 			want: Invocation{
 				Command: CommandDiff,
 				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--verbose"}},
+			},
+		},
+		{
+			name: "diff sync push only text after separator is passthrough",
+			args: []string{"diff", "vendor/repo", "--", "--sync-push-only"},
+			want: Invocation{
+				Command: CommandDiff,
+				Diff:    DiffOptions{LocalPath: "vendor/repo", GitDiffArgs: []string{"--sync-push-only"}},
 			},
 		},
 		{
@@ -335,6 +348,9 @@ func TestUsageDocumentsVerboseAsGlobalOnly(t *testing.T) {
 	}
 	if got, want := CommandUsage(CommandRemove), "usage: braid remove <local_path|:source> [--keep] [--no-commit]\n"; got != want {
 		t.Fatalf("CommandUsage(remove) = %q, want %q", got, want)
+	}
+	if got, want := CommandUsage(CommandDiff), "usage: braid diff [local_path|:source] [--keep] [--sync-push-only] [-- <git_diff_arg>...]\n"; got != want {
+		t.Fatalf("CommandUsage(diff) = %q, want %q", got, want)
 	}
 	if got, want := CommandUsage(CommandPush), "usage: braid push <local_path|:source> [--branch|-b <branch>] [--message|-m <message>] [--keep]\n"; got != want {
 		t.Fatalf("CommandUsage(push) = %q, want %q", got, want)
