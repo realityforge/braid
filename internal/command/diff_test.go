@@ -10,33 +10,73 @@ import (
 	"braid/internal/testutil"
 )
 
-func TestDiffCommandShowsStagedUnstagedReverseAndPathLimited(t *testing.T) {
+func TestDiffCommandEndpointModesReverseAndPathLimited(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "a.txt", "base a\n")
 	testutil.WriteFile(t, upstream, "b.txt", "base b\n")
+	testutil.WriteFile(t, upstream, "c.txt", "base c\n")
 	testutil.CommitAll(t, upstream, "upstream")
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
 
-	testutil.WriteFile(t, repo, "vendor/basic/a.txt", "staged a\n")
+	testutil.WriteFile(t, repo, "vendor/basic/a.txt", "committed a\n")
 	testutil.Git(t, repo, "add", "vendor/basic/a.txt")
-	testutil.WriteFile(t, repo, "vendor/basic/b.txt", "unstaged b\n")
+	testutil.Git(t, repo, "commit", "-m", "committed mirror change")
+	testutil.WriteFile(t, repo, "vendor/basic/b.txt", "staged b\n")
+	testutil.Git(t, repo, "add", "vendor/basic/b.txt")
+	testutil.WriteFile(t, repo, "vendor/basic/c.txt", "unstaged c\n")
 
 	allDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic"})
 	assertContains(t, allDiff, "diff --git a/a.txt b/a.txt")
 	assertContains(t, allDiff, "diff --git a/b.txt b/b.txt")
+	assertContains(t, allDiff, "diff --git a/c.txt b/c.txt")
+
+	headDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--head"})
+	assertContains(t, headDiff, "diff --git a/a.txt b/a.txt")
+	assertNotContains(t, headDiff, "diff --git a/b.txt b/b.txt")
+	assertNotContains(t, headDiff, "diff --git a/c.txt b/c.txt")
+
+	rawHeadDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "HEAD"})
+	if rawHeadDiff != headDiff {
+		t.Fatalf("raw HEAD diff differs from --head diff:\n--head:\n%s\nraw HEAD:\n%s", headDiff, rawHeadDiff)
+	}
+
+	indexDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--index"})
+	assertContains(t, indexDiff, "diff --git a/a.txt b/a.txt")
+	assertContains(t, indexDiff, "diff --git a/b.txt b/b.txt")
+	assertNotContains(t, indexDiff, "diff --git a/c.txt b/c.txt")
 
 	cachedDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "--cached"})
-	assertContains(t, cachedDiff, "diff --git a/a.txt b/a.txt")
-	assertNotContains(t, cachedDiff, "diff --git a/b.txt b/b.txt")
+	if cachedDiff != indexDiff {
+		t.Fatalf("raw --cached diff differs from --index diff:\n--index:\n%s\nraw --cached:\n%s", indexDiff, cachedDiff)
+	}
 
 	reverseDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "-R", "--cached"})
 	assertContains(t, reverseDiff, "diff --git b/a.txt a/a.txt")
 
-	limitedDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "vendor/basic/b.txt"})
-	assertContains(t, limitedDiff, "diff --git a/b.txt b/b.txt")
+	limitedDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--", "vendor/basic/c.txt"})
+	assertContains(t, limitedDiff, "diff --git a/c.txt b/c.txt")
 	assertNotContains(t, limitedDiff, "diff --git a/a.txt b/a.txt")
+	assertNotContains(t, limitedDiff, "diff --git a/b.txt b/b.txt")
+
+	limitedHeadDiff := runCommandOK(t, repo, []string{"diff", "vendor/basic", "--head", "--", "--stat"})
+	assertContains(t, limitedHeadDiff, "a.txt")
+	assertNotContains(t, limitedHeadDiff, "b.txt")
+	assertNotContains(t, limitedHeadDiff, "c.txt")
+}
+
+func TestDiffCommandHeadRequiresDownstreamCommit(t *testing.T) {
+	repo := testutil.InitRepo(t)
+	testutil.WriteFile(t, repo, ".braids.json", "{\"config_version\":2,\"sources\":{}}\n")
+
+	stderr := runCommandError(t, repo, []string{"diff", "--head"})
+	assertContains(t, stderr, "diff --head requires a downstream HEAD commit")
+
+	indexOut, indexErr := runCommandOKWithOutput(t, repo, []string{"diff", "--index"})
+	if indexOut != "" || indexErr != "" {
+		t.Fatalf("unborn index diff output = (%q, %q), want empty", indexOut, indexErr)
+	}
 }
 
 func TestDiffCommandFromSubdirectoryPreservesRawPassthroughPathspecs(t *testing.T) {
@@ -111,6 +151,12 @@ func TestDiffCommandSyncPushOnlyFiltersSources(t *testing.T) {
 	sourceOut := runCommandOK(t, repo, []string{"diff", ":enabled", "--sync-push-only"})
 	assertContains(t, sourceOut, "Braid: Diffing mirror vendor/enabled-a")
 	assertContains(t, sourceOut, "Braid: Diffing mirror vendor/enabled-b")
+	testutil.CommitAll(t, repo, "commit filtered changes")
+	headOut := runCommandOK(t, repo, []string{"diff", "--sync-push-only", "--head"})
+	assertContains(t, headOut, "enabled a changed")
+	assertContains(t, headOut, "enabled b changed")
+	assertNotContains(t, headOut, "vendor/disabled")
+	assertNotContains(t, headOut, "disabled changed")
 
 	disabledOut, disabledErr := runCommandOKWithOutput(t, repo, []string{"diff", "vendor/disabled", "--sync-push-only"})
 	if disabledOut != "" || disabledErr != "" {
@@ -211,11 +257,19 @@ func TestDiffCommandSingleFilePrefixes(t *testing.T) {
 
 	repo := initDownstream(t)
 	runCommandOK(t, repo, []string{"add", upstream, "licenses/THIRD_PARTY.txt=LICENSE.txt"})
-	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "changed license\n")
+	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "committed license\n")
+	testutil.Git(t, repo, "add", "licenses/THIRD_PARTY.txt")
+	testutil.Git(t, repo, "commit", "-m", "commit license change")
 
-	out := runCommandOK(t, repo, []string{"diff", "licenses/THIRD_PARTY.txt"})
-	assertContains(t, out, "diff --git a/LICENSE.txt b/THIRD_PARTY.txt")
-	assertContains(t, out, "changed license")
+	headOut := runCommandOK(t, repo, []string{"diff", "licenses/THIRD_PARTY.txt", "--head"})
+	assertContains(t, headOut, "diff --git a/LICENSE.txt b/THIRD_PARTY.txt")
+	assertContains(t, headOut, "committed license")
+
+	testutil.WriteFile(t, repo, "licenses/THIRD_PARTY.txt", "staged license\n")
+	testutil.Git(t, repo, "add", "licenses/THIRD_PARTY.txt")
+	indexOut := runCommandOK(t, repo, []string{"diff", "licenses/THIRD_PARTY.txt", "--index"})
+	assertContains(t, indexOut, "diff --git a/LICENSE.txt b/THIRD_PARTY.txt")
+	assertContains(t, indexOut, "staged license")
 }
 
 func TestDiffCommandSingleFileFromSubdirectoryUsesTopAnchoredLimiter(t *testing.T) {

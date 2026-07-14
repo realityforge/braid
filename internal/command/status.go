@@ -178,7 +178,7 @@ func trackingLabel(m source.SourceMirror) string {
 }
 
 func locallyModified(ctx context.Context, git StatusGit, m source.SourceMirror) (bool, error) {
-	args, err := buildDiffArgs(ctx, git, m, nil)
+	args, err := buildDiffArgs(ctx, git, m, cli.DiffOptions{})
 	if err != nil {
 		return false, err
 	}

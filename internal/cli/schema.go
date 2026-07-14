@@ -181,9 +181,10 @@ var commandSpecs = []CommandSpec{
 	},
 	{
 		Command: CommandDiff, Name: "diff", Summary: "Show local mirror changes",
-		Options:     []OptionSpec{{Long: "--keep"}, {Long: "--sync-push-only"}},
+		Options:     []OptionSpec{{Long: "--keep"}, {Long: "--sync-push-only"}, {Long: "--head"}, {Long: "--index"}},
 		Positionals: []PositionalSpec{{Name: "local_path|:source", Usage: "[local_path|:source]", Completion: CompletionMirror}},
 		Passthrough: &PassthroughSpec{Usage: "[-- <git_diff_arg>...]"},
+		Conflicts:   []ConflictSpec{{Options: []string{"--head", "--index"}, Error: "diff cannot combine --head and --index"}},
 	},
 	{
 		Command: CommandPush, Name: "push", Summary: "Push one source's local mirror changes upstream",
