@@ -216,7 +216,7 @@ func (h SyncHandler) prepareSyncAutostash(ctx context.Context, repo RepoContext,
 	}
 	if !autostashEnabled {
 		for _, path := range paths {
-			if err := ensureScopedClean(ctx, git, path); err != nil {
+			if err := ensureScopedCleanAllowIgnored(ctx, git, path); err != nil {
 				return syncAutostash{}, false, err
 			}
 		}

@@ -81,6 +81,22 @@ func TestAddCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
 	assertContains(t, status, "?? untracked.txt")
 }
 
+func TestAddCommandRejectsIgnoredContentInTargetPath(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+	repo := initDownstream(t)
+	testutil.WriteFile(t, repo, ".gitignore", "vendor/lib/replicant/user.bazelrc\n")
+	testutil.Git(t, repo, "add", ".gitignore")
+	testutil.Git(t, repo, "commit", "-m", "ignore local config")
+	testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+
+	stderr := runCommandError(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+
+	assertContains(t, stderr, "local changes are present in vendor/lib/replicant")
+	assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+}
+
 func TestAddCommandNoCommitStagesContentConfigAndPreservesUnrelatedState(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "hello from upstream\n")

@@ -64,7 +64,7 @@ func (h RemoveHandler) remove(ctx context.Context, repo RepoContext, git RemoveG
 			return fmt.Errorf("mirror path %q overlaps %s", path, config.FileName)
 		}
 	}
-	if err := ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, paths...); err != nil {
+	if err := ensureCommandScopesCleanAllowIgnored(ctx, git, configRoot(h.Options, repo), true, paths...); err != nil {
 		return err
 	}
 	if removeSource {

@@ -79,7 +79,9 @@ included in Braid's automatic commit. These commands accept `--no-commit` to
 stage `.braids.json` and selected mirror paths without creating the automatic
 commit. `upgrade-config --no-commit` similarly stages only `.braids.json`. The
 paths owned by each command still have to be clean unless the command explicitly
-supports a different flow.
+supports a different flow. Ignored files under selected mirrors do not block
+`pull`, `sync`, or `remove`; pull and sync preserve them, while remove leaves
+them on disk after deleting tracked mirror content.
 
 Migration impact:
 
@@ -88,8 +90,10 @@ Migration impact:
   change belongs in the same downstream commit as other related changes.
 - If unrelated files are already staged during `--no-commit`, they remain staged
   and can be included in the next manual commit unless you unstage them.
-- Dirty selected mirror paths still stop `add`, `pull`, `remove`, and `sync`
-  unless `sync --autostash` is used.
+- Staged, tracked, and ordinary untracked changes in selected mirror paths still
+  stop `add`, `pull`, `remove`, and plain `sync`. Ignored files also stop `add`,
+  but not `pull`, `remove`, or plain `sync`; `sync --autostash` continues to save
+  and restore ignored files with the other selected-path state.
 - On pull conflict, unrelated staged files remain staged. Go Braid warns about
   that because a manual `git commit` after conflict resolution could include
   those files unless you unstage them.

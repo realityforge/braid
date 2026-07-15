@@ -34,6 +34,24 @@ func TestRemoveCommandDeletesContentConfigAndRemote(t *testing.T) {
 	assertClean(t, repo)
 }
 
+func TestRemoveCommandLeavesIgnoredMirrorFiles(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, ".gitignore", "user.bazelrc\n")
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+	testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+
+	runCommandOK(t, repo, []string{"remove", "vendor/lib/replicant"})
+
+	assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	assertPathMissing(t, repo, "vendor/lib/replicant/README.md")
+	assertPathMissing(t, repo, "vendor/lib/replicant/.gitignore")
+	assertMirrorMissing(t, repo, "vendor/lib/replicant")
+}
+
 func TestRemoveCommandPreservesUnrelatedIndexAndWorktreeState(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")

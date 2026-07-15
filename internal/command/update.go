@@ -314,6 +314,10 @@ func (h UpdateHandler) updateOneWithRunOptions(ctx context.Context, repo RepoCon
 		return failUpdate(updateResult{}, mergeErr)
 	}
 	contentTree := mergedTree.Tree
+	if err := ensureIgnoredPathsNotOverwritten(ctx, git, contentTree, m.LocalPaths()...); err != nil {
+		_ = cleanupRemote()
+		return failUpdate(updateResult{}, err)
+	}
 
 	m.Revision = newRevision
 	if err := cfg.UpdateSource(m.Source); err != nil {
@@ -642,10 +646,18 @@ func (h UpdateHandler) ensureUpdateTargetsClean(ctx context.Context, repo RepoCo
 			}
 		}
 	}
-	return ensureCommandScopesClean(ctx, git, configRoot(h.Options, repo), true, paths...)
+	return ensureCommandScopesCleanAllowIgnored(ctx, git, configRoot(h.Options, repo), true, paths...)
 }
 
 func ensureCommandScopesClean(ctx context.Context, git scopedCleanGit, root string, requireConfig bool, paths ...string) error {
+	return ensureCommandScopesCleanWithIgnoredPolicy(ctx, git, root, requireConfig, true, paths...)
+}
+
+func ensureCommandScopesCleanAllowIgnored(ctx context.Context, git scopedCleanGit, root string, requireConfig bool, paths ...string) error {
+	return ensureCommandScopesCleanWithIgnoredPolicy(ctx, git, root, requireConfig, false, paths...)
+}
+
+func ensureCommandScopesCleanWithIgnoredPolicy(ctx context.Context, git scopedCleanGit, root string, requireConfig, includeIgnored bool, paths ...string) error {
 	if state, blocked, err := git.BlockingOperation(ctx); err != nil {
 		return err
 	} else if blocked {
@@ -655,7 +667,7 @@ func ensureCommandScopesClean(ctx context.Context, git scopedCleanGit, root stri
 		return err
 	}
 	for _, path := range paths {
-		if err := ensureScopedClean(ctx, git, path); err != nil {
+		if err := ensureScopedCleanWithIgnoredPolicy(ctx, git, path, includeIgnored); err != nil {
 			return err
 		}
 	}
@@ -674,11 +686,19 @@ func ensureConfigClean(ctx context.Context, git scopedCleanGit, root string, req
 }
 
 func ensureScopedClean(ctx context.Context, git scopedCleanGit, path string) error {
+	return ensureScopedCleanWithIgnoredPolicy(ctx, git, path, true)
+}
+
+func ensureScopedCleanAllowIgnored(ctx context.Context, git scopedCleanGit, path string) error {
+	return ensureScopedCleanWithIgnoredPolicy(ctx, git, path, false)
+}
+
+func ensureScopedCleanWithIgnoredPolicy(ctx context.Context, git scopedCleanGit, path string, includeIgnored bool) error {
 	var status string
 	var err error
 	if ignoredGit, ok := git.(interface {
 		StatusPorcelainPathspecsWithIgnored(context.Context, ...string) (string, error)
-	}); ok {
+	}); includeIgnored && ok {
 		status, err = ignoredGit.StatusPorcelainPathspecsWithIgnored(ctx, path)
 	} else {
 		status, err = git.StatusPorcelainPathspecs(ctx, path)
@@ -688,6 +708,28 @@ func ensureScopedClean(ctx context.Context, git scopedCleanGit, path string) err
 	}
 	if strings.TrimSpace(status) != "" {
 		return fmt.Errorf("local changes are present in %s", path)
+	}
+	return nil
+}
+
+func ensureIgnoredPathsNotOverwritten(ctx context.Context, git UpdateGit, treeish string, scopes ...string) error {
+	ignoredPaths, err := git.IgnoredPaths(ctx, scopes...)
+	if err != nil {
+		return err
+	}
+	for _, ignoredPath := range ignoredPaths {
+		for candidate := ignoredPath; candidate != "." && candidate != ""; candidate = filepath.Dir(candidate) {
+			item, itemErr := git.LsTreeItem(ctx, treeish, candidate)
+			if gitexec.IsTreeItemNotFound(itemErr) {
+				continue
+			}
+			if itemErr != nil {
+				return itemErr
+			}
+			if candidate == ignoredPath || item.Type != "tree" {
+				return fmt.Errorf("incoming tracked path %s would overwrite an ignored local file", candidate)
+			}
+		}
 	}
 	return nil
 }

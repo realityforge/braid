@@ -325,6 +325,24 @@ func TestPushCommandStopsWhenNotUpToDateOrNoLocalChanges(t *testing.T) {
 		}
 		assertFile(t, upstream, "README.md", "base\n")
 	})
+
+	t.Run("ignored local file", func(t *testing.T) {
+		upstream := testutil.InitRepo(t)
+		testutil.WriteFile(t, upstream, ".gitignore", "user.bazelrc\n")
+		testutil.WriteFile(t, upstream, "README.md", "base\n")
+		testutil.CommitAll(t, upstream, "base")
+		repo := initDownstream(t)
+		runCommandOK(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+		testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+
+		out := runCommandOK(t, repo, []string{"push", "vendor/lib/replicant"})
+
+		assertContains(t, out, "No local changes found in downstream HEAD")
+		if _, err := os.Stat(filepath.Join(upstream, "user.bazelrc")); !os.IsNotExist(err) {
+			t.Fatalf("upstream user.bazelrc stat error = %v, want not exist", err)
+		}
+		assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	})
 }
 
 func TestPushCommandDoesNotPushWhenEditorFails(t *testing.T) {

@@ -316,6 +316,20 @@ func (g Git) StatusPorcelainPathspecsWithIgnored(ctx context.Context, pathspecs 
 	return result.Stdout, nil
 }
 
+func (g Git) IgnoredPaths(ctx context.Context, pathspecs ...string) ([]string, error) {
+	args := []string{"ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--"}
+	args = append(args, pathspecs...)
+	result, err := g.RunOK(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	output := strings.TrimSuffix(result.Stdout, "\x00")
+	if output == "" {
+		return nil, nil
+	}
+	return strings.Split(output, "\x00"), nil
+}
+
 func (g Git) StashPushAllPathspecs(ctx context.Context, message string, pathspecs ...string) (StashEntry, bool, error) {
 	if message == "" {
 		return StashEntry{}, false, errors.New("stash message is required")

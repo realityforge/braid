@@ -67,11 +67,12 @@ bazel run //cmd/braid:braid -- version
 ## Usage
 
 Braid commands run from any directory inside a Git working tree. Commands that
-create automatic commits (`add`, `pull`, and `remove`) require their
-command-owned paths to be clean, block unresolved Git operations, and leave
-unrelated staged, unstaged, and untracked work untouched and out of Braid's
-commits. `status`, `diff`, and `push` are the usual commands for deciding
-whether to pull, prepare a patch, or send local mirror changes upstream.
+create automatic commits (`add`, `pull`, and `remove`) block unresolved Git
+operations and leave unrelated staged, unstaged, and untracked work untouched
+and out of Braid's commits. Their command-owned paths must be clean, except that
+ignored files do not block `pull` or `remove`. `status`, `diff`, and `push` are
+the usual commands for deciding whether to pull, prepare a patch, or send local
+mirror changes upstream.
 
 Use `--no-commit` with `add`, `pull`, `remove`, or `upgrade-config` to stage Braid's changes
 without creating the automatic commit. Braid stages only `.braids.json` and the
@@ -365,9 +366,12 @@ braid pull vendor/rails --tag <tag>
 ```
 
 Before pulling, Braid requires `.braids.json` and every mirror path in the source
-to be clean in both the index and working tree. For `braid pull` without a
-selector, that scoped cleanliness check covers every mirror of every eligible
-source before any source is fetched or updated.
+to have no staged, tracked, or ordinary untracked changes. Ignored files under a
+mirror do not block the pull and remain in place. If incoming tracked content
+would overwrite an ignored local path, Braid stops before changing the
+repository. For `braid pull` without a selector, that scoped cleanliness check
+covers every mirror of every eligible source before any source is fetched or
+updated.
 
 Use `--no-commit` to stage a pull without creating the automatic Braid commit:
 
@@ -426,7 +430,8 @@ Before any fetch, push, editor, worktree write, config write, or pull commit,
 `sync` checks unresolved Git operation state, `.braids.json`, and every selected
 mirror path for index and working tree changes. Dirty mirrors outside an
 explicit selection do not block that explicit sync. Ignored files under a
-selected mirror block unless `--autostash` preserves them.
+selected mirror do not block plain sync and remain in place. If incoming tracked
+content would overwrite one, Braid stops before changing the repository.
 
 Use `--autostash` when selected mirror paths have uncommitted work that should
 be carried across the sync:
@@ -593,9 +598,10 @@ braid remove vendor/rails --no-commit
 git commit
 ```
 
-Before removing, Braid requires `.braids.json` and the mirror path to be clean in
-both the index and working tree. Local edits, local deletions, staged mirror
-changes, and untracked files under the mirror path stop the remove.
+Before removing, Braid requires `.braids.json` and the mirror path to have no
+staged, tracked, or ordinary untracked changes. Ignored files do not block the
+remove and remain on disk for manual cleanup after Braid removes the tracked
+mirror content and configuration entry.
 
 `braid remove --keep --no-commit` keeps the Braid-managed Git remote, but still
 stages the mirror content removal and `.braids.json` update.

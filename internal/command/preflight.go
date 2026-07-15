@@ -63,6 +63,7 @@ type StatusGit interface {
 
 type UpdateGit interface {
 	StatusGit
+	IgnoredPaths(context.Context, ...string) ([]string, error)
 	MakeTreeWithItemIn(context.Context, string, string, gitexec.TreeItem) (string, error)
 	MergeTrees(context.Context, map[string]string, string, string, string) (string, error)
 	MergeTreeWrite(context.Context, string, string, string) (gitexec.MergeTreeResult, error)
