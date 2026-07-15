@@ -418,9 +418,11 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 		if err := verifyTempPushIndex(ctx, tempGit, newTree); err != nil {
 			return err
 		}
+		pushProgress.pause()
 		if err := tempGit.CommitVerboseMessageFile(ctx, seedPath, stdin, stdout, stderr); err != nil {
 			return err
 		}
+		pushProgress.resume()
 	} else {
 		var provenanceTemplate pushProvenanceTemplate
 		if provenanceOK {
@@ -435,11 +437,17 @@ func (h PushHandler) pushViaTempRepo(ctx context.Context, repo RepoContext, sour
 			return err
 		}
 		if templatePath != "" {
+			pushProgress.pause()
 			if err := tempGit.CommitVerboseMessageFile(ctx, templatePath, stdin, stdout, stderr); err != nil {
 				return err
 			}
-		} else if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
-			return err
+			pushProgress.resume()
+		} else {
+			pushProgress.pause()
+			if err := tempGit.CommitVerbose(ctx, stdin, stdout, stderr); err != nil {
+				return err
+			}
+			pushProgress.resume()
 		}
 	}
 	lease := "--force-with-lease=refs/heads/" + branch + ":" + expectedOld

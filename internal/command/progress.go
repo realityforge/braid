@@ -135,7 +135,26 @@ type progressOperation struct {
 
 	mu       sync.Mutex
 	lineOpen bool
+	paused   bool
 	err      error
+}
+
+func (op *progressOperation) pause() {
+	if op == nil || !op.enabled || !op.terminal {
+		return
+	}
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.paused = true
+}
+
+func (op *progressOperation) resume() {
+	if op == nil || !op.enabled || !op.terminal {
+		return
+	}
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.paused = false
 }
 
 func (op *progressOperation) Complete(message string) error {
@@ -186,7 +205,7 @@ func (op *progressOperation) runTicker() {
 func (op *progressOperation) writeDot() {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	if op.err != nil {
+	if op.err != nil || op.paused {
 		return
 	}
 	_, err := fmt.Fprint(op.writer, ".")
