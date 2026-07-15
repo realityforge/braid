@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -132,10 +131,6 @@ func TestSyncCommandProvenanceGuidanceIsPerPushedMirror(t *testing.T) {
 }
 
 func TestSyncCommandGeneratedMessagesArePerPushedMirror(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
 	testutil.CommitAll(t, upstreamA, "a base")
@@ -856,10 +851,6 @@ func TestSyncCommandStopsBeforePullPhaseWhenPushFails(t *testing.T) {
 }
 
 func TestSyncCommandLaterEditorFailureLeavesEarlierGeneratedPushComplete(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
 	aBase := testutil.CommitAll(t, upstreamA, "a base")

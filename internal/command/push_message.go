@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"unicode/utf8"
 
@@ -17,20 +16,20 @@ import (
 )
 
 const (
-	pushMessageCommandEnv            = "BRAID_PUSH_COMMIT_MESSAGE_COMMAND"
-	pushMessageInlineDiffLimit       = 5 * 1024
-	pushMessageGeneratorOutputLimit  = 4 * 1024
-	pushMessageTruncationMarker      = "[truncated after 4096 bytes]"
-	pushMessagePromptFileName        = "prompt.txt"
-	pushMessageOutputFileName        = "message.txt"
-	pushMessageSeedFileName          = "commit-message-seed.txt"
-	pushMessageLargeDiffFileName     = "upstream.diff"
-	pushMessageUnsupportedWindowsMsg = "AI push commit-message generation requires POSIX /bin/sh support and is not supported on Windows; unset BRAID_PUSH_COMMIT_MESSAGE_COMMAND to push without generation"
+	pushMessageCommandEnv           = "BRAID_PUSH_COMMIT_MESSAGE_COMMAND"
+	pushMessageInlineDiffLimit      = 5 * 1024
+	pushMessageGeneratorOutputLimit = 4 * 1024
+	pushMessageTruncationMarker     = "[truncated after 4096 bytes]"
+	pushMessagePromptFileName       = "prompt.txt"
+	pushMessageOutputFileName       = "message.txt"
+	pushMessageSeedFileName         = "commit-message-seed.txt"
+	pushMessageLargeDiffFileName    = "upstream.diff"
 )
 
 type pushMessageGeneration struct {
 	Enabled         bool
 	CommandTemplate string
+	ShellPath       string
 }
 
 type pushMessageCommandValues struct {
@@ -79,9 +78,6 @@ func configuredPushMessageGeneration() pushMessageGeneration {
 }
 
 func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGit, tempGit gitexec.Git, m source.SourceMirror, branch, baseRevision, newTree, contextDir string, generation pushMessageGeneration, verbose bool, trace io.Writer, provenance pushProvenance, provenanceOK bool, provenanceErr error) (string, error) {
-	if err := validatePushMessageGeneratorPlatform(runtime.GOOS); err != nil {
-		return "", err
-	}
 	commentChar, err := pushMessageSeedCommentChar(ctx, source)
 	if err != nil {
 		return "", err
@@ -124,7 +120,7 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 	if _, err := fmt.Fprintf(progress, "Braid: generating push commit message for %s using external tool\n", m.LocalPath); err != nil {
 		return "", err
 	}
-	generated, failure, err := runPushMessageGenerator(ctx, generation.CommandTemplate, pushMessageCommandValues{
+	generated, failure, err := runPushMessageGenerator(ctx, generation.ShellPath, generation.CommandTemplate, pushMessageCommandValues{
 		RepoDir:     repo.GitWorkTreeRoot,
 		ContextDir:  contextDir,
 		PromptFile:  promptPath,
@@ -144,13 +140,6 @@ func preparePushMessageSeed(ctx context.Context, repo RepoContext, source PushGi
 		return "", fmt.Errorf("write push commit-message seed: %w", err)
 	}
 	return seedPath, nil
-}
-
-func validatePushMessageGeneratorPlatform(goos string) error {
-	if goos == "windows" {
-		return errors.New(pushMessageUnsupportedWindowsMsg)
-	}
-	return nil
 }
 
 func pushMessageSeedCommentChar(ctx context.Context, git PushGit) (string, error) {
@@ -259,17 +248,42 @@ func formatPushMessagePromptProvenance(provenance pushProvenance, ok bool, err e
 	return b.String()
 }
 
-func runPushMessageGenerator(ctx context.Context, commandTemplate string, values pushMessageCommandValues, verbose bool, trace io.Writer) (string, *pushMessageGeneratorFailure, error) {
+func resolvePushMessageGeneration(ctx context.Context, git PushGit, generation pushMessageGeneration) (pushMessageGeneration, error) {
+	if !generation.Enabled || generation.ShellPath != "" {
+		return generation, nil
+	}
+	shellPath, err := git.ShellPath(ctx)
+	if err != nil {
+		return pushMessageGeneration{}, fmt.Errorf("resolve POSIX shell with git var GIT_SHELL_PATH: %w", err)
+	}
+	if shellPath == "" {
+		return pushMessageGeneration{}, errors.New("resolve POSIX shell with git var GIT_SHELL_PATH: Git returned an empty path")
+	}
+	if err := probePushMessageShell(ctx, shellPath); err != nil {
+		return pushMessageGeneration{}, err
+	}
+	generation.ShellPath = shellPath
+	return generation, nil
+}
+
+func probePushMessageShell(ctx context.Context, shellPath string) error {
+	if err := exec.CommandContext(ctx, shellPath, "-c", ":").Run(); err != nil {
+		return fmt.Errorf("start Git POSIX shell %q: %w", shellPath, err)
+	}
+	return nil
+}
+
+func runPushMessageGenerator(ctx context.Context, shellPath, commandTemplate string, values pushMessageCommandValues, verbose bool, trace io.Writer) (string, *pushMessageGeneratorFailure, error) {
 	command := expandPushMessageCommand(commandTemplate, values)
 	if verbose {
 		if trace == nil {
 			trace = io.Discard
 		}
-		if _, err := fmt.Fprintf(trace, "Braid: Executing %s in %s\n", gitexec.FormatArgv([]string{"/bin/sh", "-c", command}), values.RepoDir); err != nil {
+		if _, err := fmt.Fprintf(trace, "Braid: Executing %s in %s\n", gitexec.FormatArgv([]string{shellPath, "-c", command}), values.RepoDir); err != nil {
 			return "", nil, err
 		}
 	}
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd := exec.CommandContext(ctx, shellPath, "-c", command)
 	cmd.Dir = values.RepoDir
 	var stdout, stderr limitedOutput
 	stdout.limit = pushMessageGeneratorOutputLimit

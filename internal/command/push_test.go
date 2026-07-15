@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"braid/internal/config"
+	"braid/internal/gitexec"
 	"braid/internal/testutil"
 )
 
@@ -365,10 +365,6 @@ func TestPushCommandDoesNotPushWhenEditorFails(t *testing.T) {
 }
 
 func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -405,7 +401,7 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve repo path: %v", err)
 	}
-	if got := strings.TrimSpace(readTestFile(t, repoCapture)); got != expectedRepo {
+	if got := filepath.Clean(filepath.FromSlash(strings.TrimSpace(readTestFile(t, repoCapture)))); got != expectedRepo {
 		t.Fatalf("generator repo arg = %q, want %q", got, expectedRepo)
 	}
 	prompt := readTestFile(t, promptCapture)
@@ -439,10 +435,6 @@ func TestPushCommandGeneratedMessagePromptAndReview(t *testing.T) {
 }
 
 func TestPushCommandGeneratorFailuresOpenEditorWithDiagnostics(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	tests := []struct {
 		name       string
 		body       string
@@ -510,10 +502,6 @@ func TestPushCommandGeneratorFailuresOpenEditorWithDiagnostics(t *testing.T) {
 }
 
 func TestPushCommandGeneratorReadsLargeDiffFromContextDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -528,7 +516,7 @@ func TestPushCommandGeneratorReadsLargeDiffFromContextDir(t *testing.T) {
 	captureDir := t.TempDir()
 	promptCapture := filepath.Join(captureDir, "prompt.txt")
 	diffCapture := filepath.Join(captureDir, "upstream.diff")
-	generator := writeGenerator(t, "#!/bin/sh\nprompt=$1\nmessage=$2\ncontext=$3\ndiff_file=$(sed -n 's/^Full diff file: //p' \"$prompt\")\n[ -n \"$diff_file\" ] || exit 12\n[ -f \"$diff_file\" ] || exit 13\ncase \"$diff_file\" in \"$context\"/*) ;; *) exit 14 ;; esac\ncp \"$prompt\" \"$BRAID_GENERATOR_PROMPT\" || exit 1\ncp \"$diff_file\" \"$BRAID_GENERATOR_DIFF\" || exit 1\nprintf 'Generated large diff\\n' > \"$message\"\n")
+	generator := writeGenerator(t, "#!/bin/sh\nprompt=$1\nmessage=$2\ncontext=$3\ndiff_file=$(sed -n 's/^Full diff file: //p' \"$prompt\")\n[ -n \"$diff_file\" ] || exit 12\n[ -f \"$diff_file\" ] || exit 13\nif command -v cygpath >/dev/null 2>&1; then\n  diff_file=$(cygpath -u \"$diff_file\")\n  context=$(cygpath -u \"$context\")\nfi\ncase \"$diff_file\" in \"$context\"/*) ;; *) exit 14 ;; esac\ncp \"$prompt\" \"$BRAID_GENERATOR_PROMPT\" || exit 1\ncp \"$diff_file\" \"$BRAID_GENERATOR_DIFF\" || exit 1\nprintf 'Generated large diff\\n' > \"$message\"\n")
 	t.Setenv("BRAID_GENERATOR_PROMPT", promptCapture)
 	t.Setenv("BRAID_GENERATOR_DIFF", diffCapture)
 	t.Setenv(pushMessageCommandEnv, shellQuote(generator)+" {PROMPT_FILE} {MESSAGE_FILE} {CONTEXT_DIR}")
@@ -549,10 +537,6 @@ func TestPushCommandGeneratorReadsLargeDiffFromContextDir(t *testing.T) {
 }
 
 func TestPushCommandGenerationContinuesWhenProvenanceFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -1031,10 +1015,6 @@ func TestPushMessageCommandSubstitutionQuotesDocumentedPlaceholders(t *testing.T
 }
 
 func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("push message generation requires POSIX /bin/sh")
-	}
-
 	repoDir := t.TempDir()
 	contextDir := t.TempDir()
 	promptPath := filepath.Join(contextDir, pushMessagePromptFileName)
@@ -1050,9 +1030,10 @@ func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
 		PromptFile:  promptPath,
 		MessageFile: messagePath,
 	}
+	shellPath := strings.TrimSpace(testutil.Git(t, repoDir, "var", "GIT_SHELL_PATH").Stdout)
 
 	var quietTrace bytes.Buffer
-	if _, _, err := runPushMessageGenerator(context.Background(), template, values, false, &quietTrace); err != nil {
+	if _, _, err := runPushMessageGenerator(context.Background(), shellPath, template, values, false, &quietTrace); err != nil {
 		t.Fatalf("runPushMessageGenerator quiet returned error: %v", err)
 	}
 	if quietTrace.String() != "" {
@@ -1060,7 +1041,7 @@ func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
 	}
 
 	var trace bytes.Buffer
-	message, failure, err := runPushMessageGenerator(context.Background(), template, values, true, &trace)
+	message, failure, err := runPushMessageGenerator(context.Background(), shellPath, template, values, true, &trace)
 	if err != nil {
 		t.Fatalf("runPushMessageGenerator verbose returned error: %v", err)
 	}
@@ -1070,10 +1051,11 @@ func TestPushMessageGeneratorVerboseTrace(t *testing.T) {
 	if message != "generated" {
 		t.Fatalf("generated message = %q, want generated", message)
 	}
-	assertContains(t, trace.String(), "Braid: Executing [\"/bin/sh\", \"-c\", ")
-	assertContains(t, trace.String(), shellQuote(generator))
-	assertContains(t, trace.String(), shellQuote(promptPath))
-	assertContains(t, trace.String(), shellQuote(messagePath))
+	assertContains(t, trace.String(), "Braid: Executing")
+	assertContains(t, trace.String(), shellPath)
+	assertContains(t, trace.String(), filepath.Base(generator))
+	assertContains(t, trace.String(), filepath.Base(promptPath))
+	assertContains(t, trace.String(), filepath.Base(messagePath))
 	assertContains(t, trace.String(), " in "+repoDir+"\n")
 }
 
@@ -1111,13 +1093,25 @@ func TestPushMessageDiffContextCutoff(t *testing.T) {
 	}
 }
 
-func TestPushMessageGeneratorPlatformSupport(t *testing.T) {
-	if err := validatePushMessageGeneratorPlatform("linux"); err != nil {
-		t.Fatalf("linux platform validation returned error: %v", err)
+func TestResolvePushMessageGenerationUsesGitShell(t *testing.T) {
+	git := gitexec.New(t.TempDir(), false, nil)
+	want, err := git.ShellPath(context.Background())
+	if err != nil {
+		t.Fatalf("ShellPath returned error: %v", err)
 	}
-	err := validatePushMessageGeneratorPlatform("windows")
-	if err == nil || !strings.Contains(err.Error(), "/bin/sh") || !strings.Contains(err.Error(), pushMessageCommandEnv) {
-		t.Fatalf("windows platform validation error = %v, want clear unsupported message", err)
+	generation, err := resolvePushMessageGeneration(context.Background(), git, pushMessageGeneration{Enabled: true, CommandTemplate: "generate"})
+	if err != nil {
+		t.Fatalf("resolvePushMessageGeneration returned error: %v", err)
+	}
+	if generation.ShellPath != want {
+		t.Fatalf("resolved shell = %q, want %q", generation.ShellPath, want)
+	}
+}
+
+func TestProbePushMessageShellRejectsMissingExecutable(t *testing.T) {
+	err := probePushMessageShell(context.Background(), filepath.Join(t.TempDir(), "missing-sh"))
+	if err == nil || !strings.Contains(err.Error(), "start Git POSIX shell") {
+		t.Fatalf("probePushMessageShell error = %v, want launch failure", err)
 	}
 }
 

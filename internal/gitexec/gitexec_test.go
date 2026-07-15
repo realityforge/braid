@@ -338,6 +338,17 @@ func TestCoreCommentChar(t *testing.T) {
 	}
 }
 
+func TestShellPath(t *testing.T) {
+	git := New(t.TempDir(), false, nil)
+	path, err := git.ShellPath(context.Background())
+	if err != nil {
+		t.Fatalf("ShellPath returned error: %v", err)
+	}
+	if strings.TrimSpace(path) == "" {
+		t.Fatal("ShellPath returned an empty path")
+	}
+}
+
 func TestHistoryHelpersReadCommitsFilesAndTrees(t *testing.T) {
 	repo := initRealRepo(t)
 	writeRealFile(t, repo, "mirror/file.txt", "base\n")

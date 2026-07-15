@@ -280,6 +280,10 @@ func (g Git) CoreCommentChar(ctx context.Context) (string, bool, error) {
 	return strings.TrimRight(result.Stdout, "\r\n"), true, nil
 }
 
+func (g Git) ShellPath(ctx context.Context) (string, error) {
+	return g.Output(ctx, "var", "GIT_SHELL_PATH")
+}
+
 func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
 	return g.Output(ctx, "rev-parse", rev)
 }

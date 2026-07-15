@@ -385,8 +385,16 @@ func (h SyncHandler) withFetchedMirrorForPlanning(ctx context.Context, git PushG
 func (h SyncHandler) runPushPlan(ctx context.Context, repo RepoContext, git PushGit, plan syncPushPlan, inv cli.Invocation, stdout, stderr io.Writer) ([]string, error) {
 	push := PushHandler(h)
 	var completed []string
+	messageGeneration := configuredPushMessageGeneration()
+	var err error
+	if len(plan.Actions) > 0 {
+		messageGeneration, err = resolvePushMessageGeneration(ctx, git, messageGeneration)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, action := range plan.Actions {
-		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch(), inv.Sync.Keep, "", inv.Global, stdout, stderr)
+		result, err := push.push(ctx, repo, git, action.Target.Mirror, action.Target.Mirror.Branch(), inv.Sync.Keep, "", messageGeneration, inv.Global, stdout, stderr)
 		if err != nil {
 			if result.Status == pushStatusPushed {
 				completed = append(completed, ":"+action.Target.Mirror.Name)
