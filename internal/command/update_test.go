@@ -43,6 +43,53 @@ func TestUpdateCommandFastForwardsAndUsesNoVerify(t *testing.T) {
 	}
 }
 
+func TestUpdateCommandPreservesIgnoredMirrorFiles(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, ".gitignore", "user.bazelrc\n")
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+	testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	testutil.WriteFile(t, upstream, "README.md", "updated\n")
+	revision := testutil.CommitAll(t, upstream, "updated")
+
+	runCommandOK(t, repo, []string{"pull", "vendor/lib/replicant"})
+
+	assertFile(t, repo, "vendor/lib/replicant/README.md", "updated\n")
+	assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	if got := loadMirror(t, repo, "vendor/lib/replicant").Revision; got != revision {
+		t.Fatalf("mirror revision = %q, want %q", got, revision)
+	}
+}
+
+func TestUpdateCommandRejectsIncomingTrackedPathOverIgnoredFile(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, ".gitignore", "user.bazelrc\n")
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	baseRevision := testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+	testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	testutil.WriteFile(t, upstream, "user.bazelrc", "upstream config\n")
+	testutil.Git(t, upstream, "add", "-f", "user.bazelrc")
+	testutil.Git(t, upstream, "commit", "-m", "track config")
+	head := testutil.CurrentRevision(t, repo)
+
+	stderr := runCommandError(t, repo, []string{"pull", "vendor/lib/replicant"})
+
+	assertContains(t, stderr, "incoming tracked path vendor/lib/replicant/user.bazelrc would overwrite an ignored local file")
+	assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	if got := testutil.CurrentRevision(t, repo); got != head {
+		t.Fatalf("HEAD = %q, want unchanged %q", got, head)
+	}
+	if got := loadMirror(t, repo, "vendor/lib/replicant").Revision; got != baseRevision {
+		t.Fatalf("mirror revision = %q, want unchanged %q", got, baseRevision)
+	}
+}
+
 func TestUpdateCommandAliasesUpdateSameMirror(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")

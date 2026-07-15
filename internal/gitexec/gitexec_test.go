@@ -461,6 +461,26 @@ func TestStatusPorcelainPathspecsWithIgnoredReportsIgnoredOnlyState(t *testing.T
 	}
 }
 
+func TestIgnoredPathsReturnsOnlyIgnoredFilesInScope(t *testing.T) {
+	repo := initRealRepo(t)
+	writeRealFile(t, repo, ".gitignore", "target/*.log\noutside.log\n")
+	writeRealFile(t, repo, "target/tracked.txt", "base\n")
+	realGit(t, repo, "add", ".")
+	realGit(t, repo, "commit", "-m", "base")
+	writeRealFile(t, repo, "target/ignored file.log", "ignored\n")
+	writeRealFile(t, repo, "target/untracked.txt", "untracked\n")
+	writeRealFile(t, repo, "outside.log", "outside ignored\n")
+
+	paths, err := New(repo, false, nil).IgnoredPaths(context.Background(), "target")
+	if err != nil {
+		t.Fatalf("IgnoredPaths returned error: %v", err)
+	}
+	want := []string{"target/ignored file.log"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("IgnoredPaths = %#v, want %#v", paths, want)
+	}
+}
+
 func TestStashPushAllPathspecsRestoresSelectedStateAndPreservesUnrelatedState(t *testing.T) {
 	repo := initRealRepo(t)
 	writeRealFile(t, repo, ".gitignore", "mirror/ignored.log\noutside-ignored.log\n")

@@ -95,6 +95,49 @@ func TestExecutableScopedRemovePreservesUnrelatedState(t *testing.T) {
 	assertContains(t, status, "?? untracked.txt")
 }
 
+func TestExecutableIgnoredMirrorFileSurvivesPullSyncAndRemove(t *testing.T) {
+	root := t.TempDir()
+	env := newProcessEnv(t, root)
+	braid := braidBinary(t)
+
+	upstream := filepath.Join(root, "upstream")
+	initRepo(t, env, upstream)
+	writeFile(t, upstream, ".gitignore", "user.bazelrc\n")
+	writeFile(t, upstream, "README.md", "base\n")
+	commitAll(t, env, upstream, "base")
+
+	downstream := filepath.Join(root, "downstream")
+	initRepo(t, env, downstream)
+	writeFile(t, downstream, "README.md", "downstream\n")
+	commitAll(t, env, downstream, "seed downstream")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "add", upstream, "vendor/lib/replicant"), 0, "", "")
+	writeFile(t, downstream, "vendor/lib/replicant/user.bazelrc", "local config\n")
+
+	writeFile(t, upstream, "README.md", "pulled\n")
+	pullRevision := commitAll(t, env, upstream, "pulled")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "pull", "vendor/lib/replicant"), 0, "", "")
+	assertFile(t, downstream, "vendor/lib/replicant/README.md", "pulled\n")
+	assertFile(t, downstream, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/lib/replicant": {URL: upstream, Branch: "main", Revision: pullRevision},
+	})
+
+	writeFile(t, upstream, "README.md", "synced\n")
+	syncRevision := commitAll(t, env, upstream, "synced")
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "sync", "--pull-only", "vendor/lib/replicant"), 0, "", "")
+	assertFile(t, downstream, "vendor/lib/replicant/README.md", "synced\n")
+	assertFile(t, downstream, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	assertConfigRaw(t, downstream, map[string]configMirror{
+		"vendor/lib/replicant": {URL: upstream, Branch: "main", Revision: syncRevision},
+	})
+
+	assertResult(t, runBraid(t, env, downstream, braid, "--quiet", "remove", "vendor/lib/replicant"), 0, "", "")
+	assertFile(t, downstream, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	assertPathMissing(t, downstream, "vendor/lib/replicant/README.md")
+	assertPathMissing(t, downstream, "vendor/lib/replicant/.gitignore")
+	assertConfigRaw(t, downstream, map[string]configMirror{})
+}
+
 func TestExecutableScopedAddRemovePrecheckBlockers(t *testing.T) {
 	tests := []struct {
 		name    string

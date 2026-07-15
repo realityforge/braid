@@ -47,6 +47,27 @@ func TestSyncCommandPushesChangedBranchThenUpdates(t *testing.T) {
 	assertNoGitRemote(t, repo, "main_braid_001")
 }
 
+func TestSyncCommandPreservesIgnoredMirrorFilesWithoutAutostash(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, ".gitignore", "user.bazelrc\n")
+	testutil.WriteFile(t, upstream, "README.md", "base\n")
+	testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/lib/replicant"})
+	testutil.WriteFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	testutil.WriteFile(t, upstream, "README.md", "updated\n")
+	revision := testutil.CommitAll(t, upstream, "updated")
+
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/lib/replicant"})
+
+	assertFile(t, repo, "vendor/lib/replicant/README.md", "updated\n")
+	assertFile(t, repo, "vendor/lib/replicant/user.bazelrc", "local config\n")
+	if got := loadMirror(t, repo, "vendor/lib/replicant").Revision; got != revision {
+		t.Fatalf("mirror revision = %q, want %q", got, revision)
+	}
+}
+
 func TestSyncCommandPushesOnlyOptedInSources(t *testing.T) {
 	upstreamA := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstreamA, "README.md", "a base\n")
@@ -495,7 +516,7 @@ func TestSyncCommandAutostashRestoresSelectedStateAndPreservesUnrelatedState(t *
 	}
 }
 
-func TestSyncCommandAutostashIgnoredOnlyState(t *testing.T) {
+func TestSyncCommandPlainAndAutostashPreserveIgnoredOnlyState(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")
 	testutil.CommitAll(t, upstream, "base")
@@ -508,12 +529,12 @@ func TestSyncCommandAutostashIgnoredOnlyState(t *testing.T) {
 	testutil.WriteFile(t, upstream, "remote.txt", "remote\n")
 	testutil.CommitAll(t, upstream, "remote")
 
-	stderr := runCommandError(t, repo, []string{"sync", "--pull-only", "vendor/basic"})
-	assertContains(t, stderr, "local changes are present in vendor/basic")
+	runCommandOK(t, repo, []string{"sync", "--pull-only", "vendor/basic"})
 
+	assertFile(t, repo, "vendor/basic/remote.txt", "remote\n")
 	assertFile(t, repo, "vendor/basic/ignored.log", "ignored\n")
 	if stashList := strings.TrimSpace(testutil.Git(t, repo, "stash", "list").Stdout); stashList != "" {
-		t.Fatalf("stash list = %q, want no autostash on blocked sync", stashList)
+		t.Fatalf("stash list = %q, want no autostash for plain sync", stashList)
 	}
 
 	testutil.WriteFile(t, upstream, "another.txt", "another\n")
