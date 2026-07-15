@@ -539,14 +539,14 @@ Example:
 BRAID_PUSH_COMMIT_MESSAGE_COMMAND='codex exec -C {REPO_DIR} --add-dir {CONTEXT_DIR} --model gpt-5.5 -c '\''model_reasoning_effort="low"'\'' -o {MESSAGE_FILE} < {PROMPT_FILE}'
 ```
 
-The command runs as `/bin/sh -c` from the downstream repository root with the
-current process environment. The prompt includes mirror metadata, downstream
+The command runs as `<git-shell> -c` from the downstream repository root with
+the current process environment. Braid obtains the POSIX shell path from
+`git var GIT_SHELL_PATH` and verifies that it starts before pushing; this also
+supports Git for Windows. The prompt includes mirror metadata, downstream
 commit provenance when it can be collected, and the staged upstream diff. Diffs
 up to 5 KiB are included inline; larger diffs are written under
 `{CONTEXT_DIR}` and referenced from the prompt. The configured command is
-trusted local shell code and is not sandboxed by Braid. On Windows, configured
-generation is not supported; leave the environment variable unset or empty to
-use the normal editor flow.
+trusted local shell code and is not sandboxed by Braid.
 
 When generation succeeds, Git's editor opens with the generated message followed
 by commented provenance guidance when available. The editor-reviewed content is

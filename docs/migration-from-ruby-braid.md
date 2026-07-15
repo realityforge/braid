@@ -150,8 +150,8 @@ tool keeps that model but tightens the user-facing behavior:
   without opening the editor or running the generated-message command.
 - `BRAID_PUSH_COMMIT_MESSAGE_COMMAND` can optionally run a trusted local POSIX
   shell command to generate a draft upstream commit message. The editor still
-  opens for review. This generator is disabled by default and is not supported
-  on Windows.
+  opens for review. This generator is disabled by default. Braid obtains the
+  shell from `git var GIT_SHELL_PATH`, including on Git for Windows.
 
 Migration impact:
 

@@ -129,7 +129,11 @@ func (h PushHandler) Run(inv cli.Invocation, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	result, err := h.push(ctx, repo, git, selection.Source.WithMirror(selection.Mirrors[0]), inv.Push.Branch, inv.Push.Keep, inv.Push.Message, inv.Global, stdout, stderr)
+	messageGeneration := pushMessageGeneration{}
+	if inv.Push.Message == "" {
+		messageGeneration = configuredPushMessageGeneration()
+	}
+	result, err := h.push(ctx, repo, git, selection.Source.WithMirror(selection.Mirrors[0]), inv.Push.Branch, inv.Push.Keep, inv.Push.Message, messageGeneration, inv.Global, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -152,7 +156,7 @@ func (h PushHandler) pushGit(repo RepoContext, inv cli.Invocation, trace io.Writ
 	return gitexec.New(repo.GitWorkTreeRoot, inv.Global.Verbose, trace)
 }
 
-func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m source.SourceMirror, branch string, keep bool, commitMessage string, global cli.GlobalOptions, stdout, stderr io.Writer) (result pushResult, err error) {
+func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m source.SourceMirror, branch string, keep bool, commitMessage string, messageGeneration pushMessageGeneration, global cli.GlobalOptions, stdout, stderr io.Writer) (result pushResult, err error) {
 	if branch == "" {
 		branch = m.Branch()
 	}
@@ -255,13 +259,15 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	var provenance pushProvenance
 	var provenanceOK bool
 	var provenanceErr error
-	messageGeneration := pushMessageGeneration{}
 	if commitMessage == "" {
 		provenance, provenanceOK, provenanceErr = buildPushProvenance(ctx, git, m)
 		if provenanceErr != nil {
 			warnPushProvenance(stderr, provenanceErr)
 		}
-		messageGeneration = configuredPushMessageGeneration()
+		messageGeneration, err = resolvePushMessageGeneration(ctx, git, messageGeneration)
+		if err != nil {
+			return pushResult{}, err
+		}
 	}
 
 	pushCompleted := false
