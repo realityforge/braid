@@ -262,7 +262,7 @@ func (h PushHandler) push(ctx context.Context, repo RepoContext, git PushGit, m 
 	if commitMessage == "" {
 		provenance, provenanceOK, provenanceErr = buildPushProvenance(ctx, git, m)
 		if provenanceErr != nil {
-			warnPushProvenance(stderr, provenanceErr)
+			reportPushProvenanceFailure(stderr, global.Quiet, provenanceErr)
 		}
 		messageGeneration, err = resolvePushMessageGeneration(ctx, git, messageGeneration)
 		if err != nil {
@@ -500,6 +500,17 @@ func preparePushProvenanceTemplate(ctx context.Context, tempGit gitexec.Git, tem
 
 func warnPushProvenance(stderr io.Writer, err error) {
 	_, _ = fmt.Fprintf(stderr, "Braid: warning: push provenance guidance skipped: %v\n", err)
+}
+
+func reportPushProvenanceFailure(stderr io.Writer, quiet bool, err error) {
+	var unavailable *pushProvenanceRevisionUnavailableError
+	if errors.As(err, &unavailable) {
+		if !quiet {
+			_, _ = fmt.Fprintf(stderr, "Braid: push provenance guidance unavailable: %v\n", err)
+		}
+		return
+	}
+	warnPushProvenance(stderr, err)
 }
 
 func writeAlternates(ctx context.Context, source PushGit, tempDir, sourceWorkDir string) error {

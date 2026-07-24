@@ -854,6 +854,49 @@ func TestPushCommandProvenanceSurvivesUpdateAndExcludesBraidCommit(t *testing.T)
 	assertFile(t, upstream, "remote.txt", "remote change\n")
 }
 
+func TestPushCommandHistoricalRevisionUnavailableIsInformational(t *testing.T) {
+	upstream := testutil.InitRepo(t)
+	testutil.WriteFile(t, upstream, "local.txt", "base local\n")
+	testutil.WriteFile(t, upstream, "remote.txt", "base remote\n")
+	historicalRevision := testutil.CommitAll(t, upstream, "base")
+
+	repo := initDownstream(t)
+	runCommandOK(t, repo, []string{"add", upstream, "vendor/basic"})
+	testutil.WriteFile(t, repo, "vendor/basic/local.txt", "local change\n")
+	commitAllWithMessage(t, repo, "local before update")
+	testutil.WriteFile(t, upstream, "remote.txt", "remote change\n")
+	currentRevision := testutil.CommitAll(t, upstream, "remote update")
+	runCommandOK(t, repo, []string{"update", "vendor/basic"})
+
+	parent := t.TempDir()
+	clone := filepath.Join(parent, "clone")
+	testutil.Git(t, parent, "clone", "--no-local", repo, clone)
+	testutil.Git(t, clone, "fetch", "--depth=1", upstream, currentRevision)
+	git := gitexec.New(clone, false, nil)
+	if resolved, ok, err := git.ResolveRevision(context.Background(), historicalRevision+"^{commit}"); err != nil {
+		t.Fatalf("inspect historical revision: %v", err)
+	} else if ok {
+		t.Fatalf("historical revision unexpectedly available at %s", resolved)
+	}
+
+	_, ok, provenanceErr := buildPushProvenance(context.Background(), git, loadMirror(t, clone, "vendor/basic"))
+	if provenanceErr == nil {
+		t.Fatal("buildPushProvenance returned nil error, want unavailable historical revision")
+	}
+	if ok {
+		t.Fatal("buildPushProvenance returned ok, want false")
+	}
+
+	var stderr bytes.Buffer
+	reportPushProvenanceFailure(&stderr, false, provenanceErr)
+	assertContains(t, stderr.String(), "Braid: push provenance guidance unavailable: historical upstream revision "+historicalRevision+" for source :001 is unavailable locally")
+	assertNotContains(t, stderr.String(), "Braid: warning: push provenance guidance skipped")
+
+	stderr.Reset()
+	reportPushProvenanceFailure(&stderr, true, provenanceErr)
+	assertNotContains(t, stderr.String(), "push provenance guidance")
+}
+
 func TestPushCommandProvenanceCapShowsNewestTwentyFiveChronologically(t *testing.T) {
 	upstream := testutil.InitRepo(t)
 	testutil.WriteFile(t, upstream, "README.md", "base\n")

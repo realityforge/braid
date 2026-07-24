@@ -109,6 +109,7 @@ type PushGit interface {
 	ConfigGet(context.Context, ...string) (string, bool, error)
 	CoreCommentChar(context.Context) (string, bool, error)
 	ShellPath(context.Context) (string, error)
+	ResolveRevision(context.Context, string) (string, bool, error)
 	FirstParentCommits(context.Context, string) ([]string, error)
 	LogCommitsTouchingPath(context.Context, string, string) ([]gitexec.Commit, error)
 	ShowFile(context.Context, string, string) ([]byte, bool, error)
