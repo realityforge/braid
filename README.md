@@ -518,10 +518,11 @@ ignore the relevant context while writing the upstream commit message. Braid
 does not generate an upstream subject for you, and leaving the guidance in place
 does not add it to the final commit message.
 
-This guidance is best-effort. If Braid cannot compute it safely, or if
-`core.commentChar` is set to `auto`, Braid prints a warning and opens the editor
-without the provenance block; the push still proceeds through the normal commit
-and push checks.
+This guidance is best-effort. If a historical upstream revision is unavailable
+locally, Braid prints an informational message unless `--quiet` is active and
+opens the editor without the provenance block. Other failures that prevent Braid
+from computing the guidance safely, including `core.commentChar=auto`, print a
+warning. The push still proceeds through the normal commit and push checks.
 
 To prefill the editor with a generated draft message, set
 `BRAID_PUSH_COMMIT_MESSAGE_COMMAND` to a trusted local POSIX shell command. Empty

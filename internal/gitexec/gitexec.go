@@ -288,6 +288,14 @@ func (g Git) RevParse(ctx context.Context, rev string) (string, error) {
 	return g.Output(ctx, "rev-parse", rev)
 }
 
+func (g Git) ResolveRevision(ctx context.Context, rev string) (string, bool, error) {
+	resolved, err := g.optionalRevParse(ctx, rev)
+	if err != nil {
+		return "", false, err
+	}
+	return resolved, resolved != "", nil
+}
+
 func (g Git) Head(ctx context.Context) (string, error) {
 	return g.RevParse(ctx, "HEAD")
 }

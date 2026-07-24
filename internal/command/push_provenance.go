@@ -35,6 +35,15 @@ type pushProvenanceWindow struct {
 	NoCleanAnchor bool
 }
 
+type pushProvenanceRevisionUnavailableError struct {
+	Source   string
+	Revision string
+}
+
+func (e *pushProvenanceRevisionUnavailableError) Error() string {
+	return fmt.Sprintf("historical upstream revision %s for source :%s is unavailable locally", e.Revision, e.Source)
+}
+
 func buildPushProvenance(ctx context.Context, git PushGit, m source.SourceMirror) (pushProvenance, bool, error) {
 	byHash := map[string]pushProvenanceCommit{}
 	noAnchor := false
@@ -165,10 +174,20 @@ func mirrorCleanAtCommit(ctx context.Context, git PushGit, commit string, m sour
 }
 
 func recordedMirrorItem(ctx context.Context, git PushGit, m source.SourceMirror) (gitexec.TreeItem, error) {
-	if m.UpstreamPath == "" {
-		return git.TreeItem(ctx, m.Revision)
+	revision, ok, err := git.ResolveRevision(ctx, m.Revision+"^{commit}")
+	if err != nil {
+		return gitexec.TreeItem{}, err
 	}
-	return git.LsTreeItem(ctx, m.Revision, m.UpstreamPath)
+	if !ok {
+		return gitexec.TreeItem{}, &pushProvenanceRevisionUnavailableError{
+			Source:   m.Name,
+			Revision: m.Revision,
+		}
+	}
+	if m.UpstreamPath == "" {
+		return git.TreeItem(ctx, revision)
+	}
+	return git.LsTreeItem(ctx, revision, m.UpstreamPath)
 }
 
 func collectPushProvenanceCommits(ctx context.Context, git PushGit, current source.SourceMirror, revisionRange string) ([]pushProvenanceCommit, int, error) {

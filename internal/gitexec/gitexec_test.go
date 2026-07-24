@@ -359,6 +359,17 @@ func TestHistoryHelpersReadCommitsFilesAndTrees(t *testing.T) {
 	head := realGitOutput(t, repo, "rev-parse", "HEAD")
 
 	git := New(repo, false, nil)
+	resolved, ok, err := git.ResolveRevision(context.Background(), "HEAD^{commit}")
+	if err != nil {
+		t.Fatalf("ResolveRevision HEAD returned error: %v", err)
+	}
+	if !ok || resolved != head {
+		t.Fatalf("ResolveRevision HEAD = %q, %v, want %q, true", resolved, ok, head)
+	}
+	if resolved, ok, err := git.ResolveRevision(context.Background(), "refs/heads/missing^{commit}"); err != nil || ok || resolved != "" {
+		t.Fatalf("ResolveRevision missing = %q, %v, %v, want empty, false, nil", resolved, ok, err)
+	}
+
 	commits, err := git.FirstParentCommits(context.Background(), "HEAD")
 	if err != nil {
 		t.Fatalf("FirstParentCommits returned error: %v", err)
