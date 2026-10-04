@@ -74,7 +74,6 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}-${{ matrix.platform }}
-          repository-cache: true
 
       - name: Test integration
         shell: bash
