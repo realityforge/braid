@@ -34,7 +34,6 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}-go-quality
-          repository-cache: true
 
       - name: Check formatting
         run: |
@@ -78,7 +77,6 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}-integration-${{ matrix.platform }}
-          repository-cache: true
 
       - name: Test integration
         run: |
